@@ -194,7 +194,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			if comment {
 				signHongguoCommentRequest(prepared, commentNonce, now)
 			} else {
-				signHongguoRequest(prepared, body, now)
+				signHongguoPlayerRequest(prepared, body, now, installID)
 			}
 		})
 		if err != nil {
