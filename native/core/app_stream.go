@@ -212,6 +212,29 @@ func (stream *nativeStreamServer) nativeRewrite(token string, session *nativeStr
 	return strings.Join(output, "\n"), nil
 }
 
+// nativeProbePlaylist 用一次 512 字节的 Range 请求判断上游是否为 HLS 播放列表。
+// 仅在 HEAD 请求且响应类型无法判定时使用（HEAD 没有响应体，无法直接嗅探）。
+func (stream *nativeStreamServer) nativeProbePlaylist(ctx context.Context, session *nativeStreamSession, address string) bool {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	if err != nil {
+		return false
+	}
+	request.Header.Set("User-Agent", userAgent)
+	request.Header.Set("Referer", session.referer)
+	request.Header.Set("Range", "bytes=0-511")
+	response, err := stream.nativeRequest(request)
+	if err != nil {
+		return false
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+		return false
+	}
+	peek, _ := io.ReadAll(io.LimitReader(response.Body, 512))
+	text := strings.TrimSpace(strings.TrimPrefix(string(peek), "\ufeff"))
+	return strings.HasPrefix(text, "#EXTM3U")
+}
+
 func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet && request.Method != http.MethodHead {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
@@ -306,8 +329,28 @@ func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, reques
 	if request.Method == http.MethodGet {
 		peek, _ := reader.Peek(512)
 		bodyIsPlaylist := strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(string(peek), "\ufeff")), "#EXTM3U")
+<<<<<<< Updated upstream
 		if bodyIsPlaylist {
 			playlist = true
+=======
+<<<<<<< HEAD
+		// HLS 规范要求文件以 #EXTM3U 开头，因此嗅探结果优先于 Content-Type：
+		// 既避免 CDN 把 MP4 误标成 mpegurl 时仍按播放列表读取，也兼容播放列表被标成 octet-stream。
+		if bodyIsPlaylist {
+			playlist = true
+		} else if len(peek) > 0 {
+			playlist = false
+		}
+	}
+	if request.Method == http.MethodHead && !playlist &&
+		(contentType == "" || strings.Contains(contentType, "octet-stream") || strings.Contains(contentType, "text/plain")) {
+		// HEAD 没有响应体，只能补一次 512 字节的 Range 探测。
+		if stream.nativeProbePlaylist(ctx, session, asset.address) {
+=======
+		if bodyIsPlaylist {
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+			playlist = true
+>>>>>>> Stashed changes
 		} else if contentIsMP4 {
 			playlist = false
 		}

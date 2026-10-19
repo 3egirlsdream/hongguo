@@ -23,7 +23,33 @@ func newHongguoPlayerNonce() (hongguoPlayerNonce, error) {
 	return nonce, err
 }
 
+<<<<<<< Updated upstream
 func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time, installID string) {
+=======
+<<<<<<< HEAD
+// hongguoPlayerArgusKey 是 Argus551 的固定密钥，启动时解码，避免每次请求重复解析。
+var hongguoPlayerArgusKey = func() []byte {
+	key, err := hex.DecodeString("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c")
+	if err != nil || len(key) != 32 {
+		panic("hongguo argus key is invalid")
+	}
+	return key
+}()
+
+// hongguoSignatureBlocks 按 16 字节对齐补齐；对齐是后续按块读写的前提，显式断言避免静默越界。
+func hongguoSignatureBlocks(data []byte) []byte {
+	padded := hongguoCommentPad(data)
+	if len(padded) == 0 || len(padded)%16 != 0 {
+		panic("hongguo signature padding is not block aligned")
+	}
+	return padded
+}
+
+func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time, installID string, nonce hongguoPlayerNonce) {
+=======
+func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time, installID string) {
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+>>>>>>> Stashed changes
 	stamp := uint32(now.Unix())
 	queryHash := md5.Sum([]byte(request.URL.RawQuery))
 	var payload [20]byte
@@ -47,17 +73,34 @@ func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time,
 	request.Header.Set("X-Khronos", strconv.FormatUint(uint64(stamp), 10))
 	request.Header.Set("X-Gorgon", hex.EncodeToString(signature))
 	request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(now.UnixMilli(), 10))
+<<<<<<< Updated upstream
+=======
+<<<<<<< HEAD
+=======
+>>>>>>> Stashed changes
 
 	nonce, err := newHongguoPlayerNonce()
 	if err != nil {
 		return
 	}
+<<<<<<< Updated upstream
+=======
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+>>>>>>> Stashed changes
 	request.Header.Set("X-Argus", hongguoPlayerArgus(request.URL.RawQuery, body, stamp, installID, nonce))
 	request.Header.Set("X-Ladon", hongguoPlayerLadon(request.URL.Query().Get("aid"), stamp, nonce[2:6]))
 }
 
 func hongguoPlayerArgus(query string, body []byte, timestamp uint32, installID string, nonce hongguoPlayerNonce) string {
+<<<<<<< Updated upstream
 	key, _ := hex.DecodeString("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c")
+=======
+<<<<<<< HEAD
+	key := hongguoPlayerArgusKey
+=======
+	key, _ := hex.DecodeString("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c")
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+>>>>>>> Stashed changes
 	var message []byte
 	varint := func(field, value uint64) {
 		message = binary.AppendUvarint(message, field*8)
@@ -90,7 +133,15 @@ func hongguoPlayerArgus(query string, body []byte, timestamp uint32, installID s
 	bytesField(15, nested)
 	bytesField(20, []byte("none"))
 	varint(21, 738)
+<<<<<<< Updated upstream
 	data := hongguoCommentPad(message)
+=======
+<<<<<<< HEAD
+	data := hongguoSignatureBlocks(message)
+=======
+	data := hongguoCommentPad(message)
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+>>>>>>> Stashed changes
 	seed := append(append(append([]byte(nil), key...), 0x3c, 0xcc, 0x56, 0x7b), key...)
 	derived := hongguoSM3(seed)
 	var rounds [72]uint64
@@ -119,9 +170,24 @@ func hongguoPlayerArgus(query string, body []byte, timestamp uint32, installID s
 		data[left], data[right] = data[right], data[left]
 	}
 	container := append([]byte{0xa6, 0xe7, 0x83, 0xee, 0x70, 0x01, 0x10, 0x09, 0x18}, data...)
+<<<<<<< Updated upstream
 	container = hongguoCommentPad(append(container, 0x56, 0x7b))
 	aesKey, iv := md5.Sum(key[:16]), md5.Sum(key[16:])
 	block, _ := aes.NewCipher(aesKey[:])
+=======
+<<<<<<< HEAD
+	container = hongguoSignatureBlocks(append(container, 0x56, 0x7b))
+	aesKey, iv := md5.Sum(key[:16]), md5.Sum(key[16:])
+	block, err := aes.NewCipher(aesKey[:])
+	if err != nil {
+		panic("hongguo argus cipher is invalid")
+	}
+=======
+	container = hongguoCommentPad(append(container, 0x56, 0x7b))
+	aesKey, iv := md5.Sum(key[:16]), md5.Sum(key[16:])
+	block, _ := aes.NewCipher(aesKey[:])
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+>>>>>>> Stashed changes
 	cipher.NewCBCEncrypter(block, iv[:]).CryptBlocks(container, container)
 	return base64.StdEncoding.EncodeToString(append([]byte{0x3c, 0xcc}, container...))
 }
@@ -140,7 +206,15 @@ func hongguoPlayerLadon(aid string, timestamp uint32, prefix []byte) string {
 		right, queue = queue[0], queue[1:]
 	}
 	payload := []byte(strconv.FormatUint(uint64(timestamp), 10) + "-" + aid)
+<<<<<<< Updated upstream
 	data := hongguoCommentPad(payload)
+=======
+<<<<<<< HEAD
+	data := hongguoSignatureBlocks(payload)
+=======
+	data := hongguoCommentPad(payload)
+>>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
+>>>>>>> Stashed changes
 	for offset := 0; offset < len(data); offset += 16 {
 		left, right := binary.LittleEndian.Uint64(data[offset:]), binary.LittleEndian.Uint64(data[offset+8:])
 		for _, key := range keys {
