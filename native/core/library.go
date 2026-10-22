@@ -7,5 +7,5 @@ func dramaProvider(drama Drama) string {
 	if source, _, ok := splitProviderDramaID(drama.ID); ok {
 		return source
 	}
-	return "cloudfront"
+	return ""
 }

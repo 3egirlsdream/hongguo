@@ -80,25 +80,19 @@ class LanConnection {
   bool autoSync;
 }
 
-const lanLegacySources = {
-  'hongguo',
-  'huangdou',
-  'huangguo-video',
-  'huangguoai',
-  'cloudfront',
-};
+const lanLegacySources = {'hongguo'};
 
 Set<String> lanSources(Object? value, {bool advertised = false}) {
   if (value is! List ||
       value.length > (advertised ? 32 : SourceSite.allValues.length)) {
-    throw const FormatException('设备站源范围无效');
+    throw const FormatException('设备内容范围无效');
   }
   final result = value.map((source) => lanText(source, 32)).toSet();
   if (advertised) {
     return result.where(SourceSite.isKnown).toSet();
   }
   if (result.any((source) => !SourceSite.isKnown(source))) {
-    throw const FormatException('设备站源范围无效');
+    throw const FormatException('设备内容范围无效');
   }
   return result;
 }

@@ -54,9 +54,7 @@ List<DownloadCollection> downloadCollections(
         !(release == 'finished' && job.drama.releaseStatus == 'completed')) {
       continue;
     }
-    final text =
-        '${job.drama.title} ${SourceSite.byId(job.drama.source).name} ${job.drama.category}'
-            .toLowerCase();
+    final text = '${job.drama.title} ${job.drama.category}'.toLowerCase();
     if (terms.any((term) => !text.contains(term))) continue;
     if (!(switch (filter) {
       'all' || 'archived' => true,

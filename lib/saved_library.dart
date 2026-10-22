@@ -19,11 +19,19 @@ class SavedLibrary extends StatefulWidget {
     required this.onOpen,
     required this.onContinue,
     this.onDownload,
+    this.remoteHistory = const [],
+    this.remoteFavorites = const [],
+    this.onHistoryContinue,
+    this.onRemoteUnfollow,
   });
 
   final AppRepository repository;
   final LocalStore store;
   final bool history;
+  final List<WatchEntry> remoteHistory;
+  final List<Drama> remoteFavorites;
+  final ValueChanged<WatchEntry>? onHistoryContinue;
+  final ValueChanged<Drama>? onRemoteUnfollow;
   final ValueChanged<Drama> onOpen;
   final ValueChanged<Drama> onContinue;
   final ValueChanged<Drama>? onDownload;
@@ -35,6 +43,35 @@ class SavedLibrary extends StatefulWidget {
 class _SavedLibraryState extends State<SavedLibrary> {
   final _search = TextEditingController();
   String _filter = '';
+  Map<String, WatchEntry> _historyIndex = {};
+  List<WatchEntry> get _history {
+    final rows = <String, WatchEntry>{};
+    for (final entry in [...widget.store.history, ...widget.remoteHistory]) {
+      final old = rows[entry.drama.id];
+      final chosen = old == null || entry.updatedAt.isAfter(old.updatedAt)
+          ? entry
+          : old;
+      rows[entry.drama.id] = WatchEntry(
+        drama: old?.drama.merge(entry.drama) ?? entry.drama,
+        episode: chosen.episode,
+        position: chosen.position,
+        duration: chosen.duration,
+        updatedAt: chosen.updatedAt,
+      );
+    }
+    return rows.values.toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  WatchEntry? _watched(String id) => _historyIndex[id];
+  void _continue(Drama drama) {
+    final entry = _watched(drama.id);
+    if (entry != null && widget.onHistoryContinue != null) {
+      widget.onHistoryContinue!(entry);
+    } else {
+      widget.onContinue(drama);
+    }
+  }
 
   @override
   void dispose() {
@@ -48,7 +85,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('清空观看记录？'),
-        content: const Text('这会删除当前用户的观看进度，追剧状态和手动已看标记会保留。'),
+        content: const Text('仅清空本机观看记录，账号云端记录会保留。追剧状态和手动已看标记不变。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -70,15 +107,22 @@ class _SavedLibraryState extends State<SavedLibrary> {
     context,
     drama: drama,
     store: widget.store,
+    repository: widget.repository,
     history: widget.history,
-    onContinue: () => widget.onContinue(drama),
+    onContinue: () => _continue(drama),
+    remoteFollowed: widget.remoteFavorites.any((d) => d.id == drama.id),
+    onToggleFollow:
+        widget.remoteFavorites.any((d) => d.id == drama.id) &&
+            widget.onRemoteUnfollow != null
+        ? () => widget.onRemoteUnfollow!(drama)
+        : null,
     onDownload: widget.onDownload == null
         ? null
         : () => widget.onDownload!(drama),
   );
 
   Widget _tile(Drama drama, {FocusNode? focusNode, VoidCallback? onFocus}) {
-    final watched = widget.store.watched(drama.id);
+    final watched = _watched(drama.id);
     final state = widget.store.following(drama.id);
     final badge = state == null
         ? null
@@ -89,15 +133,17 @@ class _SavedLibraryState extends State<SavedLibrary> {
       repository: widget.repository,
       focusNode: focusNode,
       onFocus: onFocus,
-      onTap: () => widget.onOpen(drama),
+      onTap: () => widget.history ? _continue(drama) : widget.onOpen(drama),
       onMore: () => _actions(drama),
       actions: DramaActionButton(
         drama: drama,
         onPressed: () => _actions(drama),
       ),
-      badge: badge,
+      badge:
+          badge ??
+          (widget.remoteFavorites.any((d) => d.id == drama.id) ? '已追剧' : null),
       subtitle: watched == null
-          ? SourceSite.byId(drama.source).name
+          ? '点击开始观看'
           : '第 ${watched.episode} 集 · ${formatPosition(watched.position)}',
     );
   }
@@ -106,10 +152,14 @@ class _SavedLibraryState extends State<SavedLibrary> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.store,
     builder: (context, _) {
-      final history = widget.store.history;
+      final history = _history;
+      _historyIndex = {for (final entry in history) entry.drama.id: entry};
       final all = widget.history
           ? history.map((entry) => entry.drama).toList()
-          : widget.store.favorites;
+          : {
+              for (final drama in widget.remoteFavorites) drama.id: drama,
+              for (final drama in widget.store.favorites) drama.id: drama,
+            }.values.toList();
       final items = all.where((drama) {
         if (!matchesDramaQuery(drama, _search.text)) return false;
         final state = widget.store.following(drama.id);
@@ -140,9 +190,9 @@ class _SavedLibraryState extends State<SavedLibrary> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
               ),
-              if (widget.history && all.isNotEmpty)
+              if (widget.history && widget.store.history.isNotEmpty)
                 IconButton(
-                  tooltip: '清空观看记录',
+                  tooltip: '清空本机记录',
                   onPressed: _clearHistory,
                   icon: const Icon(Icons.delete_outline_rounded),
                 ),
@@ -211,7 +261,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
                 subtitle: Text(
                   '第 ${resume.episode} 集 · ${formatPosition(resume.position)}',
                 ),
-                onTap: () => widget.onContinue(resume.drama),
+                onTap: () => _continue(resume.drama),
               ),
             ),
           ),

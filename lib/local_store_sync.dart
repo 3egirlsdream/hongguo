@@ -145,7 +145,7 @@ extension LocalStoreSync on LocalStore {
           isCurrent?.call() == false ||
           sources.isEmpty ||
           !sources.every(allowsSource)) {
-        throw StateError('当前用户或站源权限已变更，请重新连接');
+        throw StateError('当前用户已变更，请重新连接');
       }
       if (lanReceipt(operation) != null) return;
       final document = lanDocument;
@@ -162,7 +162,7 @@ extension LocalStoreSync on LocalStore {
       final history = Map.of(_history);
       for (final record in incoming) {
         if (!sources.contains(record.drama.source)) {
-          throw StateError('同步包含本次范围外的站源');
+          throw StateError('同步包含不支持的内容');
         }
         final checked = LanRecord.fromJson(record.toJson());
         document.records[checked.id] = checked;

@@ -114,7 +114,7 @@ class BatchDownloads extends ChangeNotifier {
         if (!item.selected || item.detail != null) continue;
         item.error = null;
         if (!store.allowsSource(item.drama.source)) {
-          item.error = '当前用户没有此站源权限';
+          item.error = '当前内容不可用，请先解锁用户';
           continue;
         }
         current = item;
@@ -175,7 +175,7 @@ class BatchDownloads extends ChangeNotifier {
         if (!_valid || stopping) break;
         if (!item.selected || item.detail == null) continue;
         if (!store.allowsSource(item.drama.source)) {
-          item.error = '当前用户没有此站源权限';
+          item.error = '当前内容不可用，请先解锁用户';
           continue;
         }
         final episodes = item.pending(includeVip);

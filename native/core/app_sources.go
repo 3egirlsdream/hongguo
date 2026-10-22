@@ -34,7 +34,6 @@ type nativeSourceRecord struct {
 }
 
 type nativeSourceStatus struct {
-	UnknownVIP   int                 `json:"unknownVip"`
 	Source       string              `json:"source"`
 	Count        int                 `json:"count"`
 	Page         int                 `json:"page"`
@@ -87,7 +86,7 @@ func (engine *nativeEngine) loadSourceRecords() {
 		return
 	}
 	for source, record := range records {
-		if !isHuangguoProviderSource(source) {
+		if !nativeSourceAvailable(source) {
 			continue
 		}
 		if record.Running {
@@ -134,18 +133,10 @@ func (engine *nativeEngine) sourceStatusLocked(source string) nativeSourceStatus
 	state, found := engine.catalogStates[source]
 	warning := engine.storageWarningLocked()
 	stage := record.Stage
-	unknownVIP := 0
-	if source == sourceHuangdou {
-		for _, drama := range engine.catalogs[source] {
-			if drama.VIP == nil {
-				unknownVIP++
-			}
-		}
-	}
 	if warning != "" && !record.Running && stage == "已完成" {
 		stage = "等待保存"
 	}
-	return nativeSourceStatus{Source: source, Count: len(engine.catalogs[source]), UnknownVIP: unknownVIP, Page: max(1, state.Page), HasMore: !found || state.HasMore,
+	return nativeSourceStatus{Source: source, Count: len(engine.catalogs[source]), Page: max(1, state.Page), HasMore: !found || state.HasMore,
 		UpdatedAt: state.UpdatedAt, Operation: record.Operation, Running: record.Running, Stage: stage,
 		Completed: record.Completed, Total: record.Total, Added: record.Added, Error: record.Error,
 		StorageError: warning,
@@ -170,12 +161,9 @@ func (engine *nativeEngine) startSourceTask(source, operation string, drama nati
 		return nativeSourceStatus{}, errNativeBuildSource
 	}
 	switch operation {
-	case "update", "more", "metadata", "vipMetadata", "check", "checkCatalog", "retrySave":
+	case "update", "more", "metadata", "check", "checkCatalog", "retrySave":
 	default:
 		return nativeSourceStatus{}, errors.New("无效的站源操作")
-	}
-	if operation == "vipMetadata" && source != sourceHuangdou {
-		return nativeSourceStatus{}, errors.New("当前站源不需要补齐 VIP 资料")
 	}
 	if drama.ID != "" && (!nativeDramaAvailable(drama) || sourceFromDramaID(drama.ID) != source) {
 		return nativeSourceStatus{}, errNativeBuildSource
@@ -319,16 +307,13 @@ func (engine *nativeEngine) updateSource(ctx context.Context, source, operation 
 		if len(pending) >= 8 {
 			break
 		}
-		if operation == "vipMetadata" && drama.VIP != nil {
-			continue
-		}
-		if operation != "vipMetadata" && time.Since(record.MetadataChecked[drama.ID]) < 24*time.Hour {
+		if time.Since(record.MetadataChecked[drama.ID]) < 24*time.Hour {
 			continue
 		}
 		if time.Now().Before(record.MetadataRetryAt[drama.ID]) {
 			continue
 		}
-		if operation == "metadata" || operation == "vipMetadata" || drama.Episodes <= 0 || drama.Description == "" || source == sourceHuangdou && drama.VIP == nil {
+		if operation == "metadata" || drama.Episodes <= 0 || drama.Description == "" {
 			pending = append(pending, drama)
 		}
 	}
@@ -342,14 +327,12 @@ func (engine *nativeEngine) updateSource(ctx context.Context, source, operation 
 			return ctx.Err()
 		}
 		result, err := engine.nativeDetail(ctx, drama)
-		unknownVIP := false
 		if err == nil {
 			fresh := result.(map[string]any)["drama"].(nativeDrama)
 			var metadataErr error
 			if nativeNeedsExtraMetadata(fresh) {
 				fresh, metadataErr = engine.nativeExtraMetadata(ctx, fresh)
 			}
-			unknownVIP = source == sourceHuangdou && fresh.VIP == nil
 			engine.mu.Lock()
 			engine.catalogs[source] = mergeNativeCatalog(engine.catalogs[source], []nativeDrama{fresh})
 			for key, items := range engine.catalogs {
@@ -377,12 +360,6 @@ func (engine *nativeEngine) updateSource(ctx context.Context, source, operation 
 				}
 				record.MetadataChecked[drama.ID] = time.Now()
 				delete(record.MetadataRetryAt, drama.ID)
-				if unknownVIP {
-					if record.MetadataRetryAt == nil {
-						record.MetadataRetryAt = map[string]time.Time{}
-					}
-					record.MetadataRetryAt[drama.ID] = time.Now().Add(5 * time.Minute)
-				}
 			} else if ctx.Err() == nil {
 				if record.MetadataRetryAt == nil {
 					record.MetadataRetryAt = map[string]time.Time{}

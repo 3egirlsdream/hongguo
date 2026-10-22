@@ -180,8 +180,8 @@ class LanCell {
 Drama lanDrama(Object? input) {
   final row = lanMap(input);
   final source = lanText(row['source'], 32);
-  if (!SourceSite.isKnown(source)) {
-    throw const FormatException('记录站源无效');
+  if (!RegExp(r'^[a-z][a-z0-9-]{0,31}$').hasMatch(source)) {
+    throw const FormatException('记录内容标识无效');
   }
   final id = lanText(row['id'], 512);
   final sourceId = lanText(row['sourceId'], 450, empty: true);

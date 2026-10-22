@@ -200,15 +200,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			if comment {
 				signHongguoCommentRequest(prepared, commentNonce, now)
 			} else {
-<<<<<<< Updated upstream
-				signHongguoPlayerRequest(prepared, body, now, installID)
-=======
-<<<<<<< HEAD
 				signHongguoPlayerRequest(prepared, body, now, installID, playerNonce)
-=======
-				signHongguoPlayerRequest(prepared, body, now, installID)
->>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
->>>>>>> Stashed changes
 			}
 		})
 		if err != nil {

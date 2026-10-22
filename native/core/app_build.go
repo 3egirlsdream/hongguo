@@ -1,14 +1,15 @@
 package core
 
-import "errors"
-
-var buildAllSources = "false"
+import (
+	"errors"
+	"strings"
+)
 
 var errNativeBuildSource = errors.New("当前版本不包含此站源")
 
 func nativeSourceAvailable(source string) bool {
 	source = canonicalProviderSource(source)
-	return source == sourceHongguo || buildAllSources == "true" && isHuangguoProviderSource(source)
+	return source == sourceHongguo
 }
 
 func nativeDramaAvailable(drama nativeDrama) bool {
@@ -25,7 +26,7 @@ func nativeChapterAvailable(drama nativeDrama, chapter Chapter) bool {
 	if chapter.Source != "" && canonicalProviderSource(chapter.Source) != source {
 		return false
 	}
-	if chapterSource, _, valid := splitProviderDramaID(chapter.ID); valid && chapterSource != source {
+	if chapterSource, _, qualified := strings.Cut(chapter.ID, ":"); qualified && canonicalProviderSource(chapterSource) != source {
 		return false
 	}
 	return true
@@ -37,7 +38,7 @@ func nativeDownloadAvailable(job nativeDownloadJob) bool {
 
 func nativeAuthorizeInput(input nativeInput) error {
 	switch input.Action {
-	case "recommendations", "cachedRecommendations", "suggestions", "danmaku":
+	case "hongguoAccount", "recommendations", "cachedRecommendations", "suggestions", "danmaku":
 		if !nativeSourceAvailable(sourceHongguo) {
 			return errNativeBuildSource
 		}

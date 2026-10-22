@@ -13,11 +13,9 @@ class RankingsScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.store,
-    required this.initialGroup,
   });
   final AppRepository repository;
   final LocalStore store;
-  final String initialGroup;
 
   @override
   State<RankingsScreen> createState() => _RankingsScreenState();
@@ -82,11 +80,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
       if (!mounted || generation != _generation) return;
       setState(() {
         _boards = boards;
-        _board =
-            boards
-                .where((board) => board.groupId == widget.initialGroup)
-                .firstOrNull ??
-            boards.firstOrNull;
+        _board = boards.firstOrNull;
         _loading = false;
       });
       if (_board != null) await _load();
@@ -158,12 +152,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final groups = SourceGroup.fromSources(
-      _boards.map((board) => SourceSite.byId(board.source)).toSet(),
-    );
-    final boards = _boards
-        .where((board) => board.groupId == _board?.groupId)
-        .toList();
+    final boards = _boards;
     final items = _items
         .map(
           (item) => RankingItem(
@@ -172,37 +161,11 @@ class _RankingsScreenState extends State<RankingsScreen> {
             metric: item.metric,
           ),
         )
-        .where(
-          (item) =>
-              widget.store.allowsSource(item.drama.source) &&
-              !(item.drama.source == 'huangdou' &&
-                  widget.store.hideVip &&
-                  item.drama.vip),
-        )
+        .where((item) => widget.store.allowsSource(item.drama.source))
         .toList();
     return Scaffold(
       appBar: AppBar(
-        title: PopupMenuButton<SourceGroup>(
-          tooltip: '切换榜单站源',
-          enabled: groups.length > 1,
-          onSelected: (group) =>
-              _select(_boards.firstWhere((board) => board.groupId == group.id)),
-          itemBuilder: (_) => [
-            for (final group in groups)
-              PopupMenuItem(value: group, child: Text(group.name)),
-          ],
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                _board == null
-                    ? '榜单'
-                    : '${SourceSite.byId(_board!.source).groupName}榜单',
-              ),
-              if (groups.length > 1) const Icon(Icons.expand_more_rounded),
-            ],
-          ),
-        ),
+        title: const Text('榜单'),
         actions: [
           RefreshAction(
             loading: _loading || _more,
@@ -282,7 +245,7 @@ class _RankingsScreenState extends State<RankingsScreen> {
                   : items.isEmpty
                   ? StatusPanel(
                       title: _error == null ? '暂无榜单内容' : '榜单暂时无法加载',
-                      message: _error ?? '当前站源暂无可显示的榜单。',
+                      message: _error ?? '暂无可显示的榜单。',
                       onRetry: _board == null
                           ? _initialize
                           : () => _load(force: true),
@@ -351,12 +314,12 @@ class _RankingsScreenState extends State<RankingsScreen> {
                                           fontSize: 24,
                                           fontWeight: FontWeight.w800,
                                           color: item.rank <= 3
-                                              ? Theme.of(
-                                                  context,
-                                                ).colorScheme.primary
-                                              : Theme.of(
-                                                  context,
-                                                ).colorScheme.onSurfaceVariant,
+                                              ? Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                              : Theme.of(context)
+                                                    .colorScheme
+                                                    .onSurfaceVariant,
                                         ),
                                       ),
                                     ),
@@ -379,9 +342,9 @@ class _RankingsScreenState extends State<RankingsScreen> {
                                             item.drama.title,
                                             maxLines: 2,
                                             overflow: TextOverflow.ellipsis,
-                                            style: Theme.of(
-                                              context,
-                                            ).textTheme.titleMedium,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .titleMedium,
                                           ),
                                           if (item.drama.category.isNotEmpty)
                                             Text(
@@ -397,9 +360,9 @@ class _RankingsScreenState extends State<RankingsScreen> {
                                               child: Text(
                                                 item.metric,
                                                 style: TextStyle(
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
+                                                  color: Theme.of(context)
+                                                      .colorScheme
+                                                      .primary,
                                                 ),
                                               ),
                                             ),

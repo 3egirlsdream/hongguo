@@ -106,7 +106,7 @@ extension LanPlayback on LanController {
       final intent = LanPlaybackIntent.fromJson(body['intent']);
       if (!store.allowsSource(intent.drama.source) ||
           !remote.sources.contains(intent.drama.source)) {
-        throw StateError('接收设备当前用户没有此站源权限');
+        throw StateError('接收设备当前内容不可用，请先解锁用户');
       }
       if (!intent.playing || openPlayback == null)
         throw StateError('接收设备暂不能开始播放');
@@ -308,7 +308,7 @@ extension LanPlayback on LanController {
     if (remote == null) throw StateError('请先选择接收设备');
     final intent = snapshot();
     if (!remote.sources.contains(intent.drama.source))
-      throw StateError('对方当前用户没有此站源权限');
+      throw StateError('对方当前内容不可用，请先解锁用户');
     final run = _run;
     final id = lanID();
     final ticket = ++_pushSequence;

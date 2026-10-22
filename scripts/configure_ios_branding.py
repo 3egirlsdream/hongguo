@@ -6,7 +6,7 @@ from app_build import BuildVariant
 
 
 def configure(path, dart_defines):
-    variant = BuildVariant.from_dart_defines(dart_defines)
+    variant = BuildVariant()
     data = plistlib.loads(path.read_bytes())
     data['CFBundleDisplayName'] = variant.name
     data['CFBundleName'] = variant.slug

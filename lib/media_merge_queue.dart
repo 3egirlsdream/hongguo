@@ -241,7 +241,7 @@ class MergeQueue {
     final selections = groups.map(continuousMergeJobs).toList();
     for (final jobs in selections) {
       if (!library.store.allowsSource(jobs.first.drama.source)) {
-        throw AppFailure('当前用户无权合并此站源内容');
+        throw AppFailure('当前用户无法合并此内容');
       }
     }
     await load();

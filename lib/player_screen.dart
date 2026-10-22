@@ -19,6 +19,8 @@ import 'download_picker.dart';
 import 'downloads_screen.dart';
 import 'follow_state.dart';
 import 'local_store.dart';
+import 'library_account_actions.dart';
+import 'hongguo_account_models.dart';
 import 'models.dart';
 import 'playback_loader.dart';
 import 'playback_preloader.dart';
@@ -29,7 +31,7 @@ import 'player_interactions.dart';
 import 'player_menu.dart';
 import 'television_controls.dart';
 import 'widgets.dart';
-import 'sources_screen.dart';
+import 'catalog_management_screen.dart';
 import 'lan_controller.dart';
 import 'lan_screen.dart';
 import 'video_enhancement.dart';
@@ -124,6 +126,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String _loadingMessage = '正在准备播放';
   String? _error;
   String? _saveWarning;
+  String _officialUID = '';
   PlaybackPlan? _plan;
   double _speed = 1;
   double _aspectRatio = 9 / 16;
@@ -168,6 +171,19 @@ class _PlayerScreenState extends State<PlayerScreen>
     WidgetsBinding.instance.addObserver(this);
     _index = widget.initialIndex;
     _profileEpoch = widget.handoff?.profileEpoch ?? widget.store.profileEpoch;
+    if (widget.repository.supportsOfficialAccount && widget.mediaId == null) {
+      unawaited(
+        widget.repository
+            .hongguoAccount('status')
+            .then((status) {
+              if (mounted && widget.store.profileEpoch == _profileEpoch) {
+                _officialUID =
+                    (status['profile'] as Map?)?['uid'] as String? ?? '';
+              }
+            })
+            .catchError((Object _) {}),
+      );
+    }
     final preferences = widget.store.playbackPreferences;
     _speed = preferences.speed;
     _requestedQuality = preferences.quality;
@@ -179,6 +195,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _danmaku = DanmakuController(widget.repository)
       ..setEnabled(_danmakuEnabled);
     widget.store.addListener(_accessChanged);
+    widget.repository.accountFavorites.addListener(_accountChanged);
     _player =
         widget.playerFactory?.call() ??
         Player(
@@ -664,9 +681,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       );
     } catch (error) {
       if (mounted && !_closed) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     } finally {
       if (mounted && !_closed) setState(() => _panelOpen = false);
@@ -872,6 +888,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     final store = widget.store;
+    final savedEpisode = widget.detail.episodes[_openedIndex];
     final progressKey =
         '${widget.mediaId ?? widget.detail.drama.id}:$_openedIndex:$position:$duration';
     if (_savedProgressKey == progressKey && _saveWarning == null) {
@@ -880,16 +897,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     final entry = WatchEntry(
       drama: widget.repository.catalogUpdates.current(widget.detail.drama),
-      episode: widget.detail.episodes[_openedIndex].number,
+      episode: savedEpisode.number,
       position: position,
       duration: duration,
       updatedAt: DateTime.now(),
     );
+    var localSaved = false;
     try {
       await Future<void>.value();
       if (store.profileEpoch != _profileEpoch) return;
       if (widget.mediaId == null) {
         await store.saveWatch(entry);
+        localSaved = true;
+        if (store.profileEpoch != _profileEpoch) return;
+        if (_officialUID.isNotEmpty) {
+          final videoID = hongguoEpisodeID(savedEpisode);
+          await widget.repository.hongguoAccount('queueProgress', {
+            'uid': _officialUID,
+            'watch': {...entry.toJson(), 'videoId': videoID},
+          });
+        }
         if (flush) LanController.current?.flush();
       } else {
         await store.saveMediaWatch(widget.mediaId!, entry);
@@ -900,7 +927,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     } catch (_) {
       if (mounted && !_closed && _saveWarning == null) {
-        setState(() => _saveWarning = '观看进度尚未保存，请检查存储空间后重试。');
+        setState(
+          () => _saveWarning = localSaved
+              ? '本机进度已保存，官方进度暂未加入同步队列，请在账号页检查。'
+              : '观看进度尚未保存，请检查存储空间后重试。',
+        );
       }
     }
   }
@@ -1017,7 +1048,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           return;
         }
         if (plan.url.isEmpty) {
-          throw AppFailure('站源未返回播放地址，请重试');
+          throw AppFailure('未返回播放地址，请重试');
         }
         final platform = _player.platform;
         if (platform is NativePlayer) {
@@ -1034,8 +1065,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               await platform.setProperty('vd-lavc-skiploopfilter', 'all');
               await platform.setProperty('vd-lavc-skipidct', 'all');
               await platform.setProperty('vd-lavc-threads', '2');
-              await platform.setProperty('demuxer-max-bytes', '${4 * 1024 * 1024}');
-              await platform.setProperty('demuxer-max-back-bytes', '${1 * 1024 * 1024}');
+              await platform.setProperty(
+                'demuxer-max-bytes',
+                '${4 * 1024 * 1024}',
+              );
+              await platform.setProperty(
+                'demuxer-max-back-bytes',
+                '${1 * 1024 * 1024}',
+              );
               await platform.setProperty('demuxer-readahead-secs', '5');
             } else {
               // 方案 A：MediaCodec 硬解（解码后拷贝回 GPU），兼容性优于零拷贝直出，
@@ -1067,7 +1104,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         _plan = plan;
         installed = true;
         _acceptErrors = true;
-        DiaryService.add('[Play] 调用 _player.open: url=${plan.url}, headers=${plan.headers.keys.toList()}');
+        DiaryService.add(
+          '[Play] 调用 _player.open: url=${plan.url}, headers=${plan.headers.keys.toList()}',
+        );
         await _player.open(
           Media(
             plan.url,
@@ -1202,9 +1241,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _notice(String message) {
     if (!mounted || _closed) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _setPreferences(PlaybackPreferences preferences) async {
@@ -1239,9 +1277,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  void _accountChanged() {
+    if (mounted && !_closed) {
+      setState(() {});
+      _menuRevision.value++;
+    }
+  }
+
   Future<void> _toggleFavorite() async {
     try {
-      await widget.store.toggleFavorite(widget.detail.drama);
+      await updateLibraryFollowing(
+        context,
+        widget.repository,
+        widget.store,
+        widget.detail.drama,
+      );
       if (mounted && !_closed) setState(() {});
     } catch (_) {
       _notice('追剧记录未能保存，请检查存储空间后重试');
@@ -1311,6 +1361,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           animation: Listenable.merge([
             _menuRevision,
             widget.store,
+            widget.repository.accountFavorites,
             _danmaku,
             _preloader,
           ]),
@@ -1324,7 +1375,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               qualities: _plan?.qualities ?? [],
               actualQuality: _plan?.quality ?? 0,
               local: _plan?.local == true,
-              favorite: widget.store.isFavorite(widget.detail.drama.id),
+              favorite:
+                  (widget.store.isFavorite(widget.detail.drama.id) ||
+                  widget.repository.isAccountFavorite(widget.detail.drama.id)),
               mobile: _mobile,
               onEpisode: (index) => Navigator.pop(menuContext, index),
               onPreferences: _setPreferences,
@@ -1337,8 +1390,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                 unawaited(_enhancement.toggleCompare());
                 Navigator.pop(menuContext);
               },
-              onFavorite: () =>
-                  widget.store.toggleFavorite(widget.detail.drama),
+              onFavorite: () => updateLibraryFollowing(
+                context,
+                widget.repository,
+                widget.store,
+                widget.detail.drama,
+              ),
             ),
           ),
         ),
@@ -1424,7 +1481,9 @@ class _PlayerScreenState extends State<PlayerScreen>
               speed: _speed,
               quality: _requestedQuality,
               qualities: _plan?.qualities ?? [],
-              favorite: widget.store.isFavorite(widget.detail.drama.id),
+              favorite:
+                  (widget.store.isFavorite(widget.detail.drama.id) ||
+                  widget.repository.isAccountFavorite(widget.detail.drama.id)),
               onFavorite: _toggleFavorite,
               autoAdvance: _autoAdvance,
               danmaku: _danmakuEnabled,
@@ -1477,6 +1536,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     LanController.current?.detachPlayback(_lanIdentity);
     widget.handoff?.fail('接收端已退出播放');
     widget.store.removeListener(_accessChanged);
+    widget.repository.accountFavorites.removeListener(_accountChanged);
     _danmaku.dispose();
     _preloader.dispose();
     _generation++;
@@ -1751,15 +1811,6 @@ class _PlayerScreenState extends State<PlayerScreen>
             children: [
               if (widget.videoBuilder != null)
                 widget.videoBuilder!(layeredControls)
-<<<<<<< HEAD
-=======
-              else if (_player is LunaExoPlayer)
-                LunaExoVideoView(
-                  player: _player,
-                  fit: BoxFit.contain,
-                  controls: (_) => layeredControls,
-                )
->>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
               else
                 Video(
                   controller: _video!,
@@ -1795,7 +1846,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         FilledButton.tonalIcon(
-                          onPressed: () => DiaryService.showDiaryDialog(context),
+                          onPressed: () =>
+                              DiaryService.showDiaryDialog(context),
                           icon: const Icon(Icons.receipt_long_rounded),
                           label: const Text('查看播放日记'),
                         ),
@@ -1806,8 +1858,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                             label: const Text('改为在线播放'),
                           )
                         else if (!_localFailure &&
-                              !widget.localOnly &&
-                              widget.repository.supportsSourceManagement)
+                            !widget.localOnly &&
+                            widget.repository.supportsSourceManagement)
                           SourceDiagnosticsButton(
                             repository: widget.repository,
                             store: widget.store,
@@ -1954,7 +2006,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     final drama = widget.detail.drama;
     final colors = Theme.of(context).colorScheme;
     final meta = [
-      SourceSite.byId(drama.source).name,
       if (drama.episodes > 0) '共 ${drama.episodes} 集',
       if (drama.releaseStatus.isNotEmpty && drama.releaseStatus != 'unknown')
         drama.releaseLabel,
@@ -1981,9 +2032,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                   children: [
                     Text(
                       drama.title,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
                     ),
                     if (meta.isNotEmpty) ...[
                       const SizedBox(height: 6),
@@ -2037,6 +2087,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Widget _mobileFollowControl(Drama drama) {
     final state = widget.store.following(drama.id);
+    final followed =
+        state != null || widget.repository.isAccountFavorite(drama.id);
     return PopupMenuButton<String>(
       key: const ValueKey('player-follow-status'),
       tooltip: '追剧与观看状态',
@@ -2045,7 +2097,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (value == 'remove') {
           await saveUserChange(
             context,
-            () => widget.store.toggleFavorite(drama),
+            () => updateLibraryFollowing(
+              context,
+              widget.repository,
+              widget.store,
+              drama,
+            ),
           );
         } else {
           final status = FollowStatus.values.firstWhere(
@@ -2053,7 +2110,13 @@ class _PlayerScreenState extends State<PlayerScreen>
           );
           await saveUserChange(
             context,
-            () => widget.store.setFollowStatus(drama, status),
+            () => updateLibraryFollowing(
+              context,
+              widget.repository,
+              widget.store,
+              drama,
+              status: status,
+            ),
           );
         }
         if (mounted && !_closed) setState(() {});
@@ -2065,14 +2128,13 @@ class _PlayerScreenState extends State<PlayerScreen>
             checked: state?.status == status,
             child: Text(status.label),
           ),
-        if (state != null)
-          const PopupMenuItem(value: 'remove', child: Text('取消追剧')),
+        if (followed) const PopupMenuItem(value: 'remove', child: Text('取消追剧')),
       ],
       child: Container(
         constraints: const BoxConstraints(minHeight: 36),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: state == null
+          color: !followed
               ? Theme.of(context).colorScheme.surfaceContainerHighest
               : Theme.of(context).colorScheme.secondaryContainer,
           borderRadius: BorderRadius.circular(10),
@@ -2081,13 +2143,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              state == null
-                  ? Icons.bookmark_add_outlined
-                  : Icons.bookmark_rounded,
+              !followed ? Icons.bookmark_add_outlined : Icons.bookmark_rounded,
               size: 18,
             ),
             const SizedBox(width: 6),
-            Text(state?.label ?? '加入追剧'),
+            Text(state?.label ?? (followed ? '已追剧' : '加入追剧')),
             const SizedBox(width: 2),
             const Icon(Icons.expand_more_rounded, size: 16),
           ],

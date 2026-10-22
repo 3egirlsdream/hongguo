@@ -6,14 +6,14 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/json"
-	"fmt"
+
 	"image"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
+
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -42,7 +42,7 @@ func TestNativeCoverDecryptsAndPersistsAcrossRestart(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.URL.RawQuery != "signature=%2F%2b%3D&auth_key=fixture" || r.Header.Get("Referer") != "https://huangguoai.com/" || r.Header.Get("User-Agent") == "" {
+		if r.URL.RawQuery != "signature=%2F%2b%3D&auth_key=fixture" || r.Header.Get("Referer") != "https://hongguoduanju.com/" || r.Header.Get("User-Agent") == "" {
 			t.Error("cover request changed its signed URL or lost source headers")
 		}
 		w.Write(encrypted)
@@ -53,7 +53,7 @@ func TestNativeCoverDecryptsAndPersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	drama := nativeDrama{ID: "huangguoai:1", Source: sourceHuangguoAI, Cover: upstream.URL + "/poster.jpg?signature=%2F%2b%3D&auth_key=fixture"}
+	drama := nativeDrama{ID: "hongguo:1", Source: sourceHongguo, Cover: upstream.URL + "/poster.jpg?signature=%2F%2b%3D&auth_key=fixture"}
 	var workers sync.WaitGroup
 	for range 12 {
 		workers.Add(1)
@@ -120,7 +120,7 @@ func TestNativeCoverFormatsFailuresAndOfflineFallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	drama := nativeDrama{ID: "huangguoai:2", Source: sourceHuangguoAI, Cover: upstream.URL + "/cover"}
+	drama := nativeDrama{ID: "hongguo:2", Source: sourceHongguo, Cover: upstream.URL + "/cover"}
 	if _, err := engine.covers.load(context.Background(), drama, false); err == nil || len(engine.covers.entries) != 0 {
 		t.Fatal("invalid cover was cached")
 	}
@@ -149,7 +149,7 @@ func TestNativeCoverRedirectAndBoundedDiskCache(t *testing.T) {
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		if r.Header.Get("Referer") != "https://huangguoai.com/" {
+		if r.Header.Get("Referer") != "https://hongguoduanju.com/" {
 			t.Error("redirect lost the source referer")
 		}
 		if r.URL.Path == "/redirect" {
@@ -168,7 +168,7 @@ func TestNativeCoverRedirectAndBoundedDiskCache(t *testing.T) {
 	}
 	engine.covers.limit = int64(len(plain) * 2)
 	for _, path := range []string{"/redirect", "/second", "/third"} {
-		_, err := engine.covers.load(context.Background(), nativeDrama{Source: sourceHuangguoAI, Cover: upstream.URL + path}, false)
+		_, err := engine.covers.load(context.Background(), nativeDrama{Source: sourceHongguo, Cover: upstream.URL + path}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -176,70 +176,6 @@ func TestNativeCoverRedirectAndBoundedDiskCache(t *testing.T) {
 	files, err := os.ReadDir(engine.covers.directory)
 	if err != nil || len(files) != 2 || engine.covers.size > engine.covers.limit || calls.Load() != 4 {
 		t.Fatal("disk cache did not enforce its limit", err, len(files), engine.covers.size, calls.Load())
-	}
-}
-
-func TestNativeCatalogCacheFreshnessPagingAndRefresh(t *testing.T) {
-	var calls atomic.Int32
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		if r.URL.Path != "/api/videos/category/ai-duanju" {
-			t.Error("test must only request synthetic catalog metadata", r.URL.Path)
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		count := 24
-		if page > 1 {
-			count = 1
-		}
-		var rows []map[string]any
-		for index := range count {
-			rows = append(rows, map[string]any{"id": strconv.Itoa(page*100 + index), "title": fmt.Sprintf("合成剧集%d", page*100+index), "cover": "https://example.test/synthetic-cover"})
-		}
-		json.NewEncoder(w).Encode(map[string]any{"data": rows})
-	}))
-	defer upstream.Close()
-	directory := t.TempDir()
-	open := func() *nativeEngine {
-		engine, err := newNativeEngine(directory)
-		if err != nil {
-			t.Fatal(err)
-		}
-		engine.downloader.cfg.HuangguoAIURL = upstream.URL
-		engine.downloader.limiter = newRequestLimiter(3, 0)
-		return engine
-	}
-	engine := open()
-	first, err := engine.nativeCatalog(context.Background(), nativeInput{Source: sourceHuangguoAI, Page: 1})
-	if err != nil || len(first.Items) != 24 || !first.Fresh || !first.HasMore {
-		t.Fatal("first catalog request failed", err, first)
-	}
-	if _, err := engine.nativeCatalog(context.Background(), nativeInput{Source: sourceHuangguoAI, Page: 1}); err != nil || calls.Load() != 1 {
-		t.Fatal("fresh catalog caused another request", err, calls.Load())
-	}
-	if _, err := engine.nativeCatalog(context.Background(), nativeInput{Source: sourceHuangguoAI, Page: 2}); err != nil {
-		t.Fatal(err)
-	}
-	engine = open()
-	cached := engine.nativeCached(sourceHuangguoAI)
-	if len(cached.Items) != 25 || cached.Page != 2 || cached.HasMore || !cached.Fresh {
-		t.Fatal("cached pagination state did not survive a restart", cached)
-	}
-	if _, err := engine.nativeCatalog(context.Background(), nativeInput{Source: sourceHuangguoAI, Page: 1}); err != nil || calls.Load() != 2 {
-		t.Fatal("restart bypassed fresh disk cache", err, calls.Load())
-	}
-	if _, err := engine.nativeCatalog(context.Background(), nativeInput{Source: sourceHuangguoAI, Page: 1, Force: true}); err != nil || calls.Load() != 3 {
-		t.Fatal("manual refresh reused old data", err, calls.Load())
-	}
-	state := engine.catalogStates[sourceHuangguoAI]
-	state.UpdatedAt = time.Now().Add(-nativeCatalogTTL - time.Second)
-	engine.catalogStates[sourceHuangguoAI] = state
-	if engine.nativeCached(sourceHuangguoAI).Fresh {
-		t.Fatal("expired catalog is marked fresh")
-	}
-	if _, err := engine.nativeCatalog(context.Background(), nativeInput{Source: sourceHuangguoAI, Page: 1}); err != nil || calls.Load() != 4 {
-		t.Fatal("expired catalog was not updated", err, calls.Load())
 	}
 }
 
@@ -267,4 +203,9 @@ func TestNativeCatalogCacheMigratesAndKeepsHongguoCursorItems(t *testing.T) {
 	if err != nil || !restarted.nativeCached(sourceHongguo).Fresh {
 		t.Fatal("upgraded cache could not be reopened", err)
 	}
+}
+
+func pkcs7Pad(src []byte, blockSize int) []byte {
+	pad := blockSize - len(src)%blockSize
+	return append(src, bytes.Repeat([]byte{byte(pad)}, pad)...)
 }

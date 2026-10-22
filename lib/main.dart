@@ -26,7 +26,7 @@ import 'diary_service.dart';
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
-  DiaryService.add('[App] 应用启动，版本: 0.2.64+71, 平台: ${Platform.operatingSystem}');
+  DiaryService.add('[App] 应用启动，版本: 0.2.67+74, 平台: ${Platform.operatingSystem}');
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.dark));
@@ -66,6 +66,7 @@ class _AppBootstrapState extends State<AppBootstrap>
     LanController.current = null;
     MediaLibrary.current?.dispose();
     MediaLibrary.current = null;
+    repository.stopOfficialSync();
     store?.dispose();
     super.dispose();
   }
@@ -122,6 +123,7 @@ class _AppBootstrapState extends State<AppBootstrap>
         setState(() {
           store = LocalStore(preferences);
           repository.access = store;
+          repository.startOfficialSync();
           MediaLibrary.attach(repository, store!);
           LanController.current?.dispose();
           final link = LanController(

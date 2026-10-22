@@ -94,7 +94,7 @@ class _ResourceSettingsScreenState extends State<ResourceSettingsScreen> {
   ResourceSettings? _settings;
   String _mode = 'auto';
   int _catalog = 3, _interval = 250, _downloads = 2;
-  bool _folders = false, _busy = false, _showProxy = false;
+  bool _busy = false, _showProxy = false;
   String? _error;
   bool get _allowed =>
       widget.store.profileEpoch == _epoch &&
@@ -124,7 +124,6 @@ class _ResourceSettingsScreenState extends State<ResourceSettingsScreen> {
         _catalog = settings.catalogConcurrency;
         _interval = settings.catalogIntervalMs;
         _downloads = settings.downloadConcurrency;
-        _folders = settings.downloadBySource;
         _error = null;
       });
     } catch (error) {
@@ -146,14 +145,13 @@ class _ResourceSettingsScreenState extends State<ResourceSettingsScreen> {
           catalogConcurrency: _catalog,
           catalogIntervalMs: _interval,
           downloadConcurrency: _downloads,
-          downloadBySource: _folders,
+          downloadBySource: false,
         ),
       );
       if (!mounted || !_allowed) return;
       setState(() => _settings = settings);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('设置已保存，将用于后续请求和下载任务')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('设置已保存，将用于后续请求和下载任务')));
     } catch (error) {
       if (mounted) setState(() => _error = error.toString());
     } finally {
@@ -269,15 +267,6 @@ class _ResourceSettingsScreenState extends State<ResourceSettingsScreen> {
                   const SizedBox(height: 16),
                   _count('同时下载数量', _downloads, (value) => _downloads = value),
                   const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: _folders,
-                    title: const Text('按站源分类保存'),
-                    subtitle: const Text('新任务放入各站源的子目录，已有下载继续使用原位置。'),
-                    onChanged: _busy
-                        ? null
-                        : (value) => setState(() => _folders = value),
-                  ),
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),

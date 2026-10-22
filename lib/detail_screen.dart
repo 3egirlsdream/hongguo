@@ -10,11 +10,13 @@ import 'core_bridge.dart';
 import 'download_picker.dart';
 import 'downloads_screen.dart';
 import 'local_store.dart';
+import 'library_account_actions.dart';
 import 'models.dart';
 import 'player_screen.dart';
 import 'remote_widgets.dart';
 import 'widgets.dart';
-import 'sources_screen.dart';
+import 'catalog_management_screen.dart';
+import 'hongguo_account_screen.dart';
 import 'episode_browser.dart';
 import 'follow_state.dart';
 import 'hongguo_series.dart';
@@ -62,12 +64,17 @@ class _DetailScreenState extends State<DetailScreen> {
     super.initState();
     _profileEpoch = widget.store.profileEpoch;
     widget.store.addListener(_onStoreChanged);
+    widget.repository.accountFavorites.addListener(_onStoreChanged);
     _load();
   }
 
   @override
   void didUpdateWidget(covariant DetailScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != widget.repository) {
+      oldWidget.repository.accountFavorites.removeListener(_onStoreChanged);
+      widget.repository.accountFavorites.addListener(_onStoreChanged);
+    }
     if (oldWidget.store != widget.store) {
       oldWidget.store.removeListener(_onStoreChanged);
       widget.store.addListener(_onStoreChanged);
@@ -77,6 +84,7 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void dispose() {
     _detailScroll.dispose();
+    widget.repository.accountFavorites.removeListener(_onStoreChanged);
     widget.store.removeListener(_onStoreChanged);
     _generation++;
     super.dispose();
@@ -222,9 +230,8 @@ class _DetailScreenState extends State<DetailScreen> {
       );
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(error.toString())));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(error.toString())));
       }
     }
   }
@@ -238,13 +245,12 @@ class _DetailScreenState extends State<DetailScreen> {
         !widget.store.allowsSource(detail.drama.source)) {
       return;
     }
-    if (detail.episodes[index].vip &&
-        detail.drama.source != SourceSite.dsd.id) {
+    if (detail.episodes[index].vip) {
       final accepted = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('这是一集 VIP 内容'),
-          content: const Text('站源可能只提供试看或限制播放。'),
+          content: const Text('部分内容可能仅提供试看或限制播放。'),
           actions: [
             TextButton(
               autofocus: AppLayout.isTelevision(context),
@@ -441,9 +447,8 @@ class _DetailScreenState extends State<DetailScreen> {
                                     ),
                                     mainAxisExtent: math.max(
                                       54,
-                                      MediaQuery.textScalerOf(
-                                            context,
-                                          ).scale(20) +
+                                      MediaQuery.textScalerOf(context)
+                                              .scale(20) +
                                           30,
                                     ),
                                     crossAxisSpacing: 10,
@@ -576,9 +581,8 @@ class _DetailScreenState extends State<DetailScreen> {
                     '选集 · ${episodes.length} 集$current',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
                 Text(expanded ? '收起' : '展开'),
@@ -642,7 +646,6 @@ class _DetailScreenState extends State<DetailScreen> {
   Widget _overview(Drama drama) {
     final colors = Theme.of(context).colorScheme;
     final meta = [
-      SourceSite.byId(drama.source).name,
       if (drama.episodes > 0) '共 ${drama.episodes} 集',
       if (drama.releaseStatus.isNotEmpty && drama.releaseStatus != 'unknown')
         drama.releaseLabel,
@@ -665,9 +668,8 @@ class _DetailScreenState extends State<DetailScreen> {
                 children: [
                   Text(
                     drama.title,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: Theme.of(context).textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(height: 10),
                   Text(
@@ -685,18 +687,6 @@ class _DetailScreenState extends State<DetailScreen> {
                         style: TextStyle(color: colors.onSurfaceVariant),
                       ),
                     ),
-                  if (drama.source == 'huangdou')
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        drama.vipStatus == null
-                            ? 'VIP 状态待补齐'
-                            : drama.vip
-                            ? 'VIP 内容'
-                            : '免费内容',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ),
                 ],
               ),
             ),
@@ -704,6 +694,17 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
         const SizedBox(height: 12),
         _followingControls(drama),
+        if (widget.repository.supportsOfficialAccount)
+          TextButton.icon(
+            onPressed: () => openHongguoAccount(
+              context,
+              widget.repository,
+              widget.store,
+              drama: drama,
+            ),
+            icon: const Icon(Icons.event_available),
+            label: const Text('预约'),
+          ),
         if (drama.onlineDate.isNotEmpty ||
             drama.heat.isNotEmpty ||
             drama.views.isNotEmpty)
@@ -835,6 +836,8 @@ class _DetailScreenState extends State<DetailScreen> {
 
   Widget _followingControls(Drama drama) {
     final state = widget.store.following(drama.id);
+    final followed =
+        state != null || widget.repository.isAccountFavorite(drama.id);
     return Wrap(
       spacing: 8,
       runSpacing: 4,
@@ -848,7 +851,12 @@ class _DetailScreenState extends State<DetailScreen> {
             if (value == 'remove') {
               await saveUserChange(
                 context,
-                () => widget.store.toggleFavorite(drama),
+                () => updateLibraryFollowing(
+                  context,
+                  widget.repository,
+                  widget.store,
+                  drama,
+                ),
               );
             } else {
               final status = FollowStatus.values.firstWhere(
@@ -856,7 +864,13 @@ class _DetailScreenState extends State<DetailScreen> {
               );
               await saveUserChange(
                 context,
-                () => widget.store.setFollowStatus(drama, status),
+                () => updateLibraryFollowing(
+                  context,
+                  widget.repository,
+                  widget.store,
+                  drama,
+                  status: status,
+                ),
               );
             }
           },
@@ -867,14 +881,14 @@ class _DetailScreenState extends State<DetailScreen> {
                 checked: state?.status == status,
                 child: Text(status.label),
               ),
-            if (state != null)
+            if (followed)
               const PopupMenuItem(value: 'remove', child: Text('取消追剧')),
           ],
           child: Container(
             constraints: const BoxConstraints(minHeight: 48),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: state == null
+              color: !followed
                   ? Theme.of(context).colorScheme.surfaceContainerHighest
                   : Theme.of(context).colorScheme.secondaryContainer,
               borderRadius: BorderRadius.circular(12),
@@ -885,13 +899,13 @@ class _DetailScreenState extends State<DetailScreen> {
                 Icon(
                   state?.status == FollowStatus.watched
                       ? Icons.check_circle_outline
-                      : state == null
+                      : !followed
                       ? Icons.bookmark_add_outlined
                       : Icons.bookmark_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
-                Text(state?.label ?? '加入追剧'),
+                Text(state?.label ?? (followed ? '已追剧' : '加入追剧')),
                 const SizedBox(width: 4),
                 const Icon(Icons.expand_more_rounded, size: 18),
               ],

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -12,7 +13,6 @@ import 'models.dart';
 import 'danmaku_models.dart';
 import 'background_downloads.dart';
 import 'local_store.dart';
-import 'app_build.dart';
 import 'source_status.dart';
 import 'ranking_models.dart';
 import 'cover_decoder.dart';
@@ -67,6 +67,16 @@ class AppFailure implements Exception {
 }
 
 abstract class AppRepository {
+  final accountFavorites = ValueNotifier<Set<String>>({});
+  bool get accountFavoritesLoaded => true;
+  bool isAccountFavorite(String id) => accountFavorites.value.contains(id);
+
+  bool get supportsOfficialAccount => false;
+  Future<Map<String, dynamic>> hongguoAccount(
+    String command, [
+    Map<String, dynamic> input = const {},
+  ]) async => throw AppFailure('当前环境不支持账号与同步');
+
   Future<Map<String, dynamic>> lan(
     String command,
     Map<String, dynamic> payload,
@@ -103,7 +113,7 @@ abstract class AppRepository {
     String genre, {
     bool more = false,
     bool force = false,
-  }) async => throw AppFailure('当前环境不支持红果推荐');
+  }) async => throw AppFailure('当前环境不支持为你推荐');
   Future<List<RankingBoard>> rankingBoards() async => const [];
   Future<RankingPage> rankings(
     String board, {
@@ -121,9 +131,9 @@ abstract class AppRepository {
     String source,
     String operation, {
     Drama? drama,
-  }) async => throw AppFailure('当前环境不支持站源管理');
+  }) async => throw AppFailure('当前环境不支持内容管理');
   Future<SourceStatus> cancelSourceJob(String source) async =>
-      throw AppFailure('当前环境不支持站源管理');
+      throw AppFailure('当前环境不支持内容管理');
   Future<List<String>> suggestions(String query) async => const [];
   Future<Map<String, dynamic>> storage() async => {};
   Future<String> downloadDirectory() async =>
@@ -194,6 +204,103 @@ class NativeRepository extends AppRepository {
   final _readOwner = DateTime.now().microsecondsSinceEpoch.toString();
   int _readSequence = 0;
   final _activeReads = <String, int>{};
+
+  Timer? _officialTimer;
+  bool _officialSyncing = false;
+  int _accountEpoch = -1;
+  String _accountUID = '';
+  bool _favoritesLoaded = false;
+  @override
+  bool get accountFavoritesLoaded =>
+      _accountEpoch == access?.profileEpoch && _favoritesLoaded;
+  @override
+  bool isAccountFavorite(String id) =>
+      _accountEpoch == access?.profileEpoch &&
+      !(access?.locked ?? true) &&
+      accountFavorites.value.contains(id);
+  @override
+  bool get supportsOfficialAccount => true;
+  @override
+  Future<Map<String, dynamic>> hongguoAccount(
+    String command, [
+    Map<String, dynamic> input = const {},
+  ]) async {
+    _authorize('hongguo');
+    final result = await _call({
+      'action': 'hongguoAccount',
+      'command': command,
+      'account': input,
+    });
+    if (result.containsKey('loggedIn')) {
+      final uid = (result['profile'] as Map?)?['uid'] as String? ?? '';
+      if (_accountEpoch != access?.profileEpoch || _accountUID != uid) {
+        _accountEpoch = access?.profileEpoch ?? -1;
+        _accountUID = uid;
+        _favoritesLoaded = false;
+        accountFavorites.value = {};
+      }
+    }
+    if (_accountEpoch == access?.profileEpoch && input['uid'] == _accountUID) {
+      if (command == 'favorites') {
+        _favoritesLoaded = true;
+        final ids = {
+          for (final row in result['items'] as List? ?? [])
+            (row['drama'] as Map)['id'] as String,
+        };
+        if (!setEquals(ids, accountFavorites.value))
+          accountFavorites.value = ids;
+      } else if (command == 'favorite' && result['confirmed'] == true) {
+        final ids = Set<String>.of(accountFavorites.value);
+        final id = 'hongguo:${input['id']}';
+        if (result['followed'] == true) {
+          ids.add(id);
+        } else {
+          ids.remove(id);
+        }
+        accountFavorites.value = ids;
+      }
+    }
+    return result;
+  }
+
+  void startOfficialSync() {
+    _officialTimer?.cancel();
+    _officialTimer = Timer.periodic(
+      const Duration(seconds: 90),
+      (_) => _syncOfficialHistory(),
+    );
+    unawaited(_syncOfficialHistory());
+  }
+
+  void stopOfficialSync() {
+    _officialTimer?.cancel();
+    _officialTimer = null;
+  }
+
+  Future<void> _syncOfficialHistory() async {
+    if (_officialSyncing ||
+        access == null ||
+        access!.locked ||
+        !access!.allowsSource('hongguo')) {
+      return;
+    }
+    _officialSyncing = true;
+    final epoch = access!.profileEpoch;
+    try {
+      final status = await hongguoAccount('status');
+      if (status['loggedIn'] == true &&
+          status['busy'] != true &&
+          epoch == access?.profileEpoch) {
+        final uid = (status['profile'] as Map)['uid'];
+        await hongguoAccount('sync', {'uid': uid});
+        if (epoch == access?.profileEpoch)
+          await hongguoAccount('favorites', {'uid': uid});
+      }
+    } catch (_) {
+    } finally {
+      _officialSyncing = false;
+    }
+  }
 
   @override
   Future<Map<String, dynamic>> lan(
@@ -354,9 +461,7 @@ class NativeRepository extends AppRepository {
 
   @override
   Future<Drama?> supplementMetadata(Drama drama) async {
-    if (!(drama.source == 'hongguo' && drama.onlineDate.isEmpty ||
-        drama.source == 'huangdou' &&
-            (drama.heat.isEmpty || drama.vipStatus == null))) {
+    if (!(drama.source == 'hongguo' && drama.onlineDate.isEmpty)) {
       return null;
     }
     final result = await _read('metadata', {
@@ -411,7 +516,7 @@ class NativeRepository extends AppRepository {
     Drama? drama,
   }) async {
     _authorize(source);
-    if (drama != null && drama.source != source) throw AppFailure('站源与剧集不匹配');
+    if (drama != null && drama.source != source) throw AppFailure('内容标识与剧集不匹配');
     final epoch = access?.profileEpoch;
     await BackgroundDownloads.ensureStarted();
     if (epoch != access?.profileEpoch) throw AppFailure('用户已切换，请重新操作');
@@ -433,7 +538,7 @@ class NativeRepository extends AppRepository {
 
   void _authorize(String source, {bool download = false}) {
     if (!SourceSite.isAvailable(source)) {
-      throw AppFailure('当前版本不包含此站源');
+      throw AppFailure('当前版本不支持此内容');
     }
     if (access == null) return;
     if (access!.locked ||
@@ -501,6 +606,10 @@ class NativeRepository extends AppRepository {
   Future<Map<String, dynamic>> _call(Map<String, dynamic> input) async {
     try {
       final action = input['action'] as String;
+      if (action == 'hongguoAccount') {
+        _authorize('hongguo');
+        input['profile'] = access?.profile.id ?? '';
+      }
       final unrestricted =
           {
             'initialize',
@@ -572,7 +681,11 @@ class NativeRepository extends AppRepository {
       final body = jsonEncode(input);
       final encoded = await Isolate.run(() => _nativeRequest(body)).timeout(
         Duration(
-          seconds: action == 'moveDownloads'
+          seconds:
+              action == 'hongguoAccount' &&
+                  {'sync', 'favorites', 'favorite'}.contains(input['command'])
+              ? 195
+              : action == 'moveDownloads'
               ? 620
               : action == 'danmaku'
               ? 15
@@ -622,7 +735,7 @@ class NativeRepository extends AppRepository {
           }).catchError((Object _) => <String, dynamic>{}),
         );
       }
-      throw AppFailure('站源响应超时，请重试');
+      throw AppFailure('内容响应超时，请重试');
     } catch (_) {
       throw AppFailure('本地核心加载失败，请使用完整安装包重新安装');
     }
@@ -635,8 +748,10 @@ class NativeRepository extends AppRepository {
       'action': 'initialize',
       'directory': directory.path,
     });
-    if (build['allSources'] != allSourcesEnabled) {
-      throw AppFailure('应用与原生核心的站源版本不一致，请使用完整安装包重新安装');
+    if (build['sources'] is! List ||
+        (build['sources'] as List).length != 1 ||
+        (build['sources'] as List).single != SourceSite.hongguo.id) {
+      throw AppFailure('应用与原生核心的内容配置不一致，请使用完整安装包重新安装');
     }
     if (!background) await BackgroundDownloads.prepare();
     if (!background) {

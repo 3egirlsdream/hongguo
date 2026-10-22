@@ -15,30 +15,28 @@ String sourceTimestamp(DateTime? value) {
   return '${local.month}/${local.day} ${two(local.hour)}:${two(local.minute)}';
 }
 
-class SourcesScreen extends StatefulWidget {
-  const SourcesScreen({
+class CatalogManagementScreen extends StatefulWidget {
+  const CatalogManagementScreen({
     super.key,
     required this.repository,
     required this.store,
-    this.initialSource,
     this.drama,
   });
 
   final AppRepository repository;
   final LocalStore store;
-  final String? initialSource;
   final Drama? drama;
 
   @override
-  State<SourcesScreen> createState() => _SourcesScreenState();
+  State<CatalogManagementScreen> createState() =>
+      _CatalogManagementScreenState();
 }
 
-class _SourcesScreenState extends State<SourcesScreen> {
-  final _statuses = <String, SourceStatus>{};
-  final _errors = <String, String>{};
-  final _pending = <String>{};
-  final _revisions = <String, int>{};
-  final _expandedHealth = <String>{};
+class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
+  SourceStatus? _status;
+  String? _error;
+  bool _pending = false, _healthExpanded = false;
+  int _revision = 0;
   Timer? _timer;
   bool _polling = false;
   int _ticks = 0;
@@ -49,12 +47,10 @@ class _SourcesScreenState extends State<SourcesScreen> {
     unawaited(_refresh());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _ticks++;
-      if (_statuses.values.any((status) => status.retryAt != null)) {
+      if (_status?.retryAt != null) {
         setState(() {});
       }
-      if (_ticks % 2 == 0 &&
-          (_statuses.values.any((status) => status.running) ||
-              _ticks % 10 == 0)) {
+      if (_ticks % 2 == 0 && (_status?.running == true || _ticks % 10 == 0)) {
         unawaited(_refresh());
       }
     });
@@ -67,72 +63,61 @@ class _SourcesScreenState extends State<SourcesScreen> {
   }
 
   Future<void> _refresh() async {
-    if (_polling) return;
+    if (_polling || widget.store.locked) return;
     _polling = true;
-    final epoch = widget.store.profileEpoch;
+    final epoch = widget.store.profileEpoch, revision = _revision;
     try {
-      await Future.wait([
-        for (final source in widget.store.sources)
-          (() async {
-            final revision = _revisions[source.id] ?? 0;
-            try {
-              final status = await widget.repository.sourceStatus(source.id);
-              if (!mounted ||
-                  epoch != widget.store.profileEpoch ||
-                  revision != (_revisions[source.id] ?? 0)) {
-                return;
-              }
-              setState(() {
-                _statuses[source.id] = status;
-                _errors.remove(source.id);
-              });
-            } catch (error) {
-              if (mounted &&
-                  epoch == widget.store.profileEpoch &&
-                  revision == (_revisions[source.id] ?? 0)) {
-                setState(() => _errors[source.id] = error.toString());
-              }
-            }
-          })(),
-      ]);
+      final status = await widget.repository.sourceStatus('hongguo');
+      if (mounted &&
+          epoch == widget.store.profileEpoch &&
+          revision == _revision) {
+        setState(() {
+          _status = status;
+          _error = null;
+        });
+      }
+    } catch (error) {
+      if (mounted &&
+          epoch == widget.store.profileEpoch &&
+          revision == _revision) {
+        setState(() => _error = error.toString());
+      }
     } finally {
       _polling = false;
     }
   }
 
-  Future<void> _run(SourceSite source, String operation) async {
-    if (_pending.contains(source.id)) return;
+  Future<void> _run(String operation) async {
+    if (_pending || widget.store.locked) return;
     final epoch = widget.store.profileEpoch;
     setState(() {
-      _pending.add(source.id);
-      _errors.remove(source.id);
-      _revisions[source.id] = (_revisions[source.id] ?? 0) + 1;
-      if (operation == 'check' || operation == 'checkCatalog') {
-        _expandedHealth.add(source.id);
-      }
+      _pending = true;
+      _error = null;
+      _revision++;
+      if (operation.startsWith('check')) _healthExpanded = true;
     });
     try {
       final status = operation == 'cancel'
-          ? await widget.repository.cancelSourceJob(source.id)
+          ? await widget.repository.cancelSourceJob('hongguo')
           : await widget.repository.startSourceJob(
-              source.id,
+              'hongguo',
               operation,
-              drama: source.id == widget.drama?.source ? widget.drama : null,
+              drama: widget.drama,
             );
       if (mounted && epoch == widget.store.profileEpoch) {
-        setState(() => _statuses[source.id] = status);
+        setState(() => _status = status);
       }
     } catch (error) {
       if (mounted && epoch == widget.store.profileEpoch) {
-        setState(() => _errors[source.id] = error.toString());
+        setState(() => _error = error.toString());
       }
     } finally {
-      if (mounted) setState(() => _pending.remove(source.id));
+      if (mounted) setState(() => _pending = false);
     }
   }
 
-  Future<void> _copy(SourceSite source, SourceStatus status) async {
-    final text = StringBuffer('${source.name}\n');
+  Future<void> _copy(SourceStatus status) async {
+    final text = StringBuffer('内容连接诊断\n');
     text.writeln(
       '缓存 ${status.count} 部，更新 ${sourceTimestamp(status.updatedAt)}',
     );
@@ -152,9 +137,8 @@ class _SourcesScreenState extends State<SourcesScreen> {
     if (status.storageError.isNotEmpty) text.writeln(status.storageError);
     await Clipboard.setData(ClipboardData(text: text.toString()));
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('诊断信息已复制')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('诊断信息已复制')));
     }
   }
 
@@ -162,19 +146,13 @@ class _SourcesScreenState extends State<SourcesScreen> {
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.store,
     builder: (context, _) {
-      final sources = widget.store.sources.toList()
-        ..sort((a, b) {
-          final aFirst = a.id == widget.initialSource ? 0 : 1;
-          final bFirst = b.id == widget.initialSource ? 0 : 1;
-          return aFirst.compareTo(bFirst);
-        });
       final viewPaddingBottom = MediaQuery.viewPaddingOf(context).bottom;
       final paddingBottom = MediaQuery.paddingOf(context).bottom;
       final bottomInset = viewPaddingBottom > paddingBottom
           ? viewPaddingBottom
           : paddingBottom;
       return Scaffold(
-        appBar: AppBar(title: const Text('站源管理')),
+        appBar: AppBar(title: const Text('内容管理')),
         body: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 960),
@@ -186,37 +164,10 @@ class _SourcesScreenState extends State<SourcesScreen> {
                   const Padding(
                     padding: EdgeInsets.only(bottom: 16),
                     child: Text(
-                      '各站源可分别更新和检测。更新会查找新剧、继续加载一页历史内容，并分批补齐资料；离开此页后任务继续。',
+                      '可更新内容缓存并检测连接。更新会查找新剧、继续加载一页历史内容，并分批补齐资料；离开此页后任务继续。',
                     ),
                   ),
-                  if (sources.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('当前用户没有可用站源'),
-                    ),
-                  for (final group in SourceGroup.fromSources(sources))
-                    if (group.id == 'huangguo')
-                      Card(
-                        clipBehavior: Clip.antiAlias,
-                        child: ExpansionTile(
-                          key: const PageStorageKey('source-group-huangguo'),
-                          initiallyExpanded: group.sources.any(
-                            (source) => source.id == widget.initialSource,
-                          ),
-                          leading: const Icon(Icons.hub_outlined),
-                          title: const Text('黄果'),
-                          subtitle: Text(
-                            '${group.sources.length} 个入口 · ${group.sources.fold<int>(0, (count, source) => count + (_statuses[source.id]?.count ?? 0))} 部',
-                          ),
-                          childrenPadding: const EdgeInsets.all(8),
-                          children: [
-                            for (final source in group.sources)
-                              _sourceCard(source),
-                          ],
-                        ),
-                      )
-                    else
-                      for (final source in group.sources) _sourceCard(source),
+                  _sourceCard(),
                 ],
               ),
             ),
@@ -226,16 +177,17 @@ class _SourcesScreenState extends State<SourcesScreen> {
     },
   );
 
-  Widget _sourceCard(SourceSite source) {
-    final status = _statuses[source.id];
-    final pending = _pending.contains(source.id);
+  Widget _sourceCard() {
+    const source = SourceSite.hongguo;
+    final status = _status;
+    final pending = _pending;
     final busy = pending || status?.running == true;
     final seconds = status?.retrySeconds ?? 0;
     final enabled =
         !busy && seconds == 0 && widget.repository.supportsSourceManagement;
-    final error = _errors[source.id] ?? status?.error ?? '';
+    final error = _error ?? status?.error ?? '';
     final health = status?.health;
-    final healthExpanded = _expandedHealth.contains(source.id);
+    final healthExpanded = _healthExpanded;
     final colors = Theme.of(context).colorScheme;
     return Card(
       key: ValueKey('source-${source.id}'),
@@ -251,7 +203,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    source.name,
+                    '内容库',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ),
@@ -272,25 +224,25 @@ class _SourcesScreenState extends State<SourcesScreen> {
               children: [
                 FilledButton.icon(
                   key: ValueKey('update-${source.id}'),
-                  onPressed: enabled ? () => _run(source, 'update') : null,
+                  onPressed: enabled ? () => _run('update') : null,
                   icon: const Icon(Icons.sync_rounded),
                   label: const Text('更新'),
                 ),
                 OutlinedButton.icon(
                   key: ValueKey('check-${source.id}'),
-                  onPressed: enabled ? () => _run(source, 'check') : null,
+                  onPressed: enabled ? () => _run('check') : null,
                   icon: const Icon(Icons.network_check),
                   label: const Text('检测连接与播放'),
                 ),
                 if (status?.running == true)
                   TextButton(
-                    onPressed: pending ? null : () => _run(source, 'cancel'),
+                    onPressed: pending ? null : () => _run('cancel'),
                     child: const Text('停止'),
                   ),
                 PopupMenuButton<String>(
-                  tooltip: '${source.name}更多操作',
+                  tooltip: '更多操作',
                   enabled: enabled,
-                  onSelected: (operation) => _run(source, operation),
+                  onSelected: (operation) => _run(operation),
                   itemBuilder: (_) => [
                     PopupMenuItem(
                       value: 'more',
@@ -298,12 +250,6 @@ class _SourcesScreenState extends State<SourcesScreen> {
                       child: const Text('继续加载一页'),
                     ),
                     const PopupMenuItem(value: 'metadata', child: Text('补齐资料')),
-                    if (source.id == 'huangdou')
-                      PopupMenuItem(
-                        value: 'vipMetadata',
-                        enabled: (status?.unknownVip ?? 0) > 0,
-                        child: Text('补齐 VIP 资料（${status?.unknownVip ?? 0} 部）'),
-                      ),
                     const PopupMenuItem(
                       value: 'checkCatalog',
                       child: Text('仅检测目录'),
@@ -359,7 +305,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                       key: ValueKey('save-${source.id}'),
                       onPressed:
                           !busy && widget.repository.supportsSourceManagement
-                          ? () => _run(source, 'retrySave')
+                          ? () => _run('retrySave')
                           : null,
                       icon: const Icon(Icons.save_outlined),
                       label: const Text('重试保存'),
@@ -380,9 +326,9 @@ class _SourcesScreenState extends State<SourcesScreen> {
                           key: ValueKey('health-toggle-${source.id}'),
                           onPressed: () => setState(() {
                             if (healthExpanded) {
-                              _expandedHealth.remove(source.id);
+                              _healthExpanded = false;
                             } else {
-                              _expandedHealth.add(source.id);
+                              _healthExpanded = true;
                             }
                           }),
                           style: TextButton.styleFrom(
@@ -401,9 +347,9 @@ class _SourcesScreenState extends State<SourcesScreen> {
                                     Text(health.label),
                                     Text(
                                       sourceTimestamp(health.checkedAt),
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
                                     ),
                                   ],
                                 ),
@@ -422,7 +368,7 @@ class _SourcesScreenState extends State<SourcesScreen> {
                   ),
                   IconButton(
                     tooltip: '复制诊断信息',
-                    onPressed: () => _copy(source, status!),
+                    onPressed: () => _copy(status!),
                     icon: const Icon(Icons.copy_rounded),
                   ),
                 ],
@@ -489,15 +435,14 @@ class SourceDiagnosticsButton extends StatelessWidget {
     onPressed: () => Navigator.push<void>(
       context,
       MaterialPageRoute(
-        builder: (_) => SourcesScreen(
+        builder: (_) => CatalogManagementScreen(
           repository: repository,
           store: store,
-          initialSource: drama.source,
           drama: drama,
         ),
       ),
     ),
     icon: const Icon(Icons.network_check),
-    label: const Text('站源诊断'),
+    label: const Text('连接诊断'),
   );
 }

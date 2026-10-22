@@ -10,153 +10,113 @@ import 'source_status.dart';
 class LibraryUpdater extends ChangeNotifier {
   LibraryUpdater(this.repository, this.store, {this.onCatalogChanged})
     : _epoch = store.profileEpoch;
-
   final AppRepository repository;
   final LocalStore store;
   final ValueChanged<String>? onCatalogChanged;
   final int _epoch;
-  final _statuses = <String, SourceStatus>{};
-  final _errors = <String, String>{};
-  final _pending = <String>{};
-  final _stopRequested = <String>{};
-  final _revisions = <String, int>{};
-  final _delivered = <String, String>{};
+  static const _source = 'hongguo';
+  SourceStatus? _status;
+  String _error = '', _delivered = '';
+  bool _pending = false,
+      _stopRequested = false,
+      _polling = false,
+      _disposed = false;
+  int _revision = 0, _ticks = 0;
   Timer? _timer;
-  bool _polling = false;
-  bool _disposed = false;
-  int _ticks = 0;
-
   bool get _valid =>
       !_disposed && !store.locked && _epoch == store.profileEpoch;
-  SourceStatus? status(String source) => _statuses[source];
-  String error(String source) => _errors[source] ?? '';
+  SourceStatus? status(String source) => source == _source ? _status : null;
+  String error(String source) => source == _source ? _error : '';
   bool busy(String source) =>
-      _pending.contains(source) || _statuses[source]?.running == true;
-
-  void startWatching() {
-    if (_timer != null || !repository.supportsSourceManagement || !_valid) {
-      return;
-    }
-    unawaited(refresh());
-    _timer = Timer.periodic(const Duration(seconds: 2), (_) {
-      _ticks++;
-      if (_statuses.values.any((status) => status.running) || _ticks % 5 == 0) {
-        unawaited(refresh());
-      }
-    });
-  }
-
+      source == _source && (_pending || _status?.running == true);
   void _notify() {
     if (_valid) notifyListeners();
   }
 
+  void startWatching() {
+    if (_timer != null || !repository.supportsSourceManagement || !_valid)
+      return;
+    unawaited(refresh());
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) {
+      _ticks++;
+      if (_status?.running == true || _ticks % 5 == 0) unawaited(refresh());
+    });
+  }
+
   void _accept(SourceStatus status, {bool submitted = false}) {
-    if (!_valid || !store.allowsSource(status.source)) return;
-    _statuses[status.source] = status;
-    _errors.remove(status.source);
+    if (!_valid || status.source != _source) return;
+    _status = status;
+    _error = '';
     final revision =
-        '${status.operation}|${status.startedAt}|${status.finishedAt}|'
-        '${status.updatedAt}|${status.count}|${status.storageError}';
+        '${status.operation}|${status.startedAt}|${status.finishedAt}|${status.updatedAt}|${status.count}|${status.storageError}';
     if (!status.running &&
         (status.finishedAt != null || submitted) &&
         {
           'update',
           'more',
           'metadata',
-          'vipMetadata',
           'retrySave',
         }.contains(status.operation) &&
-        _delivered[status.source] != revision) {
-      _delivered[status.source] = revision;
-      onCatalogChanged?.call(status.source);
+        _delivered != revision) {
+      _delivered = revision;
+      onCatalogChanged?.call(_source);
     }
   }
 
   Future<void> refresh() async {
     if (_polling || !_valid || !repository.supportsSourceManagement) return;
     _polling = true;
+    final revision = _revision;
     try {
-      for (final source in store.sources) {
-        if (!_valid) return;
-        final revision = _revisions[source.id] ?? 0;
-        try {
-          final status = await repository.sourceStatus(source.id);
-          if (_valid && revision == (_revisions[source.id] ?? 0)) {
-            _accept(status);
-          }
-        } catch (error) {
-          if (_valid && revision == (_revisions[source.id] ?? 0)) {
-            _errors[source.id] = error.toString();
-          }
-        }
-      }
+      final status = await repository.sourceStatus(_source);
+      if (_valid && revision == _revision) _accept(status);
+    } catch (error) {
+      if (_valid && revision == _revision) _error = error.toString();
     } finally {
       _polling = false;
       _notify();
     }
   }
 
-  Future<void> update(Iterable<SourceSite> sources) async {
-    if (!_valid || !repository.supportsSourceManagement) return;
-    final selected = sources
-        .map((source) => source.id)
-        .toSet()
-        .where((source) => store.allowsSource(source) && !busy(source))
-        .toList();
-    for (final source in selected) {
-      _stopRequested.remove(source);
-      _pending.add(source);
-      _errors.remove(source);
-      _revisions[source] = (_revisions[source] ?? 0) + 1;
-    }
+  Future<void> update([Iterable<SourceSite>? sources]) async {
+    if (!_valid ||
+        !repository.supportsSourceManagement ||
+        busy(_source) ||
+        sources != null && !sources.any((s) => s.id == _source))
+      return;
+    _stopRequested = false;
+    _pending = true;
+    _error = '';
+    _revision++;
     _notify();
     try {
-      for (final source in selected) {
-        if (!_valid || !store.allowsSource(source)) break;
-        try {
-          if (_stopRequested.contains(source)) continue;
-          final status = await repository.startSourceJob(source, 'update');
-          _accept(status, submitted: true);
-          if (_valid && _stopRequested.contains(source) && status.running) {
-            _accept(await repository.cancelSourceJob(source));
-          }
-        } catch (error) {
-          if (_valid) _errors[source] = error.toString();
-        } finally {
-          _pending.remove(source);
-          _notify();
-        }
-      }
+      final status = await repository.startSourceJob(_source, 'update');
+      _accept(status, submitted: true);
+      if (_valid && _stopRequested && status.running)
+        _accept(await repository.cancelSourceJob(_source));
+    } catch (error) {
+      if (_valid) _error = error.toString();
     } finally {
-      _pending.removeAll(selected);
+      _pending = false;
       _notify();
     }
   }
 
-  Future<void> stop(Iterable<SourceSite> sources) async {
-    final selected = sources.toList();
-    if (!_valid) return;
-    for (final source in selected) {
-      if (store.allowsSource(source.id)) _stopRequested.add(source.id);
-    }
-    for (final source in selected) {
-      if (!_valid) return;
-      if (!store.allowsSource(source.id) ||
-          _pending.contains(source.id) ||
-          _statuses[source.id]?.running != true) {
-        continue;
-      }
-      _pending.add(source.id);
-      _revisions[source.id] = (_revisions[source.id] ?? 0) + 1;
+  Future<void> stop([Iterable<SourceSite>? sources]) async {
+    if (!_valid || sources != null && !sources.any((s) => s.id == _source))
+      return;
+    _stopRequested = true;
+    if (_pending || _status?.running != true) return;
+    _pending = true;
+    _revision++;
+    _notify();
+    try {
+      _accept(await repository.cancelSourceJob(_source));
+    } catch (error) {
+      if (_valid) _error = error.toString();
+    } finally {
+      _pending = false;
       _notify();
-      try {
-        _accept(await repository.cancelSourceJob(source.id));
-      } catch (error) {
-        if (_valid) _errors[source.id] = error.toString();
-      } finally {
-        _pending.remove(source.id);
-        _notify();
-      }
     }
   }
 

@@ -9,7 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from app_build import BuildVariant, add_variant_argument
+from app_build import BuildVariant
 
 root = Path(__file__).resolve().parents[1]
 
@@ -68,13 +68,12 @@ def build_core(simulator=False, variant=BuildVariant()):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='构建红果鉴 / 真果鉴 iOS 核心和应用')
+    parser = argparse.ArgumentParser(description='构建红果鉴 iOS 核心和应用')
     parser.add_argument('--core-only', action='store_true')
     parser.add_argument('--simulator', action='store_true', help='额外生成模拟器核心；不启动模拟器')
     parser.add_argument('--export-options', type=Path, help='使用自己的 Xcode 签名配置导出 IPA')
-    add_variant_argument(parser)
     options = parser.parse_args()
-    variant = BuildVariant(options.all_sources)
+    variant = BuildVariant()
     build_core(options.simulator, variant)
     if options.core_only:
         return

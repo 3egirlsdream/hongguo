@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'follow_state.dart';
+import 'core_bridge.dart';
+import 'library_account_actions.dart';
 import 'local_store.dart';
 import 'models.dart';
 import 'widgets.dart';
@@ -9,17 +11,25 @@ Future<void> showDramaActions(
   BuildContext context, {
   required Drama drama,
   required LocalStore store,
+  required AppRepository repository,
   VoidCallback? onContinue,
   VoidCallback? onDownload,
   VoidCallback? onSelect,
   bool history = false,
+  bool remoteFollowed = false,
+  VoidCallback? onToggleFollow,
 }) async {
   final epoch = store.profileEpoch;
   final following = store.following(drama.id);
+  remoteFollowed = remoteFollowed || repository.isAccountFavorite(drama.id);
   final choices = <(String, String, IconData)>[
     if (onContinue != null && store.watched(drama.id) != null)
       ('continue', '继续观看', Icons.play_arrow_rounded),
-    ('favorite', following == null ? '加入追剧' : '取消追剧', Icons.bookmark_outline),
+    (
+      'favorite',
+      following == null && !remoteFollowed ? '加入追剧' : '取消追剧',
+      Icons.bookmark_outline,
+    ),
     for (final status in FollowStatus.values)
       (
         'status:${status.name}',
@@ -37,7 +47,7 @@ Future<void> showDramaActions(
     if (onSelect != null && store.canDownload)
       ('select', '多选下载', Icons.checklist_rounded),
     if (history && store.watched(drama.id) != null)
-      ('removeHistory', '删除这条观看记录', Icons.history_toggle_off),
+      ('removeHistory', '删除本机观看记录', Icons.history_toggle_off),
   ];
   final choice = await showDialog<String>(
     context: context,
@@ -77,14 +87,30 @@ Future<void> showDramaActions(
     final status = FollowStatus.values.firstWhere(
       (value) => choice == 'status:${value.name}',
     );
-    await saveUserChange(context, () => store.setFollowStatus(drama, status));
+    await saveUserChange(
+      context,
+      () => updateLibraryFollowing(
+        context,
+        repository,
+        store,
+        drama,
+        status: status,
+      ),
+    );
     return;
   }
   switch (choice) {
     case 'continue':
       onContinue?.call();
     case 'favorite':
-      await saveUserChange(context, () => store.toggleFavorite(drama));
+      if (onToggleFollow != null) {
+        onToggleFollow();
+      } else {
+        await saveUserChange(
+          context,
+          () => updateLibraryFollowing(context, repository, store, drama),
+        );
+      }
     case 'read':
       await saveUserChange(context, () => store.markUpdatesRead(drama.id));
     case 'download':

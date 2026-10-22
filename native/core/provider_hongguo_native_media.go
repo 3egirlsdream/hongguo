@@ -25,41 +25,11 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		return providerMedia{}, err
 	}
 	data := nestedMap(result, "data")
-<<<<<<< HEAD
 	model, err := hongguoVideoModel(data)
 	if err != nil {
 		return providerMedia{}, err
-=======
-	model, _ := data["video_model"].(map[string]any)
-	if encoded, ok := data["video_model"].(string); ok && encoded != "" {
-		if decoded, err := decodeHongguoBase64(encoded); err == nil && len(decoded) > 0 {
-			encoded = string(decoded)
-		}
-		decoder := json.NewDecoder(strings.NewReader(encoded))
-		decoder.UseNumber()
-		if err := decoder.Decode(&model); err != nil {
-			return providerMedia{}, errors.New("红果 App 播放信息格式异常")
-		}
->>>>>>> 5564a4219aedc2e33b25814eb5a5c0af1ebadb7a
 	}
-	if len(model) == 0 {
-		if rows := anyList(data["video_list"]); len(rows) > 0 {
-			model = map[string]any{
-				"video_list":     data["video_list"],
-				"video_duration": data["video_duration"],
-				"duration":       data["duration"],
-			}
-		}
-	}
-	if len(model) == 0 {
-		if rows := anyList(data["video_list"]); len(rows) > 0 {
-			model = map[string]any{
-				"video_list":     data["video_list"],
-				"video_duration": data["video_duration"],
-				"duration":       data["duration"],
-			}
-		}
-	}
+
 	return selectHongguoAppMedia(model)
 }
 

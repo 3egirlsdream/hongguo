@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 
 import 'local_profiles.dart';
 import 'local_store.dart';
-import 'models.dart';
 import 'app_build.dart';
 
 class ProfilesScreen extends StatefulWidget {
@@ -134,11 +133,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
   String _permissionsLabel(LocalProfile profile) {
     if (profile.admin) return '管理员 · 全部权限';
-    final sources = profile.sources
-        .where(SourceSite.isAvailable)
-        .map((id) => SourceSite.byId(id).name)
-        .join(' / ');
-    return '${sources.isEmpty ? '未开放站源' : sources} · ${profile.download ? '可下载' : '仅在线观看'}';
+    return profile.download ? '可观看、下载与本地媒体' : '仅在线观看';
   }
 
   @override
@@ -311,10 +306,6 @@ class ProfileEditor extends StatefulWidget {
 class _ProfileEditorState extends State<ProfileEditor> {
   late final _name = TextEditingController(text: widget.profile?.name ?? '');
   final _pin = TextEditingController(), _confirm = TextEditingController();
-  late final _sources =
-      (widget.profile?.sources ??
-              widget.store.sources.map((s) => s.id).toList())
-          .toSet();
   late bool _download = widget.profile?.download ?? true;
   bool _clearPin = false, _busy = false;
   String? _error;
@@ -336,7 +327,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
       await widget.store.saveProfile(
         id: widget.profile?.id,
         name: _name.text,
-        sources: _sources.toList(),
+        sources: const ['hongguo'],
         download: _download,
         pin: _clearPin
             ? ''
@@ -418,23 +409,6 @@ class _ProfileEditorState extends State<ProfileEditor> {
               ),
             const SizedBox(height: 20),
             if (widget.profile?.admin != true) ...[
-              Text('允许访问的站源', style: Theme.of(context).textTheme.titleMedium),
-              for (final source in widget.store.sources)
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: Text(source.name),
-                  value: _sources.contains(source.id),
-                  onChanged: (value) {
-                    setState(() {
-                      if (value == true) {
-                        _sources.add(source.id);
-                      } else {
-                        _sources.remove(source.id);
-                      }
-                    });
-                  },
-                ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('允许下载和本地媒体'),
@@ -443,7 +417,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
                 onChanged: (v) => setState(() => _download = v),
               ),
             ] else
-              const Text('管理员可以访问全部站源和功能。创建其他用户前需要先设置管理员密码。'),
+              const Text('管理员可以使用全部功能。创建其他用户前需要先设置管理员密码。'),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),

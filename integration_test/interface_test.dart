@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:duanju_app/home_screen.dart';
-import 'package:duanju_app/app_build.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/models.dart';
@@ -84,20 +83,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('更新当前站源'), findsOneWidget);
 
-      if (allSourcesEnabled) {
-        await source('黄豆');
-        expect(find.byTooltip('VIP：隐藏'), findsOneWidget);
-        expect(find.text('会员合成剧'), findsNothing);
-        await capture('interface-huangdou-vip');
-        for (final name in ['黄果', '红果']) {
-          await source(name);
-          expect(find.textContaining('VIP：'), findsNothing);
-          expect(find.text('会员合成剧'), findsWidgets);
-        }
-      } else {
-        expect(find.text('黄豆'), findsNothing);
-        expect(find.text('红果'), findsOneWidget);
-      }
+      expect(find.text('黄豆'), findsNothing);
+      expect(find.text('红果'), findsOneWidget);
       await store.setThemeMode('dark');
       await tester.pumpAndSettle();
       await capture('interface-dark-catalog');
@@ -126,11 +113,10 @@ void main() {
       expect(tester.takeException(), isNull);
       binding.reportData ??= {};
       binding.reportData!['interface'] = {
-        'allSources': allSourcesEnabled,
+        'sources': ['hongguo'],
         'systemThemeByDefault': true,
         'refreshAnimation': true,
         'alignedPosters': true,
-        'vipOnlyOnHuangdou': true,
         'downloadMenuAboveFilters': true,
         'bulkPause': true,
         'downloadFilter': true,

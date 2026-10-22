@@ -4,8 +4,6 @@ import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
-import 'models.dart';
-
 class LocalProfile {
   const LocalProfile({
     required this.id,
@@ -24,7 +22,6 @@ class LocalProfile {
   final String salt;
   final String pinHash;
   bool get protected => salt.isNotEmpty && pinHash.isNotEmpty;
-  bool allows(String source) => admin || sources.contains(source);
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -49,7 +46,7 @@ class LocalProfile {
         name.isEmpty ||
         name.length > 40 ||
         admin != (id == 'default') ||
-        sources.any((id) => !SourceSite.isKnown(id)) ||
+        sources.any((id) => !RegExp(r'^[a-z][a-z0-9-]{0,31}$').hasMatch(id)) ||
         (salt.isEmpty != hash.isEmpty) ||
         (salt.isNotEmpty &&
             (!RegExp(r'^[a-f0-9]{32}$').hasMatch(salt) ||

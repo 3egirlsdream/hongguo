@@ -14,6 +14,7 @@ Future<void> openPlaybackDirectly(
   required Drama drama,
   required AppRepository repository,
   required LocalStore store,
+  WatchEntry? resumeOverride,
 }) async {
   final profileEpoch = store.profileEpoch;
   try {
@@ -33,15 +34,17 @@ Future<void> openPlaybackDirectly(
     if (merged.episodes.isEmpty) {
       throw AppFailure('暂时没有可播放的集数');
     }
-    final watched = store.watched(mergedDrama.id);
+    final watched = resumeOverride?.drama.id == mergedDrama.id
+        ? resumeOverride
+        : store.watched(mergedDrama.id);
     final index = resumeEpisodeIndex(merged.episodes, watched);
     final episode = merged.episodes[index];
-    if (episode.vip && mergedDrama.source != SourceSite.dsd.id) {
+    if (episode.vip) {
       final accepted = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('这是一集 VIP 内容'),
-          content: const Text('站源可能只提供试看或限制播放。'),
+          content: const Text('部分内容可能仅提供试看或限制播放。'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -151,13 +154,13 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
       final watched = widget.store.watched(drama.id);
       final index = resumeEpisodeIndex(merged.episodes, watched);
       final episode = merged.episodes[index];
-      if (episode.vip && drama.source != SourceSite.dsd.id) {
+      if (episode.vip) {
         if (!mounted) return;
         final accepted = await showDialog<bool>(
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('这是一集 VIP 内容'),
-            content: const Text('站源可能只提供试看或限制播放。'),
+            content: const Text('部分内容可能仅提供试看或限制播放。'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),

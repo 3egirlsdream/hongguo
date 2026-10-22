@@ -14,27 +14,20 @@ void main() {
   const red = FixtureRepository.free;
   const other = FixtureRepository.vip;
 
-  test('edition sources include DSD only in the all-source build', () async {
-    SharedPreferences.setMockInitialValues({'source': 'huangdou'});
-    final store = testStore(await SharedPreferences.getInstance());
-    expect(appSlug, allSourcesEnabled ? 'zhenguojian' : 'hongguojian');
-    // 默认只显示红果、韩小圈、鬼片网与青空次元，其余站源需要密码解锁。
-    expect(store.sources.length, allSourcesEnabled ? 4 : 1);
-    expect(
-      SourceSite.values.any((source) => source.id == 'dsd'),
-      allSourcesEnabled,
-    );
-    expect(SourceSite.isAvailable('dsd'), allSourcesEnabled);
-    expect(SourceSite.isKnown('dsd'), isTrue);
-    expect(SourceSite.byId('dsd').name, '帝果');
-    expect(store.allowsSource('dsd'), isFalse);
-    expect(store.source, 'hongguo');
-    await store.enableSourceGate('666666');
-    expect(store.sourcesUnlocked, isTrue);
-    expect(store.sources.length, allSourcesEnabled ? 11 : 1);
-    expect(store.allowsSource('dsd'), allSourcesEnabled);
-    store.dispose();
-  });
+  test(
+    'only Hongguo is available after restoring an old source selection',
+    () async {
+      SharedPreferences.setMockInitialValues({'source': 'huangdou'});
+      final store = testStore(await SharedPreferences.getInstance());
+      expect(appSlug, 'hongguojian');
+      expect(SourceSite.values.map((source) => source.id), ['hongguo']);
+      expect(store.sources.map((source) => source.id), ['hongguo']);
+      expect(store.allowsSource('dsd'), isFalse);
+      expect(SourceSite.isKnown('dsd'), isFalse);
+      expect(store.source, 'hongguo');
+      store.dispose();
+    },
+  );
 
   test(
     'edition filtering preserves favorites and history through backup restore',
@@ -55,12 +48,11 @@ void main() {
         'history': jsonEncode(history),
       });
       final store = testStore(await SharedPreferences.getInstance());
-      // 管理员默认可见全部站源；这里仍显式启用密码锁，验证启用后行为一致。
-      await store.enableSourceGate('666666');
-      expect(store.favorites.length, allSourcesEnabled ? 2 : 1);
-      expect(store.history.length, allSourcesEnabled ? 2 : 1);
-      expect(store.isFavorite(other.id), allSourcesEnabled);
-      expect(store.watched(other.id) != null, allSourcesEnabled);
+
+      expect(store.favorites.length, 1);
+      expect(store.history.length, 1);
+      expect(store.isFavorite(other.id), false);
+      expect(store.watched(other.id) != null, false);
       await store.toggleFavorite(red);
       final backup = await store.exportBackup();
       final library =
@@ -71,8 +63,8 @@ void main() {
       expect(library['history'], hasLength(2));
       await store.importBackup(backup);
       expect(store.preferences.getString('source'), 'huangdou');
-      expect(store.history, hasLength(allSourcesEnabled ? 2 : 1));
-      expect(store.favorites.map((drama) => drama.id), [other.id]);
+      expect(store.history, hasLength(1));
+      expect(store.favorites, isEmpty);
       store.dispose();
     },
   );
@@ -81,7 +73,6 @@ void main() {
     'a restored foreign-source profile keeps its identity and permissions',
     () async {
       SharedPreferences.setMockInitialValues({
-        ...await gatePreferences(),
         'profiles': jsonEncode([
           LocalProfile(
             id: 'default',
@@ -101,21 +92,20 @@ void main() {
         'profile.viewer.source': 'huangdou',
       });
       final store = testStore(await SharedPreferences.getInstance());
-      await unlockGate(store);
+
       expect(store.profile.id, 'viewer');
       expect(store.profile.admin, isFalse);
       expect(store.profile.sources, ['huangdou']);
       expect(store.canDownload, isFalse);
-      expect(store.source, allSourcesEnabled ? 'huangdou' : '');
+      expect(store.source, '');
       expect(store.allowsSource('hongguo'), isFalse);
-      expect(store.allowsSource('huangdou'), allSourcesEnabled);
+      expect(store.allowsSource('huangdou'), false);
       store.dispose();
     },
   );
 
   test('restored DSD profile data follows edition availability', () async {
     SharedPreferences.setMockInitialValues({
-      ...await gatePreferences(),
       'profiles': jsonEncode([
         LocalProfile(
           id: 'default',
@@ -135,15 +125,12 @@ void main() {
       'profile.viewer.source': 'dsd',
     });
     final store = testStore(await SharedPreferences.getInstance());
-    await unlockGate(store);
+
     expect(store.configurationError, isNull);
     expect(store.profile.sources, ['dsd']);
-    expect(
-      store.sources.map((source) => source.id),
-      allSourcesEnabled ? ['dsd'] : [],
-    );
-    expect(store.source, allSourcesEnabled ? 'dsd' : '');
-    expect(store.allowsSource('dsd'), allSourcesEnabled);
+    expect(store.sources.map((source) => source.id), []);
+    expect(store.source, '');
+    expect(store.allowsSource('dsd'), false);
     store.dispose();
   });
 

@@ -13,30 +13,14 @@ enum CatalogSort {
 }
 
 class CatalogView {
-  const CatalogView({
-    this.sort = CatalogSort.source,
-    this.release = '',
-    this.allSources = false,
-  });
+  const CatalogView({this.sort = CatalogSort.source, this.release = ''});
   final CatalogSort sort;
   final String release;
-  final bool allSources;
 
-  CatalogView copyWith({
-    CatalogSort? sort,
-    String? release,
-    bool? allSources,
-  }) => CatalogView(
-    sort: sort ?? this.sort,
-    release: release ?? this.release,
-    allSources: allSources ?? this.allSources,
-  );
+  CatalogView copyWith({CatalogSort? sort, String? release}) =>
+      CatalogView(sort: sort ?? this.sort, release: release ?? this.release);
 
-  Map<String, dynamic> toJson() => {
-    'sort': sort.name,
-    'release': release,
-    'allSources': allSources,
-  };
+  Map<String, dynamic> toJson() => {'sort': sort.name, 'release': release};
 
   factory CatalogView.fromJson(Map<String, dynamic> value) => CatalogView(
     sort:
@@ -47,7 +31,6 @@ class CatalogView {
     release: {'', 'finished', 'ongoing', 'unknown'}.contains(value['release'])
         ? value['release'] as String
         : '',
-    allSources: value['allSources'] == true,
   );
 }
 

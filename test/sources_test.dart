@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:duanju_app/local_profiles.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/source_status.dart';
-import 'package:duanju_app/sources_screen.dart';
+import 'package:duanju_app/catalog_management_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -73,7 +73,7 @@ void main() {
     final store = testStore(await SharedPreferences.getInstance());
     await tester.pumpWidget(
       MaterialApp(
-        home: SourcesScreen(
+        home: CatalogManagementScreen(
           repository: SourceFixtureRepository(),
           store: store,
         ),
@@ -91,13 +91,12 @@ void main() {
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final store = testStore(await SharedPreferences.getInstance());
-      // 管理员默认可见全部站源；显式启用密码锁以覆盖解锁后的站源范围。
-      await store.enableSourceGate('666666');
+
       final repository = SourceFixtureRepository()
         ..pending = Completer<SourceStatus>();
       await tester.pumpWidget(
         MaterialApp(
-          home: SourcesScreen(repository: repository, store: store),
+          home: CatalogManagementScreen(repository: repository, store: store),
         ),
       );
       await tester.pumpAndSettle();
@@ -145,13 +144,13 @@ void main() {
       final repository = SourceFixtureRepository();
       await tester.pumpWidget(
         MaterialApp(
-          home: SourcesScreen(repository: repository, store: store),
+          home: CatalogManagementScreen(repository: repository, store: store),
         ),
       );
       await tester.pumpAndSettle();
       expect(repository.statusRequests, ['hongguo']);
       expect(find.byKey(const ValueKey('source-hongguo')), findsOneWidget);
-      for (final source in SourceSite.knownValues.skip(1)) {
+      for (final source in SourceSite.values.skip(1)) {
         expect(find.byKey(ValueKey('source-${source.id}')), findsNothing);
       }
       await tester.pumpWidget(const SizedBox.shrink());
@@ -191,7 +190,7 @@ void main() {
           ..pending = Completer<SourceStatus>();
         await tester.pumpWidget(
           MaterialApp(
-            home: SourcesScreen(repository: repository, store: store),
+            home: CatalogManagementScreen(repository: repository, store: store),
           ),
         );
         await tester.pumpAndSettle();
@@ -304,7 +303,7 @@ void main() {
             ).copyWith(textScaler: const TextScaler.linear(1.5)),
             child: child!,
           ),
-          home: SourcesScreen(repository: repository, store: store),
+          home: CatalogManagementScreen(repository: repository, store: store),
         ),
       );
       await tester.pumpAndSettle();

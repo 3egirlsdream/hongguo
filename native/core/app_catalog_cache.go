@@ -78,9 +78,6 @@ func (engine *nativeEngine) loadCatalogCache() {
 }
 
 func migrateNativeDrama(drama nativeDrama) nativeDrama {
-	if drama.MetadataSchema == 0 && drama.Source == sourceHuangdou && drama.VIP != nil && !*drama.VIP {
-		drama.VIP = nil
-	}
 	drama.MetadataSchema = 1
 	return drama
 }
@@ -90,9 +87,6 @@ func (engine *nativeEngine) nativeCached(source string) nativeCatalogResult {
 	engine.mu.Lock()
 	defer engine.mu.Unlock()
 	items := append([]nativeDrama{}, engine.catalogs[source]...)
-	for index := range items {
-		items[index].Cover = repairLegacyCoverURL(items[index])
-	}
 	state, found := engine.catalogStates[source]
 	age := time.Since(state.UpdatedAt)
 	result := nativeCatalogResult{
