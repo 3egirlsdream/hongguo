@@ -25,6 +25,14 @@ class SavedLibrary extends StatefulWidget {
     this.onRemoteUnfollow,
     this.compact = false,
     this.searchVisible,
+    this.filterOptions,
+    this.filterValue,
+    this.onFilterChanged,
+    this.onManage,
+    this.subtitle,
+    this.onLoadMore,
+    this.hasMore = false,
+    this.loadingMore = false,
   });
 
   final AppRepository repository;
@@ -32,6 +40,13 @@ class SavedLibrary extends StatefulWidget {
   final bool history;
   final bool compact;
   final bool? searchVisible;
+  final List<(String, String)>? filterOptions;
+  final String? filterValue;
+  final ValueChanged<String>? onFilterChanged;
+  final ValueChanged<Drama>? onManage;
+  final String Function(Drama)? subtitle;
+  final VoidCallback? onLoadMore;
+  final bool hasMore, loadingMore;
   final List<WatchEntry> remoteHistory;
   final List<Drama> remoteFavorites;
   final ValueChanged<WatchEntry>? onHistoryContinue;
@@ -50,15 +65,33 @@ class _SavedLibraryState extends State<SavedLibrary> {
   String _completion = '';
   bool _searchVisible = false, _editing = false;
   Map<String, WatchEntry> _historyIndex = {};
-  List<(String, String)> get _filters => widget.history
-      ? const [('', '全部'), ('finished', '已看完'), ('unfinished', '未看完')]
-      : const [
-          ('', '全部'),
-          ('planned', '想看'),
-          ('watching', '在看'),
-          ('watched', '已看'),
-          ('updates', '有更新'),
-        ];
+  String get _selectedFilter =>
+      widget.filterValue ?? (widget.history ? _completion : _filter);
+  void _selectFilter(String value) {
+    if (widget.onFilterChanged != null) {
+      widget.onFilterChanged!(value);
+    } else {
+      setState(() {
+        if (widget.history) {
+          _completion = value;
+        } else {
+          _filter = value;
+        }
+      });
+    }
+  }
+
+  List<(String, String)> get _filters =>
+      widget.filterOptions ??
+      (widget.history
+          ? const [('', '全部'), ('finished', '已看完'), ('unfinished', '未看完')]
+          : const [
+              ('', '全部'),
+              ('planned', '想看'),
+              ('watching', '在看'),
+              ('watched', '已看'),
+              ('updates', '有更新'),
+            ]);
 
   @override
   void didUpdateWidget(covariant SavedLibrary oldWidget) {
@@ -76,12 +109,20 @@ class _SavedLibraryState extends State<SavedLibrary> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(title: Text(widget.history ? '筛选观看记录' : '筛选追剧')),
+            ListTile(
+              title: Text(
+                widget.filterOptions != null
+                    ? '筛选预约'
+                    : widget.history
+                    ? '筛选观看记录'
+                    : '筛选追剧',
+              ),
+            ),
             for (final filter in _filters)
               ListTile(
                 title: Text(filter.$2),
-                selected: (widget.history ? _completion : _filter) == filter.$1,
-                trailing: (widget.history ? _completion : _filter) == filter.$1
+                selected: _selectedFilter == filter.$1,
+                trailing: _selectedFilter == filter.$1
                     ? const Icon(Icons.check_rounded)
                     : null,
                 onTap: () => Navigator.pop(context, filter.$1),
@@ -91,13 +132,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
       ),
     );
     if (!mounted || selected == null) return;
-    setState(() {
-      if (widget.history) {
-        _completion = selected;
-      } else {
-        _filter = selected;
-      }
-    });
+    _selectFilter(selected);
   }
 
   List<WatchEntry> get _history {
@@ -159,23 +194,29 @@ class _SavedLibraryState extends State<SavedLibrary> {
     }
   }
 
-  void _actions(Drama drama) => showDramaActions(
-    context,
-    drama: drama,
-    store: widget.store,
-    repository: widget.repository,
-    history: widget.history,
-    onContinue: () => _continue(drama),
-    remoteFollowed: widget.remoteFavorites.any((d) => d.id == drama.id),
-    onToggleFollow:
-        widget.remoteFavorites.any((d) => d.id == drama.id) &&
-            widget.onRemoteUnfollow != null
-        ? () => widget.onRemoteUnfollow!(drama)
-        : null,
-    onDownload: widget.onDownload == null
-        ? null
-        : () => widget.onDownload!(drama),
-  );
+  void _actions(Drama drama) {
+    if (widget.onManage != null) {
+      widget.onManage!(drama);
+      return;
+    }
+    showDramaActions(
+      context,
+      drama: drama,
+      store: widget.store,
+      repository: widget.repository,
+      history: widget.history,
+      onContinue: () => _continue(drama),
+      remoteFollowed: widget.remoteFavorites.any((d) => d.id == drama.id),
+      onToggleFollow:
+          widget.remoteFavorites.any((d) => d.id == drama.id) &&
+              widget.onRemoteUnfollow != null
+          ? () => widget.onRemoteUnfollow!(drama)
+          : null,
+      onDownload: widget.onDownload == null
+          ? null
+          : () => widget.onDownload!(drama),
+    );
+  }
 
   Widget _tile(Drama drama, {FocusNode? focusNode, VoidCallback? onFocus}) {
     final watched = _watched(drama.id);
@@ -300,9 +341,10 @@ class _SavedLibraryState extends State<SavedLibrary> {
             ),
             const SizedBox(height: 4),
             Text(
-              watched == null
-                  ? (drama.episodes > 0 ? '共${drama.episodes}集' : '点击观看')
-                  : '${watched.episode}集/${drama.episodes > 0 ? '${drama.episodes}集' : '连载中'}',
+              widget.subtitle?.call(drama) ??
+                  (watched == null
+                      ? (drama.episodes > 0 ? '共${drama.episodes}集' : '点击观看')
+                      : '${watched.episode}集/${drama.episodes > 0 ? '${drama.episodes}集' : '连载中'}'),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
@@ -351,21 +393,12 @@ class _SavedLibraryState extends State<SavedLibrary> {
                       labelStyle: TextStyle(
                         fontSize: 14,
                         height: 1.2,
-                        color:
-                            (widget.history ? _completion : _filter) ==
-                                filter.$1
+                        color: _selectedFilter == filter.$1
                             ? const Color(0xFFF47925)
                             : colors.onSurfaceVariant.withValues(alpha: .7),
                       ),
-                      selected:
-                          (widget.history ? _completion : _filter) == filter.$1,
-                      onSelected: (_) => setState(() {
-                        if (widget.history) {
-                          _completion = filter.$1;
-                        } else {
-                          _filter = filter.$1;
-                        }
-                      }),
+                      selected: _selectedFilter == filter.$1,
+                      onSelected: (_) => _selectFilter(filter.$1),
                     ),
                 ],
               ),
@@ -444,10 +477,12 @@ class _SavedLibraryState extends State<SavedLibrary> {
           ? history.map((entry) => entry.drama).toList()
           : {
               for (final drama in widget.remoteFavorites) drama.id: drama,
-              for (final drama in widget.store.favorites) drama.id: drama,
+              if (widget.filterOptions == null)
+                for (final drama in widget.store.favorites) drama.id: drama,
             }.values.toList();
       final items = all.where((drama) {
         if (!matchesDramaQuery(drama, _search.text)) return false;
+        if (widget.filterOptions != null) return true;
         final state = widget.store.following(drama.id);
         if (widget.history) {
           return _completion.isEmpty ||
@@ -500,7 +535,11 @@ class _SavedLibraryState extends State<SavedLibrary> {
               onChanged: (_) => setState(() {}),
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: widget.history ? '搜索观看记录' : '搜索追剧',
+                hintText: widget.filterOptions != null
+                    ? '搜索预约'
+                    : widget.history
+                    ? '搜索观看记录'
+                    : '搜索追剧',
                 prefixIcon: const Icon(Icons.search_rounded),
                 suffixIcon: _search.text.isEmpty
                     ? null
@@ -562,7 +601,9 @@ class _SavedLibraryState extends State<SavedLibrary> {
       }
       final empty = StatusPanel(
         title: all.isEmpty
-            ? widget.history
+            ? widget.filterOptions != null
+                  ? '暂无预约记录'
+                  : widget.history
                   ? '还没有观看记录'
                   : '还没有追剧'
             : '没有匹配的记录',
@@ -653,6 +694,21 @@ class _SavedLibraryState extends State<SavedLibrary> {
                           ? _poster(items[index])
                           : _tile(items[index]),
                       childCount: items.length,
+                    ),
+                  ),
+                ),
+              if (widget.onLoadMore != null &&
+                  (widget.hasMore || widget.loadingMore))
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Center(
+                      child: widget.loadingMore
+                          ? const CircularProgressIndicator()
+                          : TextButton(
+                              onPressed: widget.onLoadMore,
+                              child: const Text('加载更多'),
+                            ),
                     ),
                   ),
                 ),

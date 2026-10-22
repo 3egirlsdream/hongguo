@@ -125,7 +125,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   Timer? _hardwareDecodeWatch;
   String _loadingMessage = '正在准备播放';
   String? _error;
-  String? _saveWarning;
+  bool _progressSaveFailed = false;
+  bool _progressQueueFailed = false;
   String _officialUID = '';
   PlaybackPlan? _plan;
   double _speed = 1;
@@ -891,7 +892,9 @@ class _PlayerScreenState extends State<PlayerScreen>
     final savedEpisode = widget.detail.episodes[_openedIndex];
     final progressKey =
         '${widget.mediaId ?? widget.detail.drama.id}:$_openedIndex:$position:$duration';
-    if (_savedProgressKey == progressKey && _saveWarning == null) {
+    if (_savedProgressKey == progressKey &&
+        !_progressSaveFailed &&
+        !_progressQueueFailed) {
       if (flush && widget.mediaId == null) LanController.current?.flush();
       return;
     }
@@ -909,6 +912,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (widget.mediaId == null) {
         await store.saveWatch(entry);
         localSaved = true;
+        _progressSaveFailed = false;
         if (store.profileEpoch != _profileEpoch) return;
         if (_officialUID.isNotEmpty) {
           final videoID = hongguoEpisodeID(savedEpisode);
@@ -922,16 +926,20 @@ class _PlayerScreenState extends State<PlayerScreen>
         await store.saveMediaWatch(widget.mediaId!, entry);
       }
       _savedProgressKey = progressKey;
-      if (mounted && !_closed && _saveWarning != null) {
-        setState(() => _saveWarning = null);
-      }
+      _progressSaveFailed = _progressQueueFailed = false;
     } catch (_) {
-      if (mounted && !_closed && _saveWarning == null) {
-        setState(
-          () => _saveWarning = localSaved
-              ? '本机进度已保存，官方进度暂未加入同步队列，请在账号页检查。'
-              : '观看进度尚未保存，请检查存储空间后重试。',
-        );
+      if (localSaved) {
+        _savedProgressKey = progressKey;
+        if (!_progressQueueFailed) {
+          DiaryService.add('[Progress] 本机进度已保存，官方进度暂未加入同步队列，将继续重试');
+        }
+        _progressQueueFailed = true;
+      } else {
+        if (!_progressSaveFailed) {
+          DiaryService.add('[Progress] 本机观看进度保存失败');
+          if (mounted && !_closed) _notice('观看进度保存失败，请检查存储空间后重试。');
+        }
+        _progressSaveFailed = true;
       }
     }
   }
@@ -1891,35 +1899,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                           child: const Text('选集'),
                         ),
                       ],
-                    ),
-                  ),
-                ),
-              if (_saveWarning != null && !hideOverlayForPictureInPicture)
-                Positioned(
-                  top: 52,
-                  left: 12,
-                  right: 12,
-                  child: SafeArea(
-                    bottom: false,
-                    child: Material(
-                      color: const Color(0xE6322424),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Text(
-                              _saveWarning!,
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                            TextButton(
-                              onPressed: _saveProgress,
-                              child: const Text('重试保存'),
-                            ),
-                          ],
-                        ),
-                      ),
                     ),
                   ),
                 ),

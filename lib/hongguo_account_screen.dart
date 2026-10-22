@@ -70,7 +70,6 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _phone = TextEditingController();
   final _code = TextEditingController();
-  final _scroll = ScrollController();
   late final TabController _tabs;
   late final int _epoch;
   Timer? _clock;
@@ -88,6 +87,8 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   int _selectedTab = 0;
   String _cursor = '';
   String _reservationMode = 'upcoming';
+  String _calendarFilter = '';
+  bool _reservationLoadScheduled = false;
   String? _error, _message;
   bool _librarySearching = false;
   bool get _active =>
@@ -107,7 +108,6 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       initialIndex: widget.drama == null ? widget.initialTab : 2,
     )..addListener(_tabChanged);
     _selectedTab = _tabs.index;
-    _scroll.addListener(_loadNearEnd);
     widget.store.addListener(_accessChanged);
     widget.repository.accountFavorites.addListener(_favoritesChanged);
     widget.repository.accountStatus.addListener(_accountStatusChanged);
@@ -203,22 +203,12 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     unawaited(_load());
   }
 
-  void _loadNearEnd() {
-    if (_scroll.hasClients &&
-        _scroll.position.extentAfter < 350 &&
-        _hasMore &&
-        !_loading) {
-      _load(more: true);
-    }
-  }
-
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clock?.cancel();
     _verification?.cancel();
     _tabs.dispose();
-    _scroll.dispose();
     _phone.dispose();
     _code.dispose();
     widget.store.removeListener(_accessChanged);
@@ -826,113 +816,136 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     );
   }
 
-  Widget _reservationList() => LayoutBuilder(
-    builder: (context, constraints) {
-      final columns = constraints.maxWidth < 340
-          ? 1
-          : (constraints.maxWidth / 180).floor().clamp(2, 4);
-      final width = (constraints.maxWidth - 32 - (columns - 1) * 12) / columns;
-      final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
-      return CustomScrollView(
-        controller: _scroll,
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.all(16),
-            sliver: SliverGrid(
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: columns,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 16,
-                mainAxisExtent: width * 1.5 + 120 * textScale + 56,
+  Map<String, dynamic> _reservationRow(Drama drama) =>
+      _items.firstWhere((row) => (row['drama'] as Map?)?['id'] == drama.id);
+
+  String _reservationDate(Drama drama) {
+    final row = _reservationRow(drama);
+    final date = (row['publishText'] as String? ?? '').trim();
+    return date.isNotEmpty
+        ? date
+        : drama.onlineDate.isNotEmpty
+        ? drama.onlineDate
+        : '上线时间待公布';
+  }
+
+  Future<void> _manageReservation(Drama drama) async {
+    final row = _reservationRow(drama);
+    final date = _reservationDate(drama);
+    final owner = _uid;
+    final accepted = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(drama.title, style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              Text(date),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _busy || _loading
+                    ? null
+                    : () => Navigator.pop(context, true),
+                child: Text(row['reserved'] == true ? '取消预约' : '预约'),
               ),
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final row = _items[index];
-                final drama = Drama.fromJson(
-                  Map<String, dynamic>.from(row['drama'] as Map),
-                );
-                final publish = (row['publishText'] as String? ?? '').trim();
-                final date = publish.isNotEmpty ? publish : drama.onlineDate;
-                return Card(
-                  margin: EdgeInsets.zero,
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      AspectRatio(
-                        aspectRatio: 2 / 3,
-                        child: DramaCover(
-                          drama: drama,
-                          repository: widget.repository,
-                        ),
-                      ),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text(
-                                drama.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                date.isEmpty ? '上线时间待公布' : '上线时间：$date',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  height: 1.3,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                ),
-                              ),
-                              const Spacer(),
-                              TextButton(
-                                onPressed: _busy || _loading
-                                    ? null
-                                    : () => _reserve(row),
-                                child: Text(
-                                  row['reserved'] == true ? '取消预约' : '预约',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }, childCount: _items.length),
-            ),
+            ],
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Center(
-                child: _hasMore
-                    ? TextButton(
-                        onPressed: _loading || _busy
-                            ? null
-                            : () => _load(more: true),
-                        child: const Text('加载更多'),
-                      )
-                    : Text(_items.isEmpty ? '暂无记录' : '已显示全部'),
-              ),
-            ),
-          ),
+        ),
+      ),
+    );
+    if (accepted == true && _active && owner == _uid) await _reserve(row);
+  }
+
+  Future<void> _openReservation(Drama drama) async {
+    if (_reservationRow(drama)['upcoming'] != false) {
+      await _manageReservation(drama);
+      return;
+    }
+    await openPlaybackDirectly(
+      context,
+      drama: drama,
+      repository: widget.repository,
+      store: widget.store,
+    );
+    if (_active) await _load();
+  }
+
+  Widget _reservationList() {
+    final calendar = _tabs.index == 3;
+    final rows = _items.where(
+      (row) =>
+          !calendar ||
+          _calendarFilter.isEmpty ||
+          (row['reserved'] == true) == (_calendarFilter == 'reserved'),
+    );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.depth == 0 &&
+            notification.metrics.axis == Axis.vertical &&
+            notification.metrics.pixels > 0 &&
+            notification.metrics.extentAfter < 350 &&
+            _hasMore &&
+            !_loading &&
+            !_busy &&
+            !_reservationLoadScheduled) {
+          _reservationLoadScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _reservationLoadScheduled = false;
+            if (_active &&
+                _tabs.index >= 2 &&
+                _hasMore &&
+                !_loading &&
+                !_busy) {
+              unawaited(_load(more: true));
+            }
+          });
+        }
+        return false;
+      },
+      child: SavedLibrary(
+        key: ValueKey('reservation-library-${_tabs.index}'),
+        repository: widget.repository,
+        store: widget.store,
+        history: false,
+        compact: true,
+        searchVisible: widget.embedded ? _librarySearching : null,
+        filterOptions: calendar
+            ? const [('', '全部'), ('reserved', '已预约'), ('unreserved', '未预约')]
+            : const [('upcoming', '待上线'), ('online', '已上线')],
+        filterValue: calendar ? _calendarFilter : _reservationMode,
+        onFilterChanged: (value) {
+          if (_busy || _loading) return;
+          if (calendar) {
+            setState(() => _calendarFilter = value);
+          } else if (value != _reservationMode) {
+            setState(() {
+              _reservationMode = value;
+              _items.clear();
+            });
+            unawaited(_load());
+          }
+        },
+        remoteFavorites: [
+          for (final row in rows)
+            Drama.fromJson(Map<String, dynamic>.from(row['drama'] as Map)),
         ],
-      );
-    },
-  );
+        subtitle: _reservationDate,
+        onOpen: _openReservation,
+        onContinue: _openReservation,
+        onManage: _manageReservation,
+        hasMore: _hasMore,
+        loadingMore: _loading && _items.isNotEmpty,
+        onLoadMore: () {
+          if (!_busy && !_loading) unawaited(_load(more: true));
+        },
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1019,41 +1032,6 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
                                       ),
                                     ],
                                   ),
-                                if (_tabs.index == 2)
-                                  SegmentedButton<String>(
-                                    segments: const [
-                                      ButtonSegment(
-                                        value: 'upcoming',
-                                        label: Text('待上线'),
-                                      ),
-                                      ButtonSegment(
-                                        value: 'online',
-                                        label: Text('已上线'),
-                                      ),
-                                    ],
-                                    selected: {_reservationMode},
-                                    onSelectionChanged: _busy || _loading
-                                        ? null
-                                        : (value) {
-                                            setState(
-                                              () => _reservationMode =
-                                                  value.single,
-                                            );
-                                            _load();
-                                          },
-                                  ),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.end,
-                                  children: [
-                                    TextButton.icon(
-                                      onPressed: _loading || _busy
-                                          ? null
-                                          : _load,
-                                      icon: const Icon(Icons.refresh),
-                                      label: const Text('刷新'),
-                                    ),
-                                  ],
-                                ),
                                 Expanded(
                                   child: RefreshIndicator(
                                     onRefresh: _load,
@@ -1104,19 +1082,18 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
             child: Row(
               children: [
                 Expanded(child: tabs),
-                if (_tabs.index <= 1)
-                  IconButton(
-                    tooltip: '搜索片单',
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    icon: Icon(
-                      _librarySearching
-                          ? Icons.close_rounded
-                          : Icons.search_rounded,
-                      size: 22,
-                    ),
-                    onPressed: () =>
-                        setState(() => _librarySearching = !_librarySearching),
+                IconButton(
+                  tooltip: '搜索片单',
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  icon: Icon(
+                    _librarySearching
+                        ? Icons.close_rounded
+                        : Icons.search_rounded,
+                    size: 22,
                   ),
+                  onPressed: () =>
+                      setState(() => _librarySearching = !_librarySearching),
+                ),
               ],
             ),
           ),

@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import json
 import re
 import shutil
 import zipfile
@@ -33,6 +34,15 @@ if options.platform == 'android':
             missing = set(required) - names
             if missing:
                 raise SystemExit('APK 缺少原生库：' + ', '.join(sorted(missing)))
+            manifest = 'assets/flutter_assets/FontManifest.json'
+            material = 'assets/flutter_assets/fonts/MaterialIcons-Regular.otf'
+            if manifest not in names or material not in names or archive.getinfo(material).file_size == 0:
+                raise SystemExit('APK 缺少 Material 图标字体，请确认 uses-material-design 并重新构建。')
+            fonts = json.loads(archive.read(manifest))
+            if not any(font.get('family') == 'MaterialIcons' and
+                       any(row.get('asset') == 'fonts/MaterialIcons-Regular.otf' for row in font.get('fonts', []))
+                       for font in fonts):
+                raise SystemExit('APK 图标字体未注册到 FontManifest。')
         target = output / f'{variant.slug}-{version}-{abi}.apk'
         shutil.copy2(source, target)
         artifacts.append(target)
