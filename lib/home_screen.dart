@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'app_layout.dart';
 import 'app_bottom_navigation.dart';
 import 'core_bridge.dart';
-import 'catalog_filters.dart';
 import 'catalog_browser.dart';
 import 'catalog_sort_sheet.dart';
 import 'catalog_sort.dart';
@@ -35,8 +34,6 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  static const _recommendationCategory = 'app:recommendations';
-
   /// 页面被其他路由覆盖（如播放页压栈）时缓存的子树：
   /// 后台期间 store 的通知直接复用它，跳过整页网格重建。
   Widget? _backgroundCache;
@@ -46,63 +43,24 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Drama> _items = [];
   bool _loading = true;
   bool _loadingMore = false;
-  bool _hasMore = true;
+  bool _hasMore = false;
   String? _error;
   int _generation = 0;
   int _tab = 0;
+  final _visitedTabs = <int>{0};
   String _submittedQuery = '';
-  String _selectedCategory = '';
   late final CatalogBrowser _browser;
-  bool _searchVisible = false;
-  String? _categoriesError;
-  int _categoryGeneration = 0;
   late final LibraryUpdater _updater;
   bool _cacheChanged = false;
   final _selectedDramas = <String, Drama>{};
   Timer? _cacheRefreshTimer;
   bool _refreshingUpdatedCache = false;
   bool _selectionMode = false;
-  bool _showRecommendations = false;
   bool _catalogLoadScheduled = false;
 
   bool get _onlineSearch => true;
   bool get _searchSuggestions => true;
   String get _searchHint => '搜索短剧';
-
-  String get _category => _selectedCategory;
-  List<CatalogCategory> get _categories => _browser.categories();
-  String get _displayCategory =>
-      _showRecommendations ? _recommendationCategory : _category;
-  List<CatalogCategory> get _displayCategories => [
-    CatalogCategory.all,
-    const CatalogCategory(_recommendationCategory, '推荐'),
-    ..._categories.where((entry) => entry.id.isNotEmpty),
-  ];
-
-  Future<void> _loadCategories({
-    bool force = false,
-    bool cacheOnly = false,
-  }) async {
-    final generation = ++_categoryGeneration;
-    setState(() {
-      _categoriesError = null;
-    });
-    final error = await _browser.loadCategories(
-      force: force,
-      cacheOnly: cacheOnly,
-    );
-    if (!mounted || generation != _categoryGeneration) {
-      return;
-    }
-    setState(() {
-      _categoriesError = error;
-    });
-    if (!_showRecommendations &&
-        _category.isNotEmpty &&
-        !_categories.any((entry) => entry.id == _category)) {
-      _changeCategory('');
-    }
-  }
 
   Future<void> _refreshCatalog() async {
     if (widget.repository.supportsSourceManagement) {
@@ -111,7 +69,6 @@ class _HomeScreenState extends State<HomeScreen> {
       await _updater.update();
       return;
     }
-    await _loadCategories(force: true);
     if (mounted) await _load(force: true);
   }
 
@@ -163,76 +120,10 @@ class _HomeScreenState extends State<HomeScreen> {
           () => widget.store.refreshDramas(updates.values),
         );
         if (!mounted || epoch != widget.store.profileEpoch) return;
-        await _loadCategories(cacheOnly: true);
-        if (mounted &&
-            !_loading &&
-            !_loadingMore &&
-            _search.text.trim().isEmpty)
-          await _load(cacheOnly: true);
       }
     } finally {
       _refreshingUpdatedCache = false;
     }
-  }
-
-  void _changeCategory(String category) {
-    if (category == _recommendationCategory) {
-      if (_showRecommendations) return;
-      _pauseCatalog();
-      setState(() {
-        _showRecommendations = true;
-        _selectionMode = false;
-        _selectedDramas.clear();
-        _search.clear();
-        _searchVisible = false;
-        _submittedQuery = '';
-      });
-      return;
-    }
-    if (_category == category && !_showRecommendations) return;
-    _debounce?.cancel();
-    setState(() {
-      _showRecommendations = false;
-      _selectionMode = false;
-      _selectedDramas.clear();
-      _selectedCategory = category;
-      if (_onlineSearch) {
-        _search.clear();
-        _submittedQuery = '';
-      }
-      _items = [];
-      _hasMore = true;
-      _error = null;
-    });
-    if (_scroll.hasClients) _scroll.jumpTo(0);
-    _load(useCache: true);
-  }
-
-  void _swipeCategory(DragEndDetails details) {
-    final velocity = details.primaryVelocity ?? 0;
-    if (velocity.abs() < 240) return;
-    final categories = _displayCategories;
-    final index = categories.indexWhere(
-      (entry) => entry.id == _displayCategory,
-    );
-    final next = index + (velocity < 0 ? 1 : -1);
-    if (next >= 0 && next < categories.length) {
-      _changeCategory(categories[next].id);
-    }
-  }
-
-  void _toggleSearch() {
-    if (AppLayout.isTelevision(context)) {
-      _televisionSearch();
-      return;
-    }
-    if (_showRecommendations) _changeCategory('');
-    final hadQuery = _search.text.isNotEmpty;
-    setState(() {
-      _searchVisible = !_searchVisible;
-      if (!_searchVisible) _search.clear();
-    });
-    if (!_searchVisible && hadQuery) _searchChanged('');
   }
 
   void _openRankings() {
@@ -258,7 +149,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (!mounted) return;
-    await _loadCategories();
     if (mounted && (!_onlineSearch || _submittedQuery.isEmpty)) {
       await _load(useCache: true);
     }
@@ -320,12 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_selectionMode) {
       _cancelSelection();
     } else if (_tab != 0) {
-      setState(() => _tab = 0);
-    } else if (_searchVisible) {
-      _toggleSearch();
-    } else if (_search.text.isNotEmpty) {
-      _search.clear();
-      _searchChanged('');
+      _changeTab(0);
     }
   }
 
@@ -341,12 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
     )..addListener(_updateChanged);
     _updater.startWatching();
     widget.repository.catalogUpdates.addListener(_metadataChanged);
-    if (widget.store.sources.isNotEmpty) {
-      _load(useCache: true);
-      _loadCategories();
-    } else {
-      _loading = false;
-    }
+    _loading = false;
   }
 
   @override
@@ -356,7 +236,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _cacheRefreshTimer?.cancel();
     widget.repository.catalogUpdates.removeListener(_metadataChanged);
     _generation++;
-    _categoryGeneration++;
     unawaited(_browser.cancel());
     unawaited(widget.repository.cancelSuggestions());
     _debounce?.cancel();
@@ -368,7 +247,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onCatalogScroll() {
     if (!mounted ||
-        _showRecommendations ||
+        _tab != 1 ||
         !_hasMore ||
         _loading ||
         _loadingMore ||
@@ -382,7 +261,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _catalogLoadScheduled = false;
       if (!mounted ||
-          _showRecommendations ||
+          _tab != 1 ||
           !_hasMore ||
           _loading ||
           _loadingMore ||
@@ -414,13 +293,20 @@ class _HomeScreenState extends State<HomeScreen> {
     bool force = false,
     bool cacheOnly = false,
   }) async {
-    if (_showRecommendations) return;
     if (more && (_loading || _loadingMore || !_hasMore)) return;
     final generation = ++_generation;
     final query = _onlineSearch ? _search.text.trim() : '';
+    if (query.isEmpty) {
+      setState(() {
+        _items = [];
+        _submittedQuery = '';
+        _hasMore = _loading = _loadingMore = false;
+        _error = null;
+      });
+      return;
+    }
     setState(() {
       _error = null;
-      if (query.isNotEmpty) _selectedCategory = '';
       if (more) {
         _loadingMore = true;
       } else {
@@ -446,7 +332,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final result = await _browser.load(
-        category: _category,
         query: query,
         more: more,
         useCache: useCache,
@@ -476,15 +361,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     setState(() {});
     if (_onlineSearch && query.trim().isEmpty) {
-      _debounce = Timer(const Duration(milliseconds: 300), () => _load());
+      unawaited(_load());
     }
   }
 
   void _submitSearch(String query) {
-    if (_showRecommendations) {
-      _showRecommendations = false;
-      _selectedCategory = '';
-    }
+    if (_tab != 1) _changeTab(1);
     _selectionMode = false;
     _selectedDramas.clear();
     _search.text = query.trim();
@@ -540,11 +422,17 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _changeTab(int tab) => setState(() {
-    _tab = tab;
-    _selectionMode = false;
-    _selectedDramas.clear();
-  });
+  void _changeTab(int tab) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _debounce?.cancel();
+    unawaited(widget.repository.cancelSuggestions());
+    setState(() {
+      _tab = tab;
+      _visitedTabs.add(tab);
+      _selectionMode = false;
+      _selectedDramas.clear();
+    });
+  }
 
   void _onNavSelected(int tab) => _changeTab(tab);
 
@@ -646,10 +534,6 @@ class _HomeScreenState extends State<HomeScreen> {
     return sortCatalog(
       _items.where((drama) {
         if (!widget.store.allowsSource(drama.source)) return false;
-        if (_category.startsWith('local:') &&
-            categoryName(drama.category) != _category.substring(6)) {
-          return false;
-        }
         return _onlineSearch ||
             query.isEmpty ||
             matchesDramaQuery(drama, query);
@@ -673,33 +557,62 @@ class _HomeScreenState extends State<HomeScreen> {
           final appearance = widget.store.themeAppearance;
           final blurredBars = appearance.blurBars && !desktop && !television;
           final floatingBar = appearance.floatingBar && !desktop && !television;
-          final content = _tab == 0
-              ? _catalog(selectionInBody: desktop || television)
-              : MyScreen(
-                  key: ValueKey('my-${widget.store.profileEpoch}'),
-                  repository: widget.repository,
-                  store: widget.store,
-                  onSearch: () {
-                    _changeTab(0);
-                    if (!_searchVisible) _toggleSearch();
-                  },
-                  onSort: () async {
-                    await _chooseCatalogView();
-                    if (mounted) _changeTab(0);
-                  },
-                  onRankings: _openRankings,
-                  onSelectDownloads: () {
-                    _changeTab(0);
-                    if (_showRecommendations) _changeCategory('');
-                    setState(() => _selectionMode = true);
-                  },
-                  onRefresh: () {
-                    _changeTab(0);
-                    if (_showRecommendations) _changeCategory('');
-                    unawaited(_refreshCatalog());
-                  },
-                  onDisplayMode: _chooseDisplayMode,
-                );
+          final pages = <Widget>[
+            RecommendationsScreen(
+              key: ValueKey('recommendations-${widget.store.profileEpoch}'),
+              repository: widget.repository,
+              store: widget.store,
+              embedded: true,
+              active: _tab == 0,
+            ),
+            if (_visitedTabs.contains(1))
+              KeyedSubtree(
+                key: ValueKey('search-${widget.store.profileEpoch}'),
+                child: _catalog(selectionInBody: desktop || television),
+              )
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(2))
+              MyScreen(
+                key: ValueKey('my-${widget.store.profileEpoch}'),
+                repository: widget.repository,
+                store: widget.store,
+                active: _tab == 2,
+                onSearch: () {
+                  _changeTab(1);
+                  if (television) unawaited(_televisionSearch());
+                },
+                onSort: () async {
+                  await _chooseCatalogView();
+                  if (mounted) _changeTab(1);
+                },
+                onRankings: _openRankings,
+                onSelectDownloads: () {
+                  _changeTab(1);
+                  setState(() => _selectionMode = true);
+                },
+                onRefresh: () {
+                  _changeTab(1);
+                  unawaited(_refreshCatalog());
+                },
+                onDisplayMode: _chooseDisplayMode,
+              )
+            else
+              const SizedBox.shrink(),
+          ];
+          final content = IndexedStack(
+            index: _tab,
+            children: [
+              for (var index = 0; index < pages.length; index++)
+                TickerMode(
+                  enabled: _tab == index,
+                  child: ExcludeFocus(
+                    excluding: _tab != index,
+                    child: pages[index],
+                  ),
+                ),
+            ],
+          );
           final scaffold = Scaffold(
             extendBody: floatingBar || blurredBars,
             body: SafeArea(
@@ -715,7 +628,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         NavigationRailDestination(
                           icon: Icon(Icons.explore_outlined),
                           selectedIcon: Icon(Icons.explore),
-                          label: Text('发现'),
+                          label: Text('首页'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.search_rounded),
+                          label: Text('搜索'),
                         ),
                         NavigationRailDestination(
                           icon: Icon(Icons.person_outline_rounded),
@@ -744,7 +661,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       NavigationDestination(
                         icon: Icon(Icons.explore_outlined),
                         selectedIcon: Icon(Icons.explore),
-                        label: '发现',
+                        label: '首页',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.search_rounded),
+                        label: '搜索',
                       ),
                       NavigationDestination(
                         icon: Icon(Icons.person_outline_rounded),
@@ -754,15 +675,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
           );
-          if (!television && !_selectionMode && _tab == 0 && !_searchVisible) {
+          if (!television && !_selectionMode && _tab == 0) {
             return scaffold;
           }
           return PopScope(
-            canPop:
-                !_selectionMode &&
-                _tab == 0 &&
-                !_searchVisible &&
-                _search.text.isEmpty,
+            canPop: !_selectionMode && _tab == 0,
             onPopInvokedWithResult: (didPop, result) {
               if (!didPop) _televisionBack();
             },
@@ -788,6 +705,12 @@ class _HomeScreenState extends State<HomeScreen> {
     final television = AppLayout.isTelevision(context);
     return Column(
       children: [
+        if (television)
+          RemoteButton(
+            label: '搜索短剧',
+            icon: Icons.search_rounded,
+            onPressed: _televisionSearch,
+          ),
         if (_updater.busy('hongguo'))
           const LinearProgressIndicator(minHeight: 2),
         if (_selectionMode)
@@ -802,7 +725,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextButton(onPressed: _cancelSelection, child: const Text('取消')),
             ],
           ),
-        if (_searchVisible && !television)
+        if (!television)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
             child: Row(
@@ -811,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: SearchInput(
                     key: ValueKey('search-catalog'),
                     controller: _search,
-                    autofocus: true,
+                    autofocus: false,
                     hint: _searchHint,
                     suggestions: _searchSuggestions
                         ? widget.repository.suggestions
@@ -823,15 +746,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 IconButton(
-                  tooltip: '收起搜索',
-                  onPressed: _toggleSearch,
-                  icon: const Icon(Icons.close_rounded),
+                  tooltip: '排序与筛选',
+                  onPressed: _chooseCatalogView,
+                  icon: const Icon(Icons.tune_rounded),
                 ),
               ],
             ),
           ),
-        if (_searchVisible &&
-            _search.text.trim().isEmpty &&
+        if (_search.text.trim().isEmpty &&
             widget.store.recentSearches.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -867,31 +789,11 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-        CatalogFilters(
-          key: ValueKey('filters-catalog'),
-          categories: _displayCategories,
-          category: _displayCategory,
-          error: _categoriesError,
-          onCategory: _changeCategory,
-          onRetry: () => _loadCategories(force: true),
-        ),
-        if (_showRecommendations)
-          Expanded(
-            child: GestureDetector(
-              onHorizontalDragEnd: television ? null : _swipeCategory,
-              child: RecommendationsScreen(
-                repository: widget.repository,
-                store: widget.store,
-                embedded: true,
-              ),
-            ),
-          )
-        else ...[
+        ...[
           if (_loading && _items.isNotEmpty)
             const LinearProgressIndicator(minHeight: 2),
           Expanded(
             child: GestureDetector(
-              onHorizontalDragEnd: television ? null : _swipeCategory,
               child: _loading && _items.isEmpty
                   ? const Center(
                       child: Column(
@@ -919,8 +821,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     )
                   : items.isEmpty
                   ? StatusPanel(
-                      title: '没有找到匹配的短剧',
-                      message: '可以换个搜索词，或刷新后重试。',
+                      title: _search.text.trim().isEmpty ? '搜索短剧' : '没有找到匹配的短剧',
+                      message: _search.text.trim().isEmpty
+                          ? '输入剧名开始搜索，或选择最近搜索。'
+                          : '可以换个搜索词，或刷新后重试。',
                       onRetry: _hasMore && !_loadingMore && _search.text.isEmpty
                           ? () => _load(more: true)
                           : null,
@@ -932,7 +836,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           return _televisionGrid(
                             items,
                             constraints.maxWidth,
-                            key: 'catalog-catalog-$_category-$_submittedQuery',
+                            key: 'catalog-catalog-$_submittedQuery',
                             controller: _scroll,
                             footer: Padding(
                               padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),

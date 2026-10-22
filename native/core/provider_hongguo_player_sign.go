@@ -24,6 +24,13 @@ func newHongguoPlayerNonce() (hongguoPlayerNonce, error) {
 }
 
 func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time, installID string, nonce hongguoPlayerNonce) {
+	signHongguoPlayerBasicRequest(request, body, now)
+	stamp := uint32(now.Unix())
+	request.Header.Set("X-Argus", hongguoPlayerArgus(request.URL.RawQuery, body, stamp, installID, nonce))
+	request.Header.Set("X-Ladon", hongguoPlayerLadon(request.URL.Query().Get("aid"), stamp, nonce[2:6]))
+}
+
+func signHongguoPlayerBasicRequest(request *http.Request, body []byte, now time.Time) {
 	stamp := uint32(now.Unix())
 	queryHash := md5.Sum([]byte(request.URL.RawQuery))
 	var payload [20]byte
@@ -48,8 +55,6 @@ func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time,
 	request.Header.Set("X-Gorgon", hex.EncodeToString(signature))
 	request.Header.Set("X-SS-Req-Ticket", strconv.FormatInt(now.UnixMilli(), 10))
 
-	request.Header.Set("X-Argus", hongguoPlayerArgus(request.URL.RawQuery, body, stamp, installID, nonce))
-	request.Header.Set("X-Ladon", hongguoPlayerLadon(request.URL.Query().Get("aid"), stamp, nonce[2:6]))
 }
 
 func hongguoPlayerArgus(query string, body []byte, timestamp uint32, installID string, nonce hongguoPlayerNonce) string {

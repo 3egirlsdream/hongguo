@@ -67,6 +67,7 @@ class AppFailure implements Exception {
 }
 
 abstract class AppRepository {
+  final accountStatus = ValueNotifier<Map<String, dynamic>>({});
   final accountFavorites = ValueNotifier<Set<String>>({});
   bool get accountFavoritesLoaded => true;
   bool isAccountFavorite(String id) => accountFavorites.value.contains(id);
@@ -220,24 +221,63 @@ class NativeRepository extends AppRepository {
       accountFavorites.value.contains(id);
   @override
   bool get supportsOfficialAccount => true;
+  Future<void> _accountRequests = Future<void>.value();
+  int _accountStatusRevision = 0;
+
   @override
   Future<Map<String, dynamic>> hongguoAccount(
     String command, [
     Map<String, dynamic> input = const {},
-  ]) async {
+  ]) {
+    final epoch = access?.profileEpoch;
+    Future<Map<String, dynamic>> request() {
+      if (epoch != access?.profileEpoch) throw AppFailure('本地用户已变更，请重新打开页面');
+      return _requestAccount(command, input);
+    }
+
+    if ({'status', 'cancel', 'logout', 'queueProgress'}.contains(command)) {
+      return request();
+    }
+    final pending = _accountRequests.then((_) => request());
+    _accountRequests = pending.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace trace) {},
+    );
+    return pending;
+  }
+
+  Future<Map<String, dynamic>> _requestAccount(
+    String command,
+    Map<String, dynamic> input,
+  ) async {
     _authorize('hongguo');
+    final statusRevision = _accountStatusRevision;
     final result = await _call({
       'action': 'hongguoAccount',
       'command': command,
       'account': input,
     });
+    if (command == 'status' && statusRevision != _accountStatusRevision) {
+      return _requestAccount(command, input);
+    }
     if (result.containsKey('loggedIn')) {
+      if (command != 'status' &&
+          command != 'queueProgress' &&
+          command != 'sync') {
+        _accountStatusRevision++;
+      }
       final uid = (result['profile'] as Map?)?['uid'] as String? ?? '';
       if (_accountEpoch != access?.profileEpoch || _accountUID != uid) {
         _accountEpoch = access?.profileEpoch ?? -1;
         _accountUID = uid;
         _favoritesLoaded = false;
         accountFavorites.value = {};
+      }
+      final previous = accountStatus.value;
+      if (previous['loggedIn'] != result['loggedIn'] ||
+          previous['phase'] != result['phase'] ||
+          !mapEquals(previous['profile'] as Map?, result['profile'] as Map?)) {
+        accountStatus.value = Map<String, dynamic>.unmodifiable(result);
       }
     }
     if (_accountEpoch == access?.profileEpoch && input['uid'] == _accountUID) {
@@ -610,6 +650,14 @@ class NativeRepository extends AppRepository {
         _authorize('hongguo');
         input['profile'] = access?.profile.id ?? '';
       }
+      if ({
+        'resolve',
+        'preload',
+        'prepareHandoff',
+        'enqueueDownloads',
+      }.contains(action)) {
+        input['profile'] = access?.profile.id ?? '';
+      }
       final unrestricted =
           {
             'initialize',
@@ -683,7 +731,12 @@ class NativeRepository extends AppRepository {
         Duration(
           seconds:
               action == 'hongguoAccount' &&
-                  {'sync', 'favorites', 'favorite'}.contains(input['command'])
+                  {
+                    'sync',
+                    'history',
+                    'favorites',
+                    'favorite',
+                  }.contains(input['command'])
               ? 195
               : action == 'moveDownloads'
               ? 620

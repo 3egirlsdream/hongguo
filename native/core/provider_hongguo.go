@@ -198,13 +198,6 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	media, nativeErr := d.resolveHongguoAppMedia(ctx, videoID)
-	if nativeErr == nil {
-		return media, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return providerMedia{}, err
-	}
 	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
 	if pageErr == nil {
 		return media, nil
@@ -212,7 +205,18 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
-	media, apiErr := d.resolveHongguoPlaybackAPI(ctx, seriesID, videoID)
+	appContext, cancelApp := context.WithTimeout(ctx, 25*time.Second)
+	media, nativeErr := d.resolveHongguoAppMedia(appContext, videoID)
+	cancelApp()
+	if nativeErr == nil {
+		return media, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	backupContext, cancelBackup := context.WithTimeout(ctx, 12*time.Second)
+	defer cancelBackup()
+	media, apiErr := d.resolveHongguoPlaybackAPI(backupContext, seriesID, videoID)
 	if apiErr == nil {
 		return media, nil
 	}
@@ -220,22 +224,52 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
-	pageURL := hongguoBaseURL + "/player/" + url.PathEscape(seriesID) + "/" + url.PathEscape(videoID)
-	body, err := d.fetchProviderText(ctx, pageURL, hongguoBaseURL+"/")
+	bases := []string{"https://novelquickapp.com", hongguoBaseURL}
+	var failures []error
+	for _, base := range bases {
+		media, err := d.resolveHongguoWebMediaAt(ctx, base, seriesID, videoID)
+		if err == nil {
+			return media, nil
+		}
+		if ctx.Err() != nil {
+			return providerMedia{}, ctx.Err()
+		}
+		failures = append(failures, err)
+	}
+	return providerMedia{}, errors.Join(failures...)
+}
+
+func (d *Downloader) resolveHongguoWebMediaAt(ctx context.Context, base, seriesID, videoID string) (providerMedia, error) {
+	pageURL := base + "/player/" + url.PathEscape(seriesID) + "/" + url.PathEscape(videoID)
+	pageContext, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	body, err := d.fetchProviderText(pageContext, pageURL, base+"/")
 	if err != nil {
 		return providerMedia{}, err
 	}
 	page := routerLoaderMap(parseRouterData(body), "player_", "player_page")
 	if mapString(page, "vid") != videoID || mapString(page, "series_id") != seriesID {
-		return providerMedia{}, fmt.Errorf("红果未返回所请求的剧集，可能仅允许网页试看；请在站点确认该集的访问权限")
+		return providerMedia{}, fmt.Errorf("%s 未返回所请求的剧集，请确认该集的访问权限", base)
 	}
-	info, _ := page["video_player_info"].(map[string]any)
+	info := nestedMap(page, "video_player_info")
 	addresses := hongguoMediaAddresses(info)
 	if len(addresses) == 0 {
-		return providerMedia{}, fmt.Errorf("红果该集未提供公开播放地址，可能需要登录或 App 授权；不会将试看集冒充该集下载")
+		if media, ok := hongguoPublicWebMedia(body, base, seriesID, videoID, page); ok {
+			return media, nil
+		}
+		return providerMedia{}, fmt.Errorf("%s 该集未提供公开播放地址，可能需要登录或 App 授权", base)
 	}
 	duration, _ := strconv.ParseFloat(mapString(info, "duration"), 64)
-	media := providerMedia{URL: addresses[0], Referer: d.providerBaseURL(sourceHongguo) + "/", Duration: time.Duration(duration * float64(time.Second))}
+	media := providerMedia{URL: addresses[0], Referer: base + "/", Duration: time.Duration(duration * float64(time.Second))}
+	spade := firstNonEmpty(mapString(nestedMap(info, "encrypt_info"), "spade_a"), mapString(info, "spade_a"))
+	if spade != "" {
+		media.CENCKey, err = hongguoContentKey(spade)
+		if err != nil {
+			return providerMedia{}, err
+		}
+	} else if hgBool(nestedMap(info, "encrypt_info")["encrypt"]) || hgBool(info["encrypt"]) {
+		return providerMedia{}, errors.New("红果网页返回加密媒体但缺少播放密钥")
+	}
 	for _, address := range addresses {
 		variant := media
 		variant.URL, variant.Variants = address, nil

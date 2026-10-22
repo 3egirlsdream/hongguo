@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -24,7 +25,7 @@ type hongguoRecommendationPage struct {
 }
 
 func (query hongguoRecommendationQuery) validate() error {
-	known := false
+	known := query.Genre == "feed"
 	for _, genre := range hongguoAppGenres {
 		known = known || query.Genre == genre.key
 	}
@@ -43,6 +44,9 @@ func (downloader *Downloader) fetchHongguoRecommendations(ctx context.Context, q
 	page := hongguoRecommendationPage{Dramas: []Drama{}}
 	if err := query.validate(); err != nil {
 		return page, err
+	}
+	if query.Genre == "feed" {
+		return downloader.fetchHongguoFeedRecommendations(ctx, query)
 	}
 	scene, category := "", ""
 	for _, genre := range hongguoAppGenres {
@@ -110,4 +114,80 @@ func (downloader *Downloader) fetchHongguoRecommendations(ctx context.Context, q
 		return hongguoRecommendationPage{}, errors.New("红果推荐分页标记无效")
 	}
 	return page, ctx.Err()
+}
+
+func (downloader *Downloader) fetchHongguoFeedRecommendations(ctx context.Context, query hongguoRecommendationQuery) (hongguoRecommendationPage, error) {
+	seen := map[string]bool{}
+	filters := make([]string, 0, len(query.Seen))
+	for _, id := range query.Seen {
+		id = strings.TrimPrefix(id, "hongguo:")
+		if !seen[id] {
+			seen[id] = true
+			filters = append(filters, id)
+		}
+	}
+	offset, session := query.Offset, query.SessionID
+	for attempt := 0; attempt < 3; attempt++ {
+		params := url.Values{
+			"bottom_tab_type": {"7"}, "client_req_type": {"2"}, "client_template": {"7"},
+			"change_type": {"0"}, "category_id": {"0"}, "cell_sub_id": {"0"}, "limit": {"10"},
+			"need_personal_recommend": {"1"}, "video_type_preferences_str": {"[]"},
+			"cell_id": {"7294257141911650341"}, "plan_id": {"7294257258253254693"}, "tab_type": {"16"},
+			"offset": {strconv.Itoa(offset)}, "session_id": {session}, "filter_ids": {strings.Join(filters, ",")},
+		}
+		result, err := downloader.hongguoAppRequest(ctx, http.MethodGet, "/reading/bookapi/bookmall/cell/change/v", params, nil)
+		if err != nil {
+			return hongguoRecommendationPage{}, err
+		}
+		data := nestedMap(result, "data")
+		cells, valid := nestedMap(data, "cell_view")["cell_data"].([]any)
+		more, flagErr := hgPageFlag(data["has_more"])
+		next, nextErr := strconv.Atoi(mapString(data, "next_offset"))
+		if !valid || flagErr != nil || more && (nextErr != nil || next <= offset || next > 1_000_000) {
+			return hongguoRecommendationPage{}, errors.New("红果官方推荐分页数据异常，已保留上次位置")
+		}
+		nextSession := mapString(data, "session_id")
+		if nextSession == "" {
+			nextSession = session
+		}
+		if len(nextSession) > 4096 || strings.ContainsAny(nextSession, "\r\n\x00") {
+			return hongguoRecommendationPage{}, errors.New("红果官方推荐会话无效")
+		}
+		if !more && (nextErr != nil || next < offset || next > 1_000_000) {
+			next = offset
+		}
+		page := hongguoRecommendationPage{Dramas: []Drama{}, NextOffset: next, SessionID: nextSession, HasMore: more}
+		visited := 0
+		var collect func([]any, int)
+		collect = func(rows []any, depth int) {
+			if depth > 6 {
+				return
+			}
+			for _, value := range rows {
+				visited++
+				if visited > 4096 {
+					return
+				}
+				cell := nestedMap(value)
+				if !hgBool(cell["disable_play"]) {
+					detail := nestedMap(cell, "video_detail")
+					drama := hongguoDramaFromAny(detail, "")
+					id := strings.TrimPrefix(drama.ID, "hongguo:")
+					count := int(hgFloat(drama.EpisodeCount))
+					if drama.ID != "" && count > 0 && !seen[id] {
+						seen[id] = true
+						page.Dramas = append(page.Dramas, drama)
+					}
+					collect(anyList(cell["video_data"]), depth+1)
+					collect(anyList(cell["cell_data"]), depth+1)
+				}
+			}
+		}
+		collect(cells, 0)
+		if len(page.Dramas) > 0 || !more {
+			return page, ctx.Err()
+		}
+		offset, session = next, nextSession
+	}
+	return hongguoRecommendationPage{}, errors.New("本轮官方推荐暂无新剧集，可下拉刷新重试")
 }

@@ -234,6 +234,15 @@ func (d *Downloader) doCatalogRequestWithTimeout(request *http.Request, timeout 
 }
 
 func (d *Downloader) doPreparedCatalogRequest(request *http.Request, timeout time.Duration, prepare func(*http.Request)) (*http.Response, error) {
+	return d.doPreparedCatalogRequestWithClient(request, timeout, func(prepared *http.Request) error {
+		if prepare != nil {
+			prepare(prepared)
+		}
+		return nil
+	}, d.client)
+}
+
+func (d *Downloader) doPreparedCatalogRequestWithClient(request *http.Request, timeout time.Duration, prepare func(*http.Request) error, client *http.Client) (*http.Response, error) {
 	if background, _ := request.Context().Value(backgroundCatalogKey{}).(bool); background && (timeout <= 0 || timeout > 8*time.Second) {
 		timeout = 8 * time.Second
 	}
@@ -248,9 +257,13 @@ func (d *Downloader) doPreparedCatalogRequest(request *http.Request, timeout tim
 		request = request.WithContext(ctx)
 	}
 	if prepare != nil {
-		prepare(request)
+		if err := prepare(request); err != nil {
+			cancel()
+			release()
+			return nil, err
+		}
 	}
-	response, err := d.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		cancel()
 		release()

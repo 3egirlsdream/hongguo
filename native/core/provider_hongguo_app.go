@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,12 +134,27 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	client.mu.Lock()
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID
 	client.mu.Unlock()
+	mediaRequest, _ := ctx.Value(hongguoMediaRequestKey{}).(bool)
+	session, authenticated := ctx.Value(hongguoPlaybackSessionKey{}).(hgAccountSession)
+	authenticated = mediaRequest && authenticated && hgHasCredentials(session) && hgValidID(session.DeviceID) && hgValidID(session.InstallID)
+	if authenticated {
+		deviceID, installID = session.DeviceID, session.InstallID
+	}
 	query := url.Values{
 		"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"},
 		"manifest_version_code": {"73532"}, "update_version_code": {"73532"}, "channel": {"update_64"},
 		"device_platform": {"android"}, "os": {"android"}, "ssmix": {"a"}, "device_type": {"25053RT47C"},
 		"device_brand": {"Redmi"}, "language": {"zh"}, "os_api": {"36"}, "os_version": {"16"},
 		"resolution": {"1280*2772"}, "dpi": {"520"}, "ac": {"wifi"}, "device_id": {deviceID}, "iid": {installID},
+	}
+	if mediaRequest {
+		for key, value := range map[string]string{"host_abi": "arm64-v8a", "dragon_device_type": "phone", "pv_player": "73532", "compliance_status": "0", "need_personal_recommend": "1", "player_so_load": "1", "is_android_pad_screen": "0"} {
+			query.Set(key, value)
+		}
+		if authenticated {
+			query.Set("cdid", session.Device.CDID)
+			query.Set("openudid", session.Device.OpenUDID)
+		}
 	}
 	for key, values := range extra {
 		query[key] = append([]string(nil), values...)
@@ -157,6 +174,9 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	if attempts > 3 {
 		attempts = 3
 	}
+	if mediaRequest && attempts < 2 {
+		attempts = 2
+	}
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 {
@@ -174,6 +194,29 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		request.Header.Set("Accept", "application/json")
 		request.Header.Set("X-XS-From-Web", "0")
 		request.Header.Set("Sdk-Version", "2")
+		transport := downloader.client
+		if mediaRequest {
+			scoped := *downloader.client
+			scoped.Jar = nil
+			scoped.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+			transport = &scoped
+			request.Header.Set("X-SS-DP", "8662")
+			request.Header.Set("X-Tt-Store-Region", "cn")
+			request.Header.Set("X-Tt-Store-Region-Src", "did")
+			request.Header.Set("X-Tt-Request-Tag", "t=0;n=0")
+			request.Header.Set("Passport-Sdk-Version", "50561")
+			if authenticated {
+				for name, value := range session.Cookies {
+					request.AddCookie(&http.Cookie{Name: name, Value: value})
+				}
+				if region := session.Cookies["store-region"]; region != "" {
+					request.Header.Set("X-Tt-Store-Region", region)
+				}
+				if session.Token != "" {
+					request.Header.Set("X-Tt-Token", session.Token)
+				}
+			}
+		}
 		comment, _ := ctx.Value(hongguoCommentKey{}).(bool)
 		var commentNonce hongguoCommentNonce
 		var playerNonce hongguoPlayerNonce
@@ -193,16 +236,32 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		if payload != nil {
 			request.Header.Set("Content-Type", "application/json; charset=utf-8")
 		}
-		response, err := downloader.doPreparedCatalogRequest(request, 20*time.Second, func(prepared *http.Request) {
+		response, err := downloader.doPreparedCatalogRequestWithClient(request, 20*time.Second, func(prepared *http.Request) error {
 			now := time.Now()
+			if mediaRequest {
+				query.Set("ts", strconv.FormatInt(now.Unix(), 10))
+			}
 			query.Set("_rticket", strconv.FormatInt(now.UnixMilli(), 10))
 			prepared.URL.RawQuery = query.Encode()
 			if comment {
 				signHongguoCommentRequest(prepared, commentNonce, now)
+			} else if mediaRequest && attempt == 0 {
+				raw, headers, err := hgAuthSign(query, body, now.UnixMilli(), deviceID)
+				if err != nil {
+					return err
+				}
+				prepared.URL.RawQuery = raw
+				for key, values := range headers {
+					prepared.Header[key] = values
+				}
+				stamp := uint32(now.Unix())
+				prepared.Header.Set("X-Ladon", base64.StdEncoding.EncodeToString(binary.BigEndian.AppendUint32(nil, stamp)))
+				prepared.Header.Set("X-Argus", base64.StdEncoding.EncodeToString(binary.LittleEndian.AppendUint32(nil, stamp)))
 			} else {
 				signHongguoPlayerRequest(prepared, body, now, installID, playerNonce)
 			}
-		})
+			return nil
+		}, transport)
 		if err != nil {
 			lastErr = err
 			var backoff *requestBackoff
@@ -224,8 +283,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			}
 			continue
 		}
-		if len(content) == 0 || len(content) > providerMaxBodyBytes {
-			return nil, errors.New("红果 App 接口未返回有效数据")
+		if len(bytes.TrimSpace(content)) == 0 {
+			lastErr = fmt.Errorf("红果 App 接口 %s 返回 HTTP 200 空响应，可能触发服务端访问限制", path)
+			continue
+		}
+		if len(content) > providerMaxBodyBytes {
+			return nil, errors.New("红果 App 接口响应超过大小限制")
 		}
 		var result map[string]any
 		decoder := json.NewDecoder(bytes.NewReader(content))

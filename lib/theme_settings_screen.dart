@@ -48,9 +48,9 @@ class _ThemeSettingsScreenState extends State<ThemeSettingsScreen> {
   }
 
   Widget _card(List<Widget> rows) => MiuixCard(
-        insideMargin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Column(children: rows),
-      );
+    insideMargin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+    child: Column(children: rows),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -58,10 +58,9 @@ class _ThemeSettingsScreenState extends State<ThemeSettingsScreen> {
     return AnimatedBuilder(
       animation: widget.store,
       builder: (context, _) {
-        final modeIndex = _themeModes.indexOf(widget.store.themeMode).clamp(
-              0,
-              _themeModes.length - 1,
-            );
+        final modeIndex = _themeModes
+            .indexOf(widget.store.themeMode)
+            .clamp(0, _themeModes.length - 1);
         return MiuixTheme(
           data: brightness == Brightness.dark
               ? MiuixThemeData.dark()
@@ -151,13 +150,12 @@ class _ThemeSettingsScreenState extends State<ThemeSettingsScreen> {
                   ),
                   _card([
                     MiuixSwitchPreference(
-                      title: '预测性返回手势',
-                      summary: '启用对预测性返回手势的支持',
+                      title: '全屏返回手势',
+                      summary: '横移返回上一页，保持页面原始大小',
                       value: _appearance.predictiveBack,
                       enabled: !_saving,
-                      onChanged: (value) => _update(
-                        _appearance.copyWith(predictiveBack: value),
-                      ),
+                      onChanged: (value) =>
+                          _update(_appearance.copyWith(predictiveBack: value)),
                     ),
                     const MiuixHorizontalDivider(),
                     MiuixSwitchPreference(

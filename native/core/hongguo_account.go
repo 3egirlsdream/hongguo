@@ -48,6 +48,7 @@ type hgLoginAttempt struct {
 	Expires time.Time
 }
 type hgAccountInput struct {
+	Refresh         bool            `json:"refresh"`
 	Followed        bool            `json:"followed"`
 	SubscribeOffset *int            `json:"subscribeOffset"`
 	UID             string          `json:"uid"`
@@ -460,6 +461,15 @@ func (engine *nativeEngine) nativeAccount(ctx context.Context, input nativeInput
 	case "sync":
 		e = a.syncHistory(ctx, input.Account.UID)
 	case "history":
+		warning := ""
+		if input.Account.Refresh {
+			if err := a.syncHistory(ctx, input.Account.UID); err != nil {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				warning = "获取最新历史失败，暂时显示已保存记录：" + publicError(err).Error()
+			}
+		}
 		a.mu.Lock()
 		if a.disk.Profile == nil || input.Account.UID == "" || input.Account.UID != a.disk.Profile.UID {
 			e = errors.New("红果账号已退出或切换，请重新打开页面")
@@ -468,7 +478,7 @@ func (engine *nativeEngine) nativeAccount(ctx context.Context, input nativeInput
 			for _, w := range a.library.History {
 				rows = append(rows, w)
 			}
-			result = map[string]any{"items": rows}
+			result = map[string]any{"items": rows, "warning": warning}
 		}
 		a.mu.Unlock()
 	case "favorites", "favorite":

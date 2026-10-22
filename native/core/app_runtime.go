@@ -322,7 +322,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 			nativeState.engine = engine
 		}
 		nativeState.Unlock()
-		return map[string]any{"version": "0.2.67", "standalone": true, "sources": []string{sourceHongguo}}, nil
+		return map[string]any{"version": "0.2.71", "standalone": true, "sources": []string{sourceHongguo}}, nil
 	}
 	engine := nativeState.engine
 	nativeState.Unlock()
@@ -330,7 +330,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 		return nil, errors.New("应用核心尚未就绪，请重新打开应用")
 	}
 	duration := 60 * time.Second
-	if input.Action == "hongguoAccount" && (input.Command == "sync" || input.Command == "favorites" || input.Command == "favorite") {
+	if input.Action == "hongguoAccount" && (input.Command == "sync" || input.Command == "history" && input.Account.Refresh || input.Command == "favorites" || input.Command == "favorite") {
 		duration = 3 * time.Minute
 	}
 	if input.Action == "moveDownloads" {
@@ -592,6 +592,10 @@ func (engine *nativeEngine) nativeResolve(ctx context.Context, input nativeInput
 		}
 	}
 	task := Task{DramaID: input.Drama.ID, DramaTitle: input.Drama.Title, Chapter: input.Chapter, Index: input.Index}
+	ctx, err := engine.hongguoPlaybackContext(ctx, input.Profile)
+	if err != nil {
+		return nativePlan{}, err
+	}
 	media, err := engine.downloader.resolveProviderMedia(ctx, task)
 	if err != nil {
 		return nativePlan{}, err

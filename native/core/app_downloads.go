@@ -23,6 +23,7 @@ type nativeDownloadEpisode struct {
 }
 
 type nativeDownloadJob struct {
+	Profile       string      `json:"profile,omitempty"`
 	ID            string      `json:"id"`
 	Drama         nativeDrama `json:"drama"`
 	Chapter       Chapter     `json:"chapter"`
@@ -98,6 +99,10 @@ func newNativeDownloads(engine *nativeEngine) *nativeDownloads {
 	settings := engine.resourceSettings()
 	manager.concurrency, manager.bySource = settings.DownloadConcurrency, settings.DownloadBySource
 	manager.resolve = func(ctx context.Context, job nativeDownloadJob) (providerMedia, error) {
+		ctx, err := engine.hongguoPlaybackContext(ctx, job.Profile)
+		if err != nil {
+			return providerMedia{}, err
+		}
 		return engine.downloader.resolveProviderMedia(ctx, Task{
 			DramaID: job.Drama.ID, DramaTitle: job.Drama.Title, Chapter: job.Chapter, Index: job.Index})
 	}
@@ -296,6 +301,7 @@ func (manager *nativeDownloads) enqueueContext(ctx context.Context, input native
 				}
 				repaired++
 				existing.Chapter, existing.Quality = entry.Chapter, input.Quality
+				existing.Profile = input.Profile
 				existing.State, existing.Error, existing.Archived = "queued", "", false
 			}
 			continue
@@ -305,7 +311,8 @@ func (manager *nativeDownloads) enqueueContext(ctx context.Context, input native
 			return 0, errors.New("下载记录已满，请清理不再需要的任务")
 		}
 		manager.jobs[id] = &nativeDownloadRecord{nativeDownloadJob: nativeDownloadJob{
-			ID: id, Drama: input.Drama, Chapter: entry.Chapter, Index: entry.Index,
+			Profile: input.Profile,
+			ID:      id, Drama: input.Drama, Chapter: entry.Chapter, Index: entry.Index,
 			Quality: input.Quality, State: "queued", Created: time.Now().UnixMilli()}}
 		if manager.bySource {
 			manager.jobs[id].Folder = input.Drama.Source + "/" + id

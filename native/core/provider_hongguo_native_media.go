@@ -12,25 +12,62 @@ import (
 	"time"
 )
 
+type hongguoMediaRequestKey struct{}
+
 func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoID string) (providerMedia, error) {
 	if !hongguoNumericID.MatchString(videoID) {
 		return providerMedia{}, errors.New("红果视频 ID 无效")
 	}
-	payload := map[string]any{
+	single := map[string]any{
 		"video_id": videoID, "content_type": 1,
 		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
 	}
-	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, "/novel/player/video_model/v1/", nil, payload)
-	if err != nil {
-		return providerMedia{}, err
+	batch := map[string]any{
+		"mixed_video_id_map": map[string]any{"1004": []string{videoID}},
+		"biz_param":          map[string]any{"detail_page_version": 0, "device_level": 3, "disable_digg_stat": false, "need_all_video_definition": true, "need_mp4_align": false, "use_os_player": false, "use_server_dns": false, "video_platform": 1024},
 	}
-	data := nestedMap(result, "data")
-	model, err := hongguoVideoModel(data)
-	if err != nil {
-		return providerMedia{}, err
+	var failures []error
+	for _, endpoint := range []struct {
+		path    string
+		payload map[string]any
+		batch   bool
+	}{
+		{"/novel/player/multi_video_model/v1/", batch, true},
+		{"/novel/player/video_model/v1/", single, false},
+	} {
+		requestCtx, cancel := context.WithTimeout(context.WithValue(ctx, hongguoMediaRequestKey{}, true), 12*time.Second)
+		result, err := downloader.hongguoAppRequest(requestCtx, http.MethodPost, endpoint.path, nil, endpoint.payload)
+		if err == nil {
+			data := nestedMap(result, "data")
+			if endpoint.batch {
+				data = nestedMap(data, videoID)
+			}
+			var model map[string]any
+			model, err = hongguoVideoModel(data)
+			if err == nil && model != nil {
+				var media providerMedia
+				media, err = selectHongguoAppMedia(model)
+				if err != nil && model["fallback_api"] != nil {
+					model, err = downloader.hongguoFallbackModel(requestCtx, model["fallback_api"])
+					if err == nil {
+						media, err = selectHongguoAppMedia(model)
+					}
+				}
+				if err == nil {
+					cancel()
+					return media, nil
+				}
+			} else if err == nil {
+				err = errors.New("未返回所请求分集的播放模型")
+			}
+		}
+		cancel()
+		if ctx.Err() != nil {
+			return providerMedia{}, ctx.Err()
+		}
+		failures = append(failures, fmt.Errorf("%s: %w", endpoint.path, err))
 	}
-
-	return selectHongguoAppMedia(model)
+	return providerMedia{}, errors.Join(failures...)
 }
 
 // hongguoVideoModel 兼容三种下发结构：
@@ -56,8 +93,14 @@ func hongguoVideoModel(data map[string]any) (map[string]any, error) {
 			return nil, fmt.Errorf("红果 App 播放信息格式异常（%s）: %w", hongguoClipText(text, 24), err)
 		}
 	}
-	if len(anyList(model["video_list"])) == 0 {
-		if rows := anyList(data["video_list"]); len(rows) > 0 {
+	hasVariants := func(value any) bool {
+		if rows, ok := value.(map[string]any); ok {
+			return len(rows) > 0
+		}
+		return len(anyList(value)) > 0
+	}
+	if !hasVariants(model["video_list"]) {
+		if hasVariants(data["video_list"]) {
 			merged := make(map[string]any, len(model)+3)
 			for key, value := range model {
 				merged[key] = value
@@ -104,18 +147,22 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 	for _, row := range variants {
 		variant, _ := row.(map[string]any)
 		meta := nestedMap(variant, "video_meta")
-		codec := strings.ToLower(mapString(meta, "codec_type"))
+		codec := strings.ToLower(firstNonEmpty(mapString(meta, "codec_type"), mapString(variant, "codec_type")))
 		if codec == "bytevc2" || strings.Contains(strings.ToLower(mapString(variant, "gear_des_key")), "bytevc2") {
 			continue
 		}
-		addresses := hongguoMediaAddresses(variant)
+		addresses, addressErr := hongguoModelMediaAddresses(model, variant)
+		if addressErr != nil {
+			keyErr = addressErr
+			continue
+		}
 		if len(addresses) == 0 {
 			continue
 		}
 		media := providerMedia{Referer: "https://novel.snssdk.com/", Duration: time.Duration(duration * float64(time.Second))}
 		encryption := nestedMap(variant, "encrypt_info")
-		spade := mapString(encryption, "spade_a")
-		if spade != "" || encryption["encrypt"] == true || mapString(encryption, "encryption_method") == "cenc-aes-ctr" {
+		spade := firstNonEmpty(mapString(encryption, "spade_a"), mapString(variant, "spade_a"), mapString(model, "spade_a"))
+		if spade != "" || hgBool(encryption["encrypt"]) || mapString(encryption, "encryption_method") == "cenc-aes-ctr" {
 			var err error
 			media.CENCKey, err = hongguoContentKey(spade)
 			if err != nil {
@@ -123,10 +170,10 @@ func selectHongguoAppMedia(model map[string]any) (providerMedia, error) {
 				continue
 			}
 		}
-		height, _ := strconv.Atoi(mapString(meta, "vheight"))
-		if definition, err := strconv.Atoi(hongguoQualityNumber.FindString(mapString(meta, "definition"))); err == nil && definition > 0 {
+		height, _ := strconv.Atoi(firstNonEmpty(mapString(meta, "vheight", "height"), mapString(variant, "vheight", "height")))
+		if definition, err := strconv.Atoi(hongguoQualityNumber.FindString(firstNonEmpty(mapString(meta, "definition"), mapString(variant, "quality_desc", "definition")))); err == nil && definition > 0 {
 			height = definition
-		} else if width, _ := strconv.Atoi(mapString(meta, "vwidth")); width > 0 && (height == 0 || width < height) {
+		} else if width, _ := strconv.Atoi(firstNonEmpty(mapString(meta, "vwidth", "width"), mapString(variant, "vwidth", "width"))); width > 0 && (height == 0 || width < height) {
 			height = width
 		}
 		media.Quality = height
@@ -181,7 +228,7 @@ func hongguoMediaAddresses(info map[string]any) []string {
 			}
 		}
 	}
-	for _, key := range []string{"main_url", "backup_url", "backup_url_1", "backup_url_2", "backup_urls", "url_list"} {
+	for _, key := range hongguoMediaAddressFields {
 		add(info[key])
 	}
 	return addresses

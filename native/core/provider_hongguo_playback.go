@@ -31,6 +31,7 @@ type hongguoPlaybackReference struct {
 }
 
 type hongguoPlaybackResponse struct {
+	URL     string          `json:"url"`
 	Parse   json.RawMessage `json:"parse"`
 	JX      json.RawMessage `json:"jx"`
 	KeyURLs []struct {
@@ -99,6 +100,9 @@ func (d *Downloader) resolveHongguoPlaybackAPI(ctx context.Context, seriesID, vi
 	if selected.URL != "" {
 		selected.Variants = variants
 		return selected, nil
+	}
+	if len(response.KeyURLs) == 0 && len(response.URL) <= 8192 && isProviderHTTPMediaURL(response.URL) {
+		return providerMedia{URL: strings.TrimSpace(response.URL), Referer: "https://novel.snssdk.com/"}, nil
 	}
 	if keyErr != nil {
 		return providerMedia{}, keyErr

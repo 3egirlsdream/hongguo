@@ -52,18 +52,22 @@ class HongguoAccountScreen extends StatefulWidget {
     this.drama,
     this.collections = false,
     this.initialTab = 0,
+    this.embedded = false,
+    this.refreshToken = 0,
   });
   final AppRepository repository;
   final LocalStore store;
   final Drama? drama;
   final bool collections;
   final int initialTab;
+  final bool embedded;
+  final int refreshToken;
   @override
   State<HongguoAccountScreen> createState() => _HongguoAccountScreenState();
 }
 
 class _HongguoAccountScreenState extends State<HongguoAccountScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _phone = TextEditingController();
   final _code = TextEditingController();
   final _scroll = ScrollController();
@@ -71,6 +75,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   late final int _epoch;
   Timer? _clock;
   Timer? _verification;
+  int _verificationRun = 0;
   Map<String, dynamic> _status = {};
   final List<Map<String, dynamic>> _items = [];
   List<WatchEntry> _accountHistory = const [];
@@ -78,10 +83,13 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   int _offset = 0, _revision = 0;
   int? _subscribeOffset;
   bool _statusLoading = false;
+  bool _statusRefreshPending = false;
+  int _statusVersion = 0;
   int _selectedTab = 0;
   String _cursor = '';
   String _reservationMode = 'upcoming';
   String? _error, _message;
+  bool _librarySearching = false;
   bool get _active =>
       mounted &&
       widget.store.profileEpoch == _epoch &&
@@ -102,10 +110,61 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     _scroll.addListener(_loadNearEnd);
     widget.store.addListener(_accessChanged);
     widget.repository.accountFavorites.addListener(_favoritesChanged);
-    _refreshStatus();
+    widget.repository.accountStatus.addListener(_accountStatusChanged);
+    WidgetsBinding.instance.addObserver(this);
+    _refreshStatus(loadCollections: true);
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_active && !_busy && !_loading && _tabs.index == 0) _refreshStatus();
+      if (_active && !widget.collections && !_busy && !_loading)
+        _refreshStatus();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant HongguoAccountScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshToken != widget.refreshToken) {
+      unawaited(_refreshStatus(loadCollections: true));
+    }
+    if (oldWidget.initialTab != widget.initialTab) {
+      _tabs.animateTo(widget.initialTab);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _active &&
+        ModalRoute.of(context)?.isCurrent == true) {
+      unawaited(_resumeAccount());
+    }
+  }
+
+  Future<void> _resumeAccount() async {
+    await _refreshStatus(loadCollections: true);
+    if (_active &&
+        !widget.collections &&
+        !_logged &&
+        _status['phase'] == 'mfa') {
+      await _checkSMS();
+    }
+  }
+
+  void _accountStatusChanged() {
+    if (!_active) return;
+    final result = widget.repository.accountStatus.value;
+    final previousUID = _uid;
+    _statusVersion++;
+    setState(() {
+      _status = result;
+      if (previousUID != _uid) {
+        _revision++;
+        _items.clear();
+        _accountHistory = const [];
+        _hasMore = false;
+        _error = null;
+      }
+    });
+    if (widget.collections) unawaited(_refreshStatus(loadCollections: true));
   }
 
   void _favoritesChanged() {
@@ -155,6 +214,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _clock?.cancel();
     _verification?.cancel();
     _tabs.dispose();
@@ -163,18 +223,24 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     _code.dispose();
     widget.store.removeListener(_accessChanged);
     widget.repository.accountFavorites.removeListener(_favoritesChanged);
+    widget.repository.accountStatus.removeListener(_accountStatusChanged);
     super.dispose();
   }
 
-  Future<void> _refreshStatus() async {
-    if (!_active ||
-        _statusLoading ||
-        !widget.repository.supportsOfficialAccount) {
+  Future<void> _refreshStatus({bool loadCollections = false}) async {
+    if (!_active || !widget.repository.supportsOfficialAccount) return;
+    if (_statusLoading) {
+      _statusRefreshPending = _statusRefreshPending || loadCollections;
       return;
     }
     _statusLoading = true;
+    final statusVersion = _statusVersion;
     try {
       final result = await widget.repository.hongguoAccount('status');
+      if (statusVersion != _statusVersion) {
+        _statusRefreshPending = true;
+        return;
+      }
       if (_active) {
         final wasLogged = _logged;
         final previousUID = _uid;
@@ -193,12 +259,18 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
             widget.collections &&
             (previousUID != _uid || previousSync != _status['lastSync']))
           await _readHistory();
-        if (!wasLogged && _logged && widget.collections) unawaited(_load());
+        if ((loadCollections || !wasLogged) && _logged && widget.collections) {
+          await _load();
+        }
       }
     } catch (error) {
       if (_active) setState(() => _error = error.toString());
     } finally {
       _statusLoading = false;
+      if (_statusRefreshPending && _active) {
+        _statusRefreshPending = false;
+        unawaited(_refreshStatus(loadCollections: true));
+      }
     }
   }
 
@@ -215,6 +287,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     try {
       final result = await widget.repository.hongguoAccount(command, input);
       if (!_active) return false;
+      _statusVersion++;
       setState(() {
         if (result.containsKey('loggedIn')) _status = result;
       });
@@ -249,35 +322,36 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
 
   Future<void> _checkSMS() async {
     _verification?.cancel();
+    final run = ++_verificationRun;
     final deadline = DateTime.now().add(const Duration(seconds: 90));
     Future<void> poll() async {
-      if (!_active || DateTime.now().isAfter(deadline)) {
-        _verification?.cancel();
-        if (_active) setState(() => _message = '本轮验证等待已结束，可再次检查或取消登录。');
+      if (!_active || run != _verificationRun) return;
+      if (DateTime.now().isAfter(deadline)) {
+        setState(() => _message = '本轮验证等待已结束，可再次检查或取消登录。');
         return;
       }
-      if (_busy) return;
+      if (_busy) {
+        _verification = Timer(const Duration(seconds: 3), poll);
+        return;
+      }
       final okay = await _run('verifySMS');
-      if (!okay) {
-        _verification?.cancel();
-        return;
-      }
+      if (!_active || run != _verificationRun || !okay) return;
       if (_logged) {
-        _verification?.cancel();
         _code.clear();
         _phone.clear();
+        setState(() => _message = '登录成功，正在同步观看历史');
         await _sync();
+        return;
       }
+      _verification = Timer(const Duration(seconds: 3), poll);
     }
 
     await poll();
-    if (_active && !_logged && _error == null) {
-      _verification = Timer.periodic(const Duration(seconds: 3), (_) => poll());
-    }
   }
 
   Future<void> _cancel() async {
     if (!_active) return;
+    _verificationRun++;
     _verification?.cancel();
     if (await widget.repository
         .hongguoAccount('cancel')
@@ -345,7 +419,6 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       _loading = true;
       _error = null;
       if (!more) {
-        _items.clear();
         _offset = 0;
         _cursor = '';
         _subscribeOffset = null;
@@ -357,11 +430,12 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
           ? 'favorites'
           : tab == 1
           ? 'history'
-          : tab == 2 || tab == 0
+          : tab == 2
           ? 'reservations'
           : 'calendar';
       final result = await widget.repository.hongguoAccount(command, {
         'uid': owner,
+        'refresh': tab == 1 && !more,
         'offset': _offset,
         'cursor': _cursor,
         'mode': tab == 0
@@ -395,6 +469,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
           _error = result['warning'] as String;
         if (tab == 1)
           _accountHistory = [for (final row in rows) WatchEntry.fromJson(row)];
+        if (!more) _items.clear();
         final existing = _items
             .map((row) => '${row['id'] ?? (row['drama'] as Map?)?['id']}')
             .toSet();
@@ -541,78 +616,99 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     final history = _tabs.index == 1;
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Expanded(child: Text(_logged ? '本机与账号记录合并显示' : '登录后可同步账号记录')),
-              TextButton(
-                onPressed: _busy || _loading
-                    ? null
-                    : !_logged
-                    ? _openAccount
-                    : history
-                    ? _sync
-                    : _load,
-                child: Text(
-                  !_logged
-                      ? '登录'
-                      : history
-                      ? '同步'
-                      : '刷新',
+        if (!widget.embedded)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _logged ? '打开时自动更新' : '登录后同步账号记录',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
-              ),
-            ],
+                TextButton(
+                  onPressed: _busy || _loading
+                      ? null
+                      : !_logged
+                      ? _openAccount
+                      : history
+                      ? _sync
+                      : _load,
+                  child: Text(
+                    !_logged
+                        ? '登录'
+                        : history
+                        ? '同步'
+                        : '刷新',
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         Expanded(
-          child: SavedLibrary(
-            key: ValueKey('collection-$history'),
-            repository: widget.repository,
-            store: widget.store,
-            history: history,
-            remoteHistory: _accountHistory,
-            remoteFavorites: !history
-                ? [
-                    for (final row in _items)
-                      Drama.fromJson(
-                        Map<String, dynamic>.from(row['drama'] as Map),
+          child: RefreshIndicator(
+            onRefresh: _load,
+            child: SavedLibrary(
+              compact: widget.embedded,
+              searchVisible: widget.embedded ? _librarySearching : null,
+              key: ValueKey('collection-$history'),
+              repository: widget.repository,
+              store: widget.store,
+              history: history,
+              remoteHistory: _accountHistory,
+              remoteFavorites: !history
+                  ? [
+                      for (final row in _items)
+                        Drama.fromJson(
+                          Map<String, dynamic>.from(row['drama'] as Map),
+                        ),
+                    ]
+                  : const [],
+              onRemoteUnfollow: _unfollow,
+              onHistoryContinue: (entry) async {
+                await openPlaybackDirectly(
+                  context,
+                  drama: entry.drama,
+                  repository: widget.repository,
+                  store: widget.store,
+                  resumeOverride: entry,
+                );
+                if (_active) await _load();
+              },
+              onOpen: (drama) async {
+                await openPlaybackDirectly(
+                  context,
+                  drama: drama,
+                  repository: widget.repository,
+                  store: widget.store,
+                );
+                if (_active) await _load();
+              },
+              onContinue: (drama) async {
+                await openPlaybackDirectly(
+                  context,
+                  drama: drama,
+                  repository: widget.repository,
+                  store: widget.store,
+                );
+                if (_active) await _load();
+              },
+              onDownload:
+                  widget.store.canDownload &&
+                      widget.repository.supportsDownloads
+                  ? (drama) => Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => DetailScreen(
+                          drama: drama,
+                          repository: widget.repository,
+                          store: widget.store,
+                          downloadOnOpen: true,
+                        ),
                       ),
-                  ]
-                : const [],
-            onRemoteUnfollow: _unfollow,
-            onHistoryContinue: (entry) => openPlaybackDirectly(
-              context,
-              drama: entry.drama,
-              repository: widget.repository,
-              store: widget.store,
-              resumeOverride: entry,
+                    )
+                  : null,
             ),
-            onOpen: (drama) => openPlaybackDirectly(
-              context,
-              drama: drama,
-              repository: widget.repository,
-              store: widget.store,
-            ),
-            onContinue: (drama) => openPlaybackDirectly(
-              context,
-              drama: drama,
-              repository: widget.repository,
-              store: widget.store,
-            ),
-            onDownload:
-                widget.store.canDownload && widget.repository.supportsDownloads
-                ? (drama) => Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      builder: (_) => DetailScreen(
-                        drama: drama,
-                        repository: widget.repository,
-                        store: widget.store,
-                        downloadOnOpen: true,
-                      ),
-                    ),
-                  )
-                : null,
           ),
         ),
         if (!history && _hasMore)
@@ -730,219 +826,310 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.collections ? '我的片单' : '账号与同步'),
-        bottom: !widget.collections
-            ? null
-            : TabBar(
-                controller: _tabs,
-                isScrollable: true,
-                tabs: const [
-                  Tab(text: '追剧'),
-                  Tab(text: '历史'),
-                  Tab(text: '预约'),
-                  Tab(text: '上新预约'),
-                ],
+  Widget _reservationList() => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = constraints.maxWidth < 340
+          ? 1
+          : (constraints.maxWidth / 180).floor().clamp(2, 4);
+      final width = (constraints.maxWidth - 32 - (columns - 1) * 12) / columns;
+      final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+      return CustomScrollView(
+        controller: _scroll,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverGrid(
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: columns,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 16,
+                mainAxisExtent: width * 1.5 + 120 * textScale + 56,
               ),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: !_active
-              ? const Center(child: Text('本地用户已变更，请返回后重新打开。'))
-              : AnimatedBuilder(
-                  animation: _tabs,
-                  builder: (context, _) => Column(
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final row = _items[index];
+                final drama = Drama.fromJson(
+                  Map<String, dynamic>.from(row['drama'] as Map),
+                );
+                final publish = (row['publishText'] as String? ?? '').trim();
+                final date = publish.isNotEmpty ? publish : drama.onlineDate;
+                return Card(
+                  margin: EdgeInsets.zero,
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (_busy || _loading) const LinearProgressIndicator(),
-                      if (_error != null)
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: SelectableText(
-                            _error!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
+                      AspectRatio(
+                        aspectRatio: 2 / 3,
+                        child: DramaCover(
+                          drama: drama,
+                          repository: widget.repository,
+                        ),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                drama.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  height: 1.3,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                date.isEmpty ? '上线时间待公布' : '上线时间：$date',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  height: 1.3,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: _busy || _loading
+                                    ? null
+                                    : () => _reserve(row),
+                                child: Text(
+                                  row['reserved'] == true ? '取消预约' : '预约',
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      if (_message != null)
-                        Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Text(_message!),
-                        ),
-                      Expanded(
-                        child: !widget.collections
-                            ? ListView(
-                                padding: const EdgeInsets.all(20),
-                                children: [_account()],
-                              )
-                            : _tabs.index <= 1
-                            ? _savedCollections()
-                            : !_logged
-                            ? Center(
-                                child: FilledButton(
-                                  onPressed: _openAccount,
-                                  child: const Text('登录账号查看预约'),
-                                ),
-                              )
-                            : Column(
-                                children: [
-                                  if (widget.drama != null && _tabs.index == 2)
-                                    Wrap(
-                                      spacing: 8,
-                                      children: [
-                                        Text(widget.drama!.title),
-                                        TextButton(
-                                          onPressed: _busy || _loading
-                                              ? null
-                                              : () => _reserve({
-                                                  'id':
-                                                      widget
-                                                          .drama!
-                                                          .sourceId
-                                                          .isEmpty
-                                                      ? widget.drama!.id
-                                                            .split(':')
-                                                            .last
-                                                      : widget.drama!.sourceId,
-                                                  'reserved': false,
-                                                }),
-                                          child: const Text('预约本剧'),
-                                        ),
-                                        TextButton(
-                                          onPressed: _busy || _loading
-                                              ? null
-                                              : () => _reserve({
-                                                  'id':
-                                                      widget
-                                                          .drama!
-                                                          .sourceId
-                                                          .isEmpty
-                                                      ? widget.drama!.id
-                                                            .split(':')
-                                                            .last
-                                                      : widget.drama!.sourceId,
-                                                  'reserved': true,
-                                                }),
-                                          child: const Text('取消本剧预约'),
-                                        ),
-                                      ],
-                                    ),
-                                  if (_tabs.index == 2)
-                                    SegmentedButton<String>(
-                                      segments: const [
-                                        ButtonSegment(
-                                          value: 'upcoming',
-                                          label: Text('待上线'),
-                                        ),
-                                        ButtonSegment(
-                                          value: 'online',
-                                          label: Text('已上线'),
-                                        ),
-                                      ],
-                                      selected: {_reservationMode},
-                                      onSelectionChanged: _busy || _loading
-                                          ? null
-                                          : (value) {
-                                              setState(
-                                                () => _reservationMode =
-                                                    value.single,
-                                              );
-                                              _load();
-                                            },
-                                    ),
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      TextButton.icon(
-                                        onPressed: _loading || _busy
-                                            ? null
-                                            : _load,
-                                        icon: const Icon(Icons.refresh),
-                                        label: const Text('刷新'),
-                                      ),
-                                    ],
-                                  ),
-                                  Expanded(
-                                    child: RefreshIndicator(
-                                      onRefresh: _load,
-                                      child: ListView.builder(
-                                        controller: _scroll,
-                                        padding: const EdgeInsets.all(16),
-                                        itemCount: _items.length + 1,
-                                        itemBuilder: (context, index) {
-                                          if (index == _items.length) {
-                                            return Padding(
-                                              padding: const EdgeInsets.all(24),
-                                              child: Center(
-                                                child: _hasMore
-                                                    ? TextButton(
-                                                        onPressed:
-                                                            _loading || _busy
-                                                            ? null
-                                                            : () => _load(
-                                                                more: true,
-                                                              ),
-                                                        child: const Text(
-                                                          '加载更多',
-                                                        ),
-                                                      )
-                                                    : Text(
-                                                        _items.isEmpty
-                                                            ? '暂无记录'
-                                                            : '已显示全部',
-                                                      ),
-                                              ),
-                                            );
-                                          }
-                                          final row = _items[index];
-                                          final drama = Drama.fromJson(
-                                            Map<String, dynamic>.from(
-                                              row['drama'] as Map,
-                                            ),
-                                          );
-                                          return Card(
-                                            child: ListTile(
-                                              leading: SizedBox(
-                                                width: 48,
-                                                height: 72,
-                                                child: DramaCover(
-                                                  drama: drama,
-                                                  repository: widget.repository,
-                                                ),
-                                              ),
-                                              title: Text(drama.title),
-                                              subtitle: Text(
-                                                row['publishText'] as String? ??
-                                                    '',
-                                              ),
-                                              trailing: TextButton(
-                                                onPressed: _busy || _loading
-                                                    ? null
-                                                    : () => _reserve(row),
-                                                child: Text(
-                                                  row['reserved'] == true
-                                                      ? '取消预约'
-                                                      : '预约',
-                                                ),
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
                       ),
                     ],
                   ),
+                );
+              }, childCount: _items.length),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(
+                child: _hasMore
+                    ? TextButton(
+                        onPressed: _loading || _busy
+                            ? null
+                            : () => _load(more: true),
+                        child: const Text('加载更多'),
+                      )
+                    : Text(_items.isEmpty ? '暂无记录' : '已显示全部'),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 900),
+        child: !_active
+            ? const Center(child: Text('本地用户已变更，请返回后重新打开。'))
+            : AnimatedBuilder(
+                animation: _tabs,
+                builder: (context, _) => Column(
+                  children: [
+                    if (_busy || _loading) const LinearProgressIndicator(),
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SelectableText(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    if (_message != null)
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Text(_message!),
+                      ),
+                    Expanded(
+                      child: !widget.collections
+                          ? ListView(
+                              padding: const EdgeInsets.all(20),
+                              children: [_account()],
+                            )
+                          : _tabs.index <= 1
+                          ? _savedCollections()
+                          : !_logged
+                          ? Center(
+                              child: FilledButton(
+                                onPressed: _openAccount,
+                                child: const Text('登录账号查看预约'),
+                              ),
+                            )
+                          : Column(
+                              children: [
+                                if (widget.drama != null && _tabs.index == 2)
+                                  Wrap(
+                                    spacing: 8,
+                                    children: [
+                                      Text(widget.drama!.title),
+                                      TextButton(
+                                        onPressed: _busy || _loading
+                                            ? null
+                                            : () => _reserve({
+                                                'id':
+                                                    widget
+                                                        .drama!
+                                                        .sourceId
+                                                        .isEmpty
+                                                    ? widget.drama!.id
+                                                          .split(':')
+                                                          .last
+                                                    : widget.drama!.sourceId,
+                                                'reserved': false,
+                                              }),
+                                        child: const Text('预约本剧'),
+                                      ),
+                                      TextButton(
+                                        onPressed: _busy || _loading
+                                            ? null
+                                            : () => _reserve({
+                                                'id':
+                                                    widget
+                                                        .drama!
+                                                        .sourceId
+                                                        .isEmpty
+                                                    ? widget.drama!.id
+                                                          .split(':')
+                                                          .last
+                                                    : widget.drama!.sourceId,
+                                                'reserved': true,
+                                              }),
+                                        child: const Text('取消本剧预约'),
+                                      ),
+                                    ],
+                                  ),
+                                if (_tabs.index == 2)
+                                  SegmentedButton<String>(
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: 'upcoming',
+                                        label: Text('待上线'),
+                                      ),
+                                      ButtonSegment(
+                                        value: 'online',
+                                        label: Text('已上线'),
+                                      ),
+                                    ],
+                                    selected: {_reservationMode},
+                                    onSelectionChanged: _busy || _loading
+                                        ? null
+                                        : (value) {
+                                            setState(
+                                              () => _reservationMode =
+                                                  value.single,
+                                            );
+                                            _load();
+                                          },
+                                  ),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    TextButton.icon(
+                                      onPressed: _loading || _busy
+                                          ? null
+                                          : _load,
+                                      icon: const Icon(Icons.refresh),
+                                      label: const Text('刷新'),
+                                    ),
+                                  ],
+                                ),
+                                Expanded(
+                                  child: RefreshIndicator(
+                                    onRefresh: _load,
+                                    child: _reservationList(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ],
                 ),
-        ),
+              ),
       ),
+    );
+    final tabs = TabBar(
+      controller: _tabs,
+      isScrollable: true,
+      tabAlignment: TabAlignment.start,
+      dividerColor: widget.embedded ? Colors.transparent : null,
+      indicator: widget.embedded ? const BoxDecoration() : null,
+      labelColor: widget.embedded
+          ? Theme.of(context).colorScheme.onSurface
+          : null,
+      unselectedLabelColor: widget.embedded
+          ? Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: .7)
+          : null,
+      labelStyle: widget.embedded
+          ? const TextStyle(fontSize: 17, fontWeight: FontWeight.w500)
+          : null,
+      unselectedLabelStyle: widget.embedded
+          ? const TextStyle(fontSize: 17, fontWeight: FontWeight.w400)
+          : null,
+      labelPadding: widget.embedded
+          ? const EdgeInsets.symmetric(horizontal: 10)
+          : null,
+      tabs: const [
+        Tab(text: '追剧'),
+        Tab(text: '历史'),
+        Tab(text: '预约'),
+        Tab(text: '上新预约'),
+      ],
+    );
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
+            child: Row(
+              children: [
+                Expanded(child: tabs),
+                if (_tabs.index <= 1)
+                  IconButton(
+                    tooltip: '搜索片单',
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    icon: Icon(
+                      _librarySearching
+                          ? Icons.close_rounded
+                          : Icons.search_rounded,
+                      size: 22,
+                    ),
+                    onPressed: () =>
+                        setState(() => _librarySearching = !_librarySearching),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(child: content),
+        ],
+      );
+    }
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.collections ? '我的片单' : '账号与同步'),
+        bottom: widget.collections ? tabs : null,
+      ),
+      body: content,
     );
   }
 }

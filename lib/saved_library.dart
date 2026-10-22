@@ -23,11 +23,15 @@ class SavedLibrary extends StatefulWidget {
     this.remoteFavorites = const [],
     this.onHistoryContinue,
     this.onRemoteUnfollow,
+    this.compact = false,
+    this.searchVisible,
   });
 
   final AppRepository repository;
   final LocalStore store;
   final bool history;
+  final bool compact;
+  final bool? searchVisible;
   final List<WatchEntry> remoteHistory;
   final List<Drama> remoteFavorites;
   final ValueChanged<WatchEntry>? onHistoryContinue;
@@ -43,7 +47,59 @@ class SavedLibrary extends StatefulWidget {
 class _SavedLibraryState extends State<SavedLibrary> {
   final _search = TextEditingController();
   String _filter = '';
+  String _completion = '';
+  bool _searchVisible = false, _editing = false;
   Map<String, WatchEntry> _historyIndex = {};
+  List<(String, String)> get _filters => widget.history
+      ? const [('', '全部'), ('finished', '已看完'), ('unfinished', '未看完')]
+      : const [
+          ('', '全部'),
+          ('planned', '想看'),
+          ('watching', '在看'),
+          ('watched', '已看'),
+          ('updates', '有更新'),
+        ];
+
+  @override
+  void didUpdateWidget(covariant SavedLibrary oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchVisible == true && widget.searchVisible == false) {
+      _search.clear();
+    }
+  }
+
+  Future<void> _chooseFilter() async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(title: Text(widget.history ? '筛选观看记录' : '筛选追剧')),
+            for (final filter in _filters)
+              ListTile(
+                title: Text(filter.$2),
+                selected: (widget.history ? _completion : _filter) == filter.$1,
+                trailing: (widget.history ? _completion : _filter) == filter.$1
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () => Navigator.pop(context, filter.$1),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    setState(() {
+      if (widget.history) {
+        _completion = selected;
+      } else {
+        _filter = selected;
+      }
+    });
+  }
+
   List<WatchEntry> get _history {
     final rows = <String, WatchEntry>{};
     for (final entry in [...widget.store.history, ...widget.remoteHistory]) {
@@ -148,6 +204,236 @@ class _SavedLibraryState extends State<SavedLibrary> {
     );
   }
 
+  bool _completed(WatchEntry? entry) =>
+      entry != null &&
+      entry.finished &&
+      entry.drama.episodes > 0 &&
+      entry.episode >= entry.drama.episodes;
+
+  Widget _poster(Drama drama) {
+    final watched = _watched(drama.id);
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _editing
+            ? _actions(drama)
+            : widget.history
+            ? _continue(drama)
+            : widget.onOpen(drama),
+        onLongPress: () => _actions(drama),
+        onSecondaryTap: () => _actions(drama),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (DramaCover.imagesDisabled)
+                      ColoredBox(
+                        color: colors.surfaceContainerHighest,
+                        child: Icon(
+                          Icons.movie_outlined,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      )
+                    else
+                      CachedCoverImage(
+                        key: ValueKey('${drama.id}\u0000${drama.cover}'),
+                        drama: drama,
+                        repository: widget.repository,
+                        placeholder: ColoredBox(
+                          color: colors.surfaceContainerHighest,
+                          child: Icon(
+                            Icons.movie_outlined,
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    if (drama.category.isNotEmpty)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black45,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            drama.category,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (_editing)
+                      const Positioned(
+                        bottom: 6,
+                        right: 6,
+                        child: CircleAvatar(
+                          radius: 14,
+                          child: Icon(Icons.more_horiz, size: 18),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              drama.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              watched == null
+                  ? (drama.episodes > 0 ? '共${drama.episodes}集' : '点击观看')
+                  : '${watched.episode}集/${drama.episodes > 0 ? '${drama.episodes}集' : '连载中'}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _compactToolbar() {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 12, 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                spacing: 6,
+                children: [
+                  for (final filter in _filters)
+                    ChoiceChip(
+                      label: Text(filter.$2),
+                      showCheckmark: false,
+                      side: BorderSide.none,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      labelPadding: EdgeInsets.zero,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor:
+                          Theme.of(context).brightness == Brightness.dark
+                          ? colors.surfaceContainerLow
+                          : const Color(0xFFF7F7F7),
+                      selectedColor:
+                          Theme.of(context).brightness == Brightness.dark
+                          ? const Color(0xFF4A3020)
+                          : const Color(0xFFFFF1E3),
+                      labelStyle: TextStyle(
+                        fontSize: 14,
+                        height: 1.2,
+                        color:
+                            (widget.history ? _completion : _filter) ==
+                                filter.$1
+                            ? const Color(0xFFF47925)
+                            : colors.onSurfaceVariant.withValues(alpha: .7),
+                      ),
+                      selected:
+                          (widget.history ? _completion : _filter) == filter.$1,
+                      onSelected: (_) => setState(() {
+                        if (widget.history) {
+                          _completion = filter.$1;
+                        } else {
+                          _filter = filter.$1;
+                        }
+                      }),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (widget.searchVisible == null)
+            IconButton(
+              tooltip: '搜索片单',
+              icon: const Icon(Icons.search_rounded, size: 20),
+              onPressed: () => setState(() {
+                _searchVisible = !_searchVisible;
+                if (!_searchVisible) _search.clear();
+              }),
+            ),
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: colors.onSurface,
+              minimumSize: const Size(40, 34),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              textStyle: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            onPressed: _chooseFilter,
+            child: const Text('筛选'),
+          ),
+          Container(
+            width: 1,
+            height: 18,
+            margin: const EdgeInsets.symmetric(horizontal: 5),
+            color: colors.outlineVariant,
+          ),
+          PopupMenuButton<String>(
+            tooltip: '编辑片单',
+            onSelected: (action) {
+              if (action == 'clear') {
+                _clearHistory();
+              } else {
+                setState(() => _editing = !_editing);
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'edit',
+                child: Text(_editing ? '完成编辑' : '编辑片单'),
+              ),
+              if (widget.history && widget.store.history.isNotEmpty)
+                const PopupMenuItem(value: 'clear', child: Text('清空本机历史')),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              child: Text(
+                _editing ? '完成' : '编辑',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: colors.onSurface,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: widget.store,
@@ -163,8 +449,11 @@ class _SavedLibraryState extends State<SavedLibrary> {
       final items = all.where((drama) {
         if (!matchesDramaQuery(drama, _search.text)) return false;
         final state = widget.store.following(drama.id);
-        return widget.history ||
-            _filter.isEmpty ||
+        if (widget.history) {
+          return _completion.isEmpty ||
+              (_completion == 'finished') == _completed(_watched(drama.id));
+        }
+        return _filter.isEmpty ||
             (_filter == 'updates'
                 ? state?.hasUpdates == true
                 : state?.status.name == _filter);
@@ -180,48 +469,50 @@ class _SavedLibraryState extends State<SavedLibrary> {
           )
           .firstOrNull;
       final header = [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${widget.history ? '最近观看' : '我的追剧'} · ${all.length}',
-                  style: Theme.of(context).textTheme.titleLarge,
+        if (!widget.compact)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${widget.history ? '最近观看' : '我的追剧'} · ${all.length}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                 ),
+                if (widget.history && widget.store.history.isNotEmpty)
+                  IconButton(
+                    tooltip: '清空本机记录',
+                    onPressed: _clearHistory,
+                    icon: const Icon(Icons.delete_outline_rounded),
+                  ),
+              ],
+            ),
+          ),
+        if (!widget.compact || (widget.searchVisible ?? _searchVisible))
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              key: ValueKey(
+                widget.history ? 'history-search' : 'favorites-search',
               ),
-              if (widget.history && widget.store.history.isNotEmpty)
-                IconButton(
-                  tooltip: '清空本机记录',
-                  onPressed: _clearHistory,
-                  icon: const Icon(Icons.delete_outline_rounded),
-                ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: TextField(
-            key: ValueKey(
-              widget.history ? 'history-search' : 'favorites-search',
-            ),
-            controller: _search,
-            onChanged: (_) => setState(() {}),
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: widget.history ? '搜索观看记录' : '搜索追剧',
-              prefixIcon: const Icon(Icons.search_rounded),
-              suffixIcon: _search.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: '清空搜索',
-                      onPressed: () => setState(_search.clear),
-                      icon: const Icon(Icons.close_rounded),
-                    ),
+              controller: _search,
+              onChanged: (_) => setState(() {}),
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: widget.history ? '搜索观看记录' : '搜索追剧',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _search.text.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清空搜索',
+                        onPressed: () => setState(_search.clear),
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+              ),
             ),
           ),
-        ),
-        if (!widget.history)
+        if (!widget.history && !widget.compact)
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -245,7 +536,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
               ],
             ),
           ),
-        if (resume != null)
+        if (resume != null && !widget.compact)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: Card(
@@ -266,13 +557,16 @@ class _SavedLibraryState extends State<SavedLibrary> {
             ),
           ),
       ];
+      if (widget.compact) {
+        header.insert(0, _compactToolbar());
+      }
       final empty = StatusPanel(
         title: all.isEmpty
             ? widget.history
                   ? '还没有观看记录'
                   : '还没有追剧'
             : '没有匹配的记录',
-        message: all.isEmpty ? '去发现页，挑一部喜欢的短剧。' : '可以更换搜索词或筛选条件。',
+        message: all.isEmpty ? '去首页，挑一部喜欢的短剧。' : '可以更换搜索词或筛选条件。',
         icon: widget.history
             ? Icons.history_rounded
             : Icons.bookmark_border_rounded,
@@ -316,9 +610,21 @@ class _SavedLibraryState extends State<SavedLibrary> {
             );
           }
           final padding = constraints.maxWidth < 600 ? 16.0 : 24.0;
+          final columns = constraints.maxWidth < 340
+              ? 2
+              : ((constraints.maxWidth - 2 * padding) / 180).floor().clamp(
+                  3,
+                  6,
+                );
+          final tileWidth =
+              (constraints.maxWidth -
+                  2 * padding -
+                  (columns - 1) * (widget.compact ? 8 : 12)) /
+              columns;
           return CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
             key: PageStorageKey(
-              'saved-${widget.history}-$_filter-${_search.text}',
+              'saved-${widget.history}-$_filter-$_completion-${_search.text}',
             ),
             slivers: [
               SliverToBoxAdapter(child: Column(children: header)),
@@ -328,12 +634,24 @@ class _SavedLibraryState extends State<SavedLibrary> {
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(padding, 0, padding, 20),
                   sliver: SliverGrid(
-                    gridDelegate: dramaGridDelegate(
-                      context,
-                      constraints.maxWidth - 2 * padding,
-                    ),
+                    gridDelegate: widget.compact
+                        ? SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: columns,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 18,
+                            mainAxisExtent:
+                                tileWidth / .72 +
+                                16 +
+                                MediaQuery.textScalerOf(context).scale(36),
+                          )
+                        : dramaGridDelegate(
+                            context,
+                            constraints.maxWidth - 2 * padding,
+                          ),
                     delegate: SliverChildBuilderDelegate(
-                      (_, index) => _tile(items[index]),
+                      (_, index) => widget.compact
+                          ? _poster(items[index])
+                          : _tile(items[index]),
                       childCount: items.length,
                     ),
                   ),
