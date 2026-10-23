@@ -17,6 +17,10 @@ const diagnosticLogBytes = 5 * 1024 * 1024
 const diagnosticLogBackups = 2
 
 type diagnosticEvent struct {
+	TraceID            string    `json:"traceId,omitempty"`
+	Stage              string    `json:"stage,omitempty"`
+	ElapsedMS          int64     `json:"elapsedMs,omitempty"`
+	TotalMS            int64     `json:"totalMs,omitempty"`
 	HTTPStatus         int       `json:"httpStatus,omitempty"`
 	Client             string    `json:"client,omitempty"`
 	Protocol           string    `json:"protocol,omitempty"`

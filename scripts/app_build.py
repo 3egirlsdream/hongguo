@@ -1,6 +1,6 @@
 class BuildVariant:
-    name = '红果鉴'
-    slug = 'hongguojian'
+    name = '野果'
+    slug = 'yeguo'
     arguments = ()
     flutter_arguments = ()
     linker_flags = '-s -w'

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"net/http"
 
@@ -59,6 +60,8 @@ type nativeDrama struct {
 }
 
 type nativeInput struct {
+	TraceID          string `json:"traceId"`
+	trace            *playbackTrace
 	Profile          string                  `json:"profile"`
 	Account          hgAccountInput          `json:"account"`
 	LAN              json.RawMessage         `json:"lan"`
@@ -265,8 +268,15 @@ func NativeRequest(raw string) (result string) {
 	if len(raw) > 1<<20 || json.Unmarshal([]byte(raw), &input) != nil {
 		return `{"ok":false,"error":"请求格式无效"}`
 	}
+	if input.Action == "detail" || input.Action == "resolve" || input.Action == "fallback" || input.Action == "preload" || input.Action == "prepareHandoff" {
+		input.trace = &playbackTrace{id: truncate(input.TraceID, 64), started: time.Now()}
+	}
 	data, err := nativeDispatch(input)
 	envelope := map[string]any{"ok": err == nil}
+	if input.trace != nil {
+		input.trace.record("core_"+input.Action, input.trace.started, err)
+		envelope["timings"] = input.trace.snapshot()
+	}
 	if err != nil {
 		envelope["error"] = publicError(err).Error()
 		if errors.Is(err, errNativeLocalFile) {
@@ -339,9 +349,17 @@ func nativeDispatch(input nativeInput) (any, error) {
 		duration = 10 * time.Second
 	} else if input.Action == "preload" {
 		duration = 15 * time.Second
+	} else if input.Action == "detail" {
+		duration = 12 * time.Second
+	} else if input.Action == "resolve" {
+		duration = 20 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), duration)
 	defer cancel()
+	if input.trace != nil {
+		input.trace.downloader = engine.downloader
+		ctx = context.WithValue(ctx, playbackTimingKey{}, input.trace)
+	}
 	if input.Action == "danmaku" || input.Action == "preload" || input.Action == "prepareHandoff" || input.Session != "" && (input.Action == "catalog" || input.Action == "categories" || input.Action == "suggestions" || input.Action == "recommendations" || input.Action == "metadata") {
 		work, finish, err := engine.beginRead(ctx, input)
 		if err != nil {
@@ -433,7 +451,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 	case "prepareCover":
 		return engine.prepareCover(ctx, input.Drama)
 	case "detail":
-		return engine.nativeDetail(ctx, input.Drama)
+		return engine.nativeDetail(ctx, input.Drama, input.Profile)
 	case "metadata":
 		return engine.nativeMetadata(ctx, input.Drama)
 	case "resolve", "fallback":
@@ -555,12 +573,39 @@ func (engine *nativeEngine) nativeCatalog(ctx context.Context, input nativeInput
 	return result, nil
 }
 
-func (engine *nativeEngine) nativeDetail(ctx context.Context, drama nativeDrama) (any, error) {
+func (engine *nativeEngine) nativeDetail(ctx context.Context, drama nativeDrama, profiles ...string) (any, error) {
 	source, sourceID, valid := splitProviderDramaID(drama.ID)
 	if !valid {
 		return nil, errors.New("剧集信息无效，请刷新剧库")
 	}
-	title, chapters, err := engine.downloader.fetchHongguoChapters(ctx, sourceID)
+	var title string
+	var chapters []Chapter
+	var err error
+	if len(profiles) > 0 && profiles[0] != "" {
+		account, accountErr := engine.officialAccount(profiles[0])
+		if accountErr != nil {
+			return nil, accountErr
+		}
+		detailCtx, cancelDetail := context.WithTimeout(ctx, 6*time.Second)
+		finish := startPlaybackStage(ctx, "app_detail")
+		entry, detailErr := account.playbackDetail(detailCtx, sourceID)
+		cancelDetail()
+		finish(detailErr)
+		if detailErr == nil {
+			title, chapters = entry.Drama.DisplayTitle(), entry.Chapters
+		} else {
+			webCtx, cancelWeb := context.WithTimeout(ctx, 3*time.Second)
+			finish := startPlaybackStage(ctx, "web_detail")
+			title, chapters, err = engine.downloader.fetchHongguoWebChapters(webCtx, sourceID)
+			cancelWeb()
+			finish(err)
+			if err != nil {
+				return nil, fmt.Errorf("官方详情失败: %v；网页详情失败: %w", publicError(detailErr), err)
+			}
+		}
+	} else {
+		title, chapters, err = engine.downloader.fetchHongguoChapters(ctx, sourceID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -577,7 +622,14 @@ func (engine *nativeEngine) nativeDetail(ctx context.Context, drama nativeDrama)
 	if err := engine.saveDetailMetadata(drama); err != nil {
 		warning = err.Error()
 	}
-	return map[string]any{"drama": drama, "chapters": chapters, "warning": warning}, nil
+	client := engine.downloader.hongguoClient()
+	client.mu.Lock()
+	var seasons []hongguoOfficialSeason
+	if cached, found := client.details[sourceID]; found && time.Now().Before(cached.ExpiresAt) {
+		seasons = append(seasons, cached.Seasons...)
+	}
+	client.mu.Unlock()
+	return map[string]any{"drama": drama, "chapters": chapters, "warning": warning, "seasons": seasons}, nil
 }
 
 func (engine *nativeEngine) nativeResolve(ctx context.Context, input nativeInput) (nativePlan, error) {

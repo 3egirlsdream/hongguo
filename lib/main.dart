@@ -20,13 +20,16 @@ import 'media_library.dart';
 import 'package_smoke.dart';
 import 'lan_controller.dart';
 import 'player_screen.dart';
+import 'cover_screen_viewport.dart';
+import 'playback_continuity.dart';
+import 'playback_restore_screen.dart';
 import 'theme_appearance.dart';
 import 'video_enhancement_assets.dart';
 import 'diary_service.dart';
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
-  DiaryService.add('[App] 应用启动，版本: 0.2.72+79, 平台: ${Platform.operatingSystem}');
+  DiaryService.add('[App] 应用启动，版本: 0.2.77+84, 平台: ${Platform.operatingSystem}');
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.dark));
@@ -56,6 +59,8 @@ class _AppBootstrapState extends State<AppBootstrap>
   final repository = NativeRepository();
   final navigator = GlobalKey<NavigatorState>();
   LocalStore? store;
+  PlaybackSnapshot? _pendingPlayback;
+  bool _restoreScheduled = false;
   Object? error;
   late AppDevice device = widget.device;
 
@@ -67,6 +72,8 @@ class _AppBootstrapState extends State<AppBootstrap>
     MediaLibrary.current?.dispose();
     MediaLibrary.current = null;
     repository.stopOfficialSync();
+    PlaybackContinuity.watchWindowChanges(null);
+    store?.removeListener(_restorePlayback);
     store?.dispose();
     super.dispose();
   }
@@ -75,6 +82,7 @@ class _AppBootstrapState extends State<AppBootstrap>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    PlaybackContinuity.watchWindowChanges(_refreshDevice);
     _initialize();
   }
 
@@ -105,7 +113,10 @@ class _AppBootstrapState extends State<AppBootstrap>
     final detected = await AppDevice.detect(fallback: device);
     if (!mounted ||
         (device.television == detected.television &&
-            device.version == detected.version)) {
+            device.version == detected.version &&
+            device.flipDevice == detected.flipDevice &&
+            device.pictureInPicture == detected.pictureInPicture &&
+            device.innerSize == detected.innerSize)) {
       return;
     }
     setState(() => device = detected);
@@ -119,9 +130,11 @@ class _AppBootstrapState extends State<AppBootstrap>
       final preferences = await SharedPreferences.getInstance();
       await _refreshDevice();
       await repository.initialize();
+      _pendingPlayback = await PlaybackContinuity.takeRestore();
       if (mounted) {
         setState(() {
           store = LocalStore(preferences);
+          store!.addListener(_restorePlayback);
           repository.access = store;
           repository.startOfficialSync();
           MediaLibrary.attach(repository, store!);
@@ -173,6 +186,7 @@ class _AppBootstrapState extends State<AppBootstrap>
             );
           };
         });
+        _restorePlayback();
       }
     } catch (failure) {
       if (mounted) {
@@ -183,6 +197,52 @@ class _AppBootstrapState extends State<AppBootstrap>
     }
   }
 
+  void _restorePlayback() {
+    final snapshot = _pendingPlayback;
+    final current = store;
+    if (!mounted ||
+        snapshot == null ||
+        current == null ||
+        current.locked ||
+        _restoreScheduled) {
+      return;
+    }
+    if (current.profile.id != snapshot.profile) {
+      _pendingPlayback = null;
+      unawaited(PlaybackContinuity.discardRestore());
+      return;
+    }
+    _restoreScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _restoreScheduled = false;
+      if (!mounted || current.locked) return;
+      if (current.profile.id != snapshot.profile) {
+        _pendingPlayback = null;
+        unawaited(PlaybackContinuity.discardRestore());
+        return;
+      }
+      final navigation = navigator.currentState;
+      if (navigation == null) return;
+      _pendingPlayback = null;
+      unawaited(
+        navigation.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => PlaybackRestoreScreen(
+              snapshot: snapshot,
+              repository: repository,
+              store: current,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  @override
+  void didChangeMetrics() {
+    if (Platform.isAndroid) unawaited(_refreshDevice());
+  }
+
   @override
   Widget build(BuildContext context) => DuanjuApp(
     repository: repository,
@@ -191,6 +251,9 @@ class _AppBootstrapState extends State<AppBootstrap>
     onRetry: _initialize,
     television: device.television,
     version: device.version,
+    flipDevice: device.flipDevice,
+    pictureInPicture: device.pictureInPicture,
+    innerSize: device.innerSize,
     navigatorKey: navigator,
   );
 }
@@ -205,12 +268,18 @@ class DuanjuApp extends StatelessWidget {
     this.television = false,
     this.version = appVersion,
     this.navigatorKey,
+    this.flipDevice = false,
+    this.pictureInPicture = false,
+    this.innerSize = const Size(393, 852),
   });
   final AppRepository repository;
   final LocalStore? store;
   final String? bootstrapError;
   final VoidCallback? onRetry;
   final bool television;
+  final bool flipDevice;
+  final bool pictureInPicture;
+  final Size innerSize;
   final String version;
   final GlobalKey<NavigatorState>? navigatorKey;
 
@@ -275,12 +344,20 @@ class DuanjuApp extends StatelessWidget {
       final mode = store?.displayMode ?? 'auto';
       final tv = mode == 'television' || mode == 'auto' && television;
       final theme = Theme.of(context);
+      final window = MediaQuery.sizeOf(context);
+      final coverWindow =
+          flipDevice &&
+          !pictureInPicture &&
+          !tv &&
+          window.width < 600 &&
+          window.height < 600;
       final content = AnnotatedRegion<SystemUiOverlayStyle>(
         value: AppTheme.systemBars(theme.brightness),
         child: ColoredBox(
           color: theme.scaffoldBackgroundColor,
           child: AppOrientationScope(
             television: tv,
+            coverWindow: coverWindow,
             child: AppLayout(
               television: tv,
               version: version,
@@ -305,7 +382,13 @@ class DuanjuApp extends StatelessWidget {
           ),
         ),
       );
-      return _scaled(content, _appearance.scale, context);
+      return CoverScreenViewport(
+        enabled: coverWindow,
+        innerSize: innerSize,
+        child: Builder(
+          builder: (context) => _scaled(content, _appearance.scale, context),
+        ),
+      );
     },
     home: store != null
         ? store!.locked

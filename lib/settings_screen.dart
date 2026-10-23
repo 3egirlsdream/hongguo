@@ -19,6 +19,7 @@ import 'resource_settings_screen.dart';
 import 'theme_settings_screen.dart';
 import 'lan_screen.dart';
 import 'diary_service.dart';
+import 'about_screen.dart';
 
 String storageSize(int bytes) {
   if (bytes < 0) return '暂不可用';
@@ -122,6 +123,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                ListTile(
+                  key: const ValueKey('about-settings'),
+                  leading: const Icon(Icons.info_outline_rounded),
+                  title: const Text('关于$appName'),
+                  subtitle: const Text('版本更新、开发者与下载地址'),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AboutScreen(),
+                    ),
+                  ),
+                ),
                 if (widget.repository.supportsOfficialAccount)
                   ListTile(
                     leading: const Icon(Icons.account_circle_outlined),

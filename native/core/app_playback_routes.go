@@ -84,6 +84,7 @@ func (engine *nativeEngine) nativeOpenPlayback(ctx context.Context, choice nativ
 		plan.ExpiresAt = media.credentials.expires.UnixMilli()
 	}
 	choice.streamSession = ""
+	finish := startPlaybackStage(ctx, "local_proxy_open")
 	{
 		engine.mu.Lock()
 		if engine.stream == nil {
@@ -92,10 +93,12 @@ func (engine *nativeEngine) nativeOpenPlayback(ctx context.Context, choice nativ
 		stream := engine.stream
 		engine.mu.Unlock()
 		if err != nil {
+			finish(err)
 			return nativePlan{}, err
 		}
-		plan.URL, choice.streamSession = stream.nativeOpen(media)
+		plan.URL, choice.streamSession = stream.nativeOpen(media, playbackTraceFrom(ctx))
 	}
+	finish(nil)
 	choice.created = time.Now()
 	engine.mu.Lock()
 	if engine.playbacks == nil {

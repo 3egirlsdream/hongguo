@@ -15,6 +15,7 @@ properties_file = root / 'android' / 'key.properties'
 if options.clean:
     if key_file.exists():
         key_file.unlink()
+        properties_file.unlink(missing_ok=True)
     raise SystemExit(0)
 
 if properties_file.exists():

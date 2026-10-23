@@ -180,8 +180,12 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 	var lastErr error
 	for attempt := 0; attempt < attempts; attempt++ {
 		if attempt > 0 {
+			delay := time.Duration(attempt) * time.Second
+			if mediaRequest {
+				delay = 150 * time.Millisecond
+			}
 			select {
-			case <-time.After(time.Duration(attempt) * time.Second):
+			case <-time.After(delay):
 			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
@@ -236,6 +240,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 		if payload != nil {
 			request.Header.Set("Content-Type", "application/json; charset=utf-8")
 		}
+		finish := startPlaybackStage(ctx, fmt.Sprintf("app_http_attempt_%d", attempt+1))
 		response, err := downloader.doPreparedCatalogRequestWithClient(request, 20*time.Second, func(prepared *http.Request) error {
 			now := time.Now()
 			if mediaRequest {
@@ -262,6 +267,7 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 			}
 			return nil
 		}, transport)
+		finish(err)
 		if err != nil {
 			lastErr = err
 			var backoff *requestBackoff

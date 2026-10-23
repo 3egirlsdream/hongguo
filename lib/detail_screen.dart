@@ -13,6 +13,7 @@ import 'local_store.dart';
 import 'library_account_actions.dart';
 import 'models.dart';
 import 'player_screen.dart';
+import 'playback_trace.dart';
 import 'remote_widgets.dart';
 import 'widgets.dart';
 import 'catalog_management_screen.dart';
@@ -43,6 +44,7 @@ class _DetailScreenState extends State<DetailScreen> {
   DramaDetail? _detail;
   String? _error;
   bool _loading = true;
+  bool _openingPlayback = false;
   int _generation = 0;
   int _episodePage = 0;
   bool _expandedDescription = false;
@@ -113,7 +115,12 @@ class _DetailScreenState extends State<DetailScreen> {
           .current(widget.drama)
           .merge(detail.drama);
       setState(() {
-        _detail = DramaDetail(merged, detail.episodes, warning: detail.warning);
+        _detail = DramaDetail(
+          merged,
+          detail.episodes,
+          warning: detail.warning,
+          seasons: detail.seasons,
+        );
         _loading = false;
         _episodePage =
             resumeEpisodeIndex(
@@ -175,6 +182,7 @@ class _DetailScreenState extends State<DetailScreen> {
           updated,
           _detail!.episodes,
           warning: _detail!.warning,
+          seasons: _detail!.seasons,
         );
       });
       widget.repository.catalogUpdates.publish(updated);
@@ -237,60 +245,68 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   Future<void> _play(int index, {bool resume = false}) async {
-    final detail = _detail;
-    if (detail == null ||
-        index < 0 ||
-        index >= detail.episodes.length ||
-        _profileEpoch != widget.store.profileEpoch ||
-        !widget.store.allowsSource(detail.drama.source)) {
-      return;
-    }
-    if (detail.episodes[index].vip) {
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('这是一集 VIP 内容'),
-          content: const Text('部分内容可能仅提供试看或限制播放。'),
-          actions: [
-            TextButton(
-              autofocus: AppLayout.isTelevision(context),
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('尝试播放'),
-            ),
-          ],
-        ),
-      );
-      if (accepted != true || !mounted) {
+    if (_openingPlayback) return;
+    _openingPlayback = true;
+    final trace = PlaybackTrace('detail_click');
+    try {
+      final detail = _detail;
+      if (detail == null ||
+          index < 0 ||
+          index >= detail.episodes.length ||
+          _profileEpoch != widget.store.profileEpoch ||
+          !widget.store.allowsSource(detail.drama.source)) {
         return;
       }
-    }
-    final saved = widget.store.watched(detail.drama.id);
-    final position =
-        resume &&
-            saved?.episode == detail.episodes[index].number &&
-            !saved!.finished
-        ? saved.position
-        : 0.0;
-    if (!mounted || _profileEpoch != widget.store.profileEpoch) {
-      return;
-    }
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PlayerScreen(
-          detail: detail,
-          initialIndex: index,
-          initialPosition: position,
-          repository: widget.repository,
-          store: widget.store,
+      if (detail.episodes[index].vip) {
+        final accepted = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('这是一集 VIP 内容'),
+            content: const Text('部分内容可能仅提供试看或限制播放。'),
+            actions: [
+              TextButton(
+                autofocus: AppLayout.isTelevision(context),
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('尝试播放'),
+              ),
+            ],
+          ),
+        );
+        if (accepted != true || !mounted) {
+          return;
+        }
+      }
+      final saved = widget.store.watched(detail.drama.id);
+      final position =
+          resume &&
+              saved?.episode == detail.episodes[index].number &&
+              !saved!.finished
+          ? saved.position
+          : 0.0;
+      if (!mounted || _profileEpoch != widget.store.profileEpoch) {
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PlayerScreen(
+            detail: detail,
+            initialIndex: index,
+            initialPosition: position,
+            repository: widget.repository,
+            store: widget.store,
+            trace: trace,
+          ),
         ),
-      ),
-    );
-    if (mounted) {
-      setState(() {});
+      );
+      if (mounted) {
+        setState(() {});
+      }
+    } finally {
+      _openingPlayback = false;
     }
   }
 

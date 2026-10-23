@@ -246,7 +246,9 @@ func (d *Downloader) doPreparedCatalogRequestWithClient(request *http.Request, t
 	if background, _ := request.Context().Value(backgroundCatalogKey{}).(bool); background && (timeout <= 0 || timeout > 8*time.Second) {
 		timeout = 8 * time.Second
 	}
+	finish := startPlaybackStage(request.Context(), "request_queue")
 	release, err := d.limiter.acquire(request.Context(), request)
+	finish(err)
 	if err != nil {
 		return nil, err
 	}

@@ -1,2 +1,2 @@
-const appName = '红果鉴';
-const appSlug = 'hongguojian';
+const appName = '野果';
+const appSlug = 'yeguo';

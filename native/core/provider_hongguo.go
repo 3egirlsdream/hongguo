@@ -133,14 +133,22 @@ func (d *Downloader) fetchHongguoChapters(ctx context.Context, sourceID string) 
 	if sourceID == "" {
 		return "", nil, fmt.Errorf("empty hongguo sourceID")
 	}
-	entry, appErr := d.hongguoAppDetail(ctx, sourceID)
+	detailCtx, cancelDetail := context.WithTimeout(ctx, 6*time.Second)
+	finishDetail := startPlaybackStage(ctx, "guest_detail")
+	entry, appErr := d.hongguoAppDetail(detailCtx, sourceID)
+	cancelDetail()
+	finishDetail(appErr)
 	if appErr == nil {
 		return entry.Drama.DisplayTitle(), append([]Chapter(nil), entry.Chapters...), nil
 	}
 	if ctx.Err() != nil {
 		return "", nil, ctx.Err()
 	}
-	title, chapters, webErr := d.fetchHongguoWebChapters(ctx, sourceID)
+	webCtx, cancelWeb := context.WithTimeout(ctx, 3*time.Second)
+	defer cancelWeb()
+	finishWeb := startPlaybackStage(ctx, "web_detail")
+	title, chapters, webErr := d.fetchHongguoWebChapters(webCtx, sourceID)
+	finishWeb(webErr)
 	if webErr == nil {
 		return title, chapters, nil
 	}
@@ -198,14 +206,7 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if !hongguoNumericID.MatchString(videoID) || !hongguoNumericID.MatchString(seriesID) {
 		return providerMedia{}, fmt.Errorf("红果章节 ID 无效，请重新获取章节")
 	}
-	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
-	if pageErr == nil {
-		return media, nil
-	}
-	if err := ctx.Err(); err != nil {
-		return providerMedia{}, err
-	}
-	appContext, cancelApp := context.WithTimeout(ctx, 25*time.Second)
+	appContext, cancelApp := context.WithTimeout(ctx, 10*time.Second)
 	media, nativeErr := d.resolveHongguoAppMedia(appContext, videoID)
 	cancelApp()
 	if nativeErr == nil {
@@ -214,9 +215,18 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 	if err := ctx.Err(); err != nil {
 		return providerMedia{}, err
 	}
-	backupContext, cancelBackup := context.WithTimeout(ctx, 12*time.Second)
+	media, pageErr := d.resolveHongguoWebMedia(ctx, seriesID, videoID)
+	if pageErr == nil {
+		return media, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
+	backupContext, cancelBackup := context.WithTimeout(ctx, 3*time.Second)
 	defer cancelBackup()
+	finish := startPlaybackStage(ctx, "backup")
 	media, apiErr := d.resolveHongguoPlaybackAPI(backupContext, seriesID, videoID)
+	finish(apiErr)
 	if apiErr == nil {
 		return media, nil
 	}
@@ -224,10 +234,12 @@ func (d *Downloader) resolveHongguoMedia(ctx context.Context, task Task) (provid
 }
 
 func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, videoID string) (providerMedia, error) {
-	bases := []string{"https://novelquickapp.com", hongguoBaseURL}
+	bases := []string{hongguoBaseURL, "https://novelquickapp.com"}
 	var failures []error
 	for _, base := range bases {
+		finish := startPlaybackStage(ctx, "web_"+base)
 		media, err := d.resolveHongguoWebMediaAt(ctx, base, seriesID, videoID)
+		finish(err)
 		if err == nil {
 			return media, nil
 		}
@@ -241,7 +253,7 @@ func (d *Downloader) resolveHongguoWebMedia(ctx context.Context, seriesID, video
 
 func (d *Downloader) resolveHongguoWebMediaAt(ctx context.Context, base, seriesID, videoID string) (providerMedia, error) {
 	pageURL := base + "/player/" + url.PathEscape(seriesID) + "/" + url.PathEscape(videoID)
-	pageContext, cancel := context.WithTimeout(ctx, 8*time.Second)
+	pageContext, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	body, err := d.fetchProviderText(pageContext, pageURL, base+"/")
 	if err != nil {

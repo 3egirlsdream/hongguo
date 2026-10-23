@@ -19,6 +19,7 @@ import 'cover_decoder.dart';
 import 'catalog_updates.dart';
 import 'download_collections.dart';
 import 'resource_settings.dart';
+import 'playback_trace.dart';
 
 typedef _NativeRequest = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _DartRequest = Pointer<Utf8> Function(Pointer<Utf8>);
@@ -646,11 +647,23 @@ class NativeRepository extends AppRepository {
   Future<Map<String, dynamic>> _call(Map<String, dynamic> input) async {
     try {
       final action = input['action'] as String;
+      if ({
+        'detail',
+        'resolve',
+        'fallback',
+        'preload',
+        'prepareHandoff',
+      }.contains(action)) {
+        input['traceId'] =
+            PlaybackTrace.current?.id ??
+            '$action-${DateTime.now().microsecondsSinceEpoch}';
+      }
       if (action == 'hongguoAccount') {
         _authorize('hongguo');
         input['profile'] = access?.profile.id ?? '';
       }
       if ({
+        'detail',
         'resolve',
         'preload',
         'prepareHandoff',
@@ -748,6 +761,9 @@ class NativeRepository extends AppRepository {
         ),
       );
       final response = jsonDecode(encoded) as Map<String, dynamic>;
+      if (input['traceId'] case final String traceId) {
+        PlaybackTrace.recordNative(traceId, action, response['timings']);
+      }
       if (response['ok'] != true) {
         throw AppFailure(
           response['error'] as String? ?? '读取失败，请重试',

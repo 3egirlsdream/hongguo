@@ -165,11 +165,42 @@ class Episode {
   final bool vip;
 }
 
+class DramaSeason {
+  const DramaSeason({
+    required this.drama,
+    required this.number,
+    required this.playable,
+    required this.reservable,
+    this.publishText = '',
+    this.next = false,
+  });
+  final Drama drama;
+  final int number;
+  final bool next;
+  final bool playable;
+  final bool reservable;
+  final String publishText;
+  factory DramaSeason.fromJson(Map<String, dynamic> json) => DramaSeason(
+    drama: Drama.fromJson(Map<String, dynamic>.from(json['drama'] as Map)),
+    number: intValue(json['number']),
+    next: json['next'] == true,
+    playable: json['playable'] == true,
+    reservable: json['reservable'] == true,
+    publishText: json['publishText'] as String? ?? '',
+  );
+}
+
 class DramaDetail {
-  DramaDetail(this.drama, this.episodes, {this.warning = ''});
+  DramaDetail(
+    this.drama,
+    this.episodes, {
+    this.warning = '',
+    this.seasons = const [],
+  });
   final Drama drama;
   final List<Episode> episodes;
   final String warning;
+  final List<DramaSeason> seasons;
   factory DramaDetail.fromJson(Map<String, dynamic> json) {
     final rows = json['chapters'] as List? ?? const [];
     return DramaDetail(
@@ -179,6 +210,10 @@ class DramaDetail {
           Episode(Map<String, dynamic>.from(rows[i] as Map), i + 1),
       ],
       warning: json['warning'] as String? ?? '',
+      seasons: [
+        for (final row in json['seasons'] as List? ?? const [])
+          DramaSeason.fromJson(Map<String, dynamic>.from(row as Map)),
+      ],
     );
   }
 }

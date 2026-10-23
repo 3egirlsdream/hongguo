@@ -446,6 +446,8 @@ func (engine *nativeEngine) nativeAccount(ctx context.Context, input nativeInput
 	switch input.Command {
 	case "status":
 		return a.status(), nil
+	case "seasons":
+		return a.seasons(ctx, input.Account.ID)
 	case "sendCode":
 		e = a.sendCode(ctx, input.Account.Phone)
 	case "login":

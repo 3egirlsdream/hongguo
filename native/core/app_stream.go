@@ -29,14 +29,17 @@ type nativeStreamAsset struct {
 }
 
 type nativeStreamSession struct {
-	credentials *providerMediaCredentials
-	mu          sync.Mutex
-	assets      map[string]nativeStreamAsset
-	referer     string
-	key         []byte
-	ctx         context.Context
-	cancel      context.CancelFunc
-	lastUsed    time.Time
+	trace         *playbackTrace
+	headersOnce   sync.Once
+	firstByteOnce sync.Once
+	credentials   *providerMediaCredentials
+	mu            sync.Mutex
+	assets        map[string]nativeStreamAsset
+	referer       string
+	key           []byte
+	ctx           context.Context
+	cancel        context.CancelFunc
+	lastUsed      time.Time
 }
 
 type nativeStreamServer struct {
@@ -67,7 +70,7 @@ func newNativeStreamServer(d *Downloader) (*nativeStreamServer, error) {
 	return stream, nil
 }
 
-func (stream *nativeStreamServer) nativeOpen(media providerMedia) (string, string) {
+func (stream *nativeStreamServer) nativeOpen(media providerMedia, traces ...*playbackTrace) (string, string) {
 	tokenBytes := make([]byte, 24)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		panic(err)
@@ -75,6 +78,9 @@ func (stream *nativeStreamServer) nativeOpen(media providerMedia) (string, strin
 	token := hex.EncodeToString(tokenBytes)
 	ctx, cancel := context.WithCancel(providerMediaContext(context.Background(), media.credentials))
 	session := &nativeStreamSession{assets: map[string]nativeStreamAsset{}, referer: media.Referer, key: media.HLSKey, ctx: ctx, cancel: cancel, lastUsed: time.Now(), credentials: media.credentials}
+	if len(traces) > 0 {
+		session.trace = traces[0]
+	}
 	stream.mu.Lock()
 	for id, old := range stream.sessions {
 		if time.Since(old.lastUsed) > 10*time.Minute {
@@ -305,7 +311,9 @@ func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, reques
 			upstream.Header.Set(name, value)
 		}
 	}
+	requestStarted := time.Now()
 	response, err := stream.nativeRequest(upstream)
+	session.headersOnce.Do(func() { session.trace.record("media_response_headers", requestStarted, err) })
 	if err != nil {
 		http.Error(writer, "读取媒体失败，请重试", http.StatusBadGateway)
 		return
@@ -325,7 +333,7 @@ func (stream *nativeStreamServer) nativeServe(writer http.ResponseWriter, reques
 	contentIsMP4 := strings.Contains(contentType, "video/mp4")
 	playlist := strings.Contains(contentType, "mpegurl") ||
 		(strings.HasSuffix(strings.ToLower(finalURL.Path), ".m3u8") && !contentIsMP4)
-	reader := bufio.NewReader(response.Body)
+	reader := bufio.NewReader(&playbackFirstByteReader{Reader: response.Body, trace: session.trace, once: &session.firstByteOnce, started: requestStarted})
 	if request.Method == http.MethodGet {
 		peek, _ := reader.Peek(512)
 		bodyIsPlaylist := strings.HasPrefix(strings.TrimSpace(strings.TrimPrefix(string(peek), "\ufeff")), "#EXTM3U")

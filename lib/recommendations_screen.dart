@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollDirection;
 
 import 'core_bridge.dart';
 import 'local_store.dart';
@@ -31,6 +32,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
   static const _pageSize = 10;
   int _visibleCount = _pageSize;
   bool _nextScheduled = false;
+  bool _userScrolled = false;
   List<Drama> _items = [];
   bool _loading = false;
   bool _more = false;
@@ -72,12 +74,14 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
   Future<void> _load({bool more = false, bool force = false}) async {
     if (!widget.store.allowsSource('hongguo')) return;
     if (more && (_loading || _more || !_canLoadMore)) return;
-    if (more && _visibleCount < _items.length) {
-      setState(
-        () =>
-            _visibleCount = (_visibleCount + _pageSize).clamp(0, _items.length),
-      );
+    final targetCount = more ? _visibleCount + _pageSize : _pageSize;
+    if (more && _items.length >= targetCount) {
+      setState(() => _visibleCount = targetCount);
       return;
+    }
+    if (!more) {
+      _userScrolled = false;
+      if (_scroll.hasClients) _scroll.jumpTo(0);
     }
     final generation = ++_generation;
     final genre = _genre;
@@ -90,15 +94,44 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
     try {
       await widget.repository.cancelRecommendations();
       if (!mounted || generation != _generation) return;
-      final page = await widget.repository.recommendations(
-        genre,
-        more: more,
-        force: force,
-      );
+      var page = more && _visibleCount < _items.length
+          ? CatalogPage(_items, hasMore: _hasMore)
+          : await widget.repository.recommendations(
+              genre,
+              more: more,
+              force: force,
+            );
       if (!mounted || generation != _generation) return;
+      for (
+        var attempt = 0;
+        attempt < 3 &&
+            page.items.length < targetCount &&
+            page.hasMore &&
+            page.warning.isEmpty;
+        attempt++
+      ) {
+        final previous = page;
+        try {
+          final next = await widget.repository.recommendations(
+            genre,
+            more: true,
+          );
+          if (!mounted || generation != _generation) return;
+          page = next;
+          if (page.items.length <= previous.items.length) break;
+        } catch (error) {
+          if (!mounted || generation != _generation) return;
+          page = CatalogPage(
+            previous.items,
+            hasMore: previous.hasMore,
+            warning: error.toString(),
+          );
+          break;
+        }
+      }
       setState(() {
         _items = page.items;
-        _visibleCount = more ? _visibleCount + _pageSize : _pageSize;
+        _visibleCount = targetCount.clamp(0, page.items.length);
         _hasMore = page.hasMore;
         _error = page.warning.isEmpty ? null : page.warning;
         _loading = _more = false;
@@ -113,8 +146,34 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
     }
   }
 
+  bool get _nearEnd =>
+      _scroll.hasClients &&
+      _scroll.position.pixels > 0 &&
+      _scroll.position.extentAfter <=
+          (_scroll.position.viewportDimension * .2).clamp(48.0, 160.0);
+
+  bool _onScrollNotification(ScrollNotification notification) {
+    if (notification.depth == 0 && widget.active) {
+      if (notification is UserScrollNotification &&
+          notification.direction == ScrollDirection.idle) {
+        _userScrolled = false;
+        return false;
+      }
+      if (notification is UserScrollNotification &&
+              notification.direction == ScrollDirection.reverse ||
+          notification is ScrollUpdateNotification &&
+              notification.dragDetails != null &&
+              (notification.scrollDelta ?? 0) > 0) {
+        _userScrolled = true;
+        _onScroll();
+      }
+    }
+    return false;
+  }
+
   void _onScroll() {
     if (!widget.active ||
+        !_userScrolled ||
         !_scroll.hasClients ||
         _scroll.position.pixels <= 0 ||
         _loading ||
@@ -122,7 +181,7 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
         !_canLoadMore ||
         _error != null ||
         _nextScheduled ||
-        _scroll.position.extentAfter > 600) {
+        !_nearEnd) {
       return;
     }
     _nextScheduled = true;
@@ -133,7 +192,10 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
           !_loading &&
           !_more &&
           _canLoadMore &&
-          _error == null) {
+          _error == null &&
+          _userScrolled &&
+          _nearEnd) {
+        _userScrolled = false;
         unawaited(_load(more: true));
       }
     });
@@ -190,80 +252,95 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
           ),
         Expanded(
           child: LayoutBuilder(
-            builder: (context, constraints) => RefreshIndicator(
-              onRefresh: () => _load(force: true),
-              child: CustomScrollView(
-                controller: _scroll,
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  if (!widget.store.allowsSource('hongguo'))
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: StatusPanel(title: '内容暂不可用', message: '请先解锁当前用户。'),
-                    )
-                  else if (_loading && _items.isEmpty)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (_items.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: StatusPanel(
-                        title: _error == null ? '暂无推荐' : '推荐暂时无法加载',
-                        message: _error ?? '下拉刷新可获取新的推荐。',
-                        onRetry: () => _load(force: true),
-                      ),
-                    )
-                  else ...[
-                    SliverPadding(
-                      padding: const EdgeInsets.all(16),
-                      sliver: SliverGrid(
-                        gridDelegate: dramaGridDelegate(
-                          context,
-                          constraints.maxWidth - 32,
-                        ),
-                        delegate: SliverChildBuilderDelegate((context, index) {
-                          final drama = _items[index];
-                          return DramaTile(
-                            key: ValueKey(drama.id),
-                            drama: drama,
-                            repository: widget.repository,
-                            onTap: () => unawaited(
-                              openPlaybackDirectly(
+            builder: (context, constraints) =>
+                NotificationListener<ScrollNotification>(
+                  onNotification: _onScrollNotification,
+                  child: RefreshIndicator(
+                    onRefresh: () => _load(force: true),
+                    child: CustomScrollView(
+                      controller: _scroll,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        if (!widget.store.allowsSource('hongguo'))
+                          const SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: StatusPanel(
+                              title: '内容暂不可用',
+                              message: '请先解锁当前用户。',
+                            ),
+                          )
+                        else if (_loading && _items.isEmpty)
+                          const SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(child: CircularProgressIndicator()),
+                          )
+                        else if (_items.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: StatusPanel(
+                              title: _error == null ? '暂无推荐' : '推荐暂时无法加载',
+                              message: _error ?? '下拉刷新可获取新的推荐。',
+                              onRetry: () => _load(force: true),
+                            ),
+                          )
+                        else ...[
+                          SliverPadding(
+                            padding: const EdgeInsets.all(16),
+                            sliver: SliverGrid(
+                              gridDelegate: dramaGridDelegate(
                                 context,
-                                drama: drama,
-                                repository: widget.repository,
-                                store: widget.store,
+                                constraints.maxWidth - 32,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final drama = _items[index];
+                                  return DramaTile(
+                                    key: ValueKey(drama.id),
+                                    drama: drama,
+                                    repository: widget.repository,
+                                    onTap: () => unawaited(
+                                      openPlaybackDirectly(
+                                        context,
+                                        drama: drama,
+                                        repository: widget.repository,
+                                        store: widget.store,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                childCount: _items.length.clamp(
+                                  0,
+                                  _visibleCount,
+                                ),
                               ),
                             ),
-                          );
-                        }, childCount: _items.length.clamp(0, _visibleCount)),
-                      ),
+                          ),
+                          SliverToBoxAdapter(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                              child: Center(
+                                child: _more
+                                    ? const CircularProgressIndicator()
+                                    : _canLoadMore
+                                    ? OutlinedButton.icon(
+                                        onPressed: () => _load(more: true),
+                                        icon: const Icon(
+                                          Icons.auto_awesome_rounded,
+                                        ),
+                                        label: const Text('继续推荐'),
+                                      )
+                                    : TextButton(
+                                        onPressed: () => _load(force: true),
+                                        child: const Text('本轮推荐已看完，刷新获取新推荐'),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                        child: Center(
-                          child: _more
-                              ? const CircularProgressIndicator()
-                              : _canLoadMore
-                              ? OutlinedButton.icon(
-                                  onPressed: () => _load(more: true),
-                                  icon: const Icon(Icons.auto_awesome_rounded),
-                                  label: const Text('继续推荐'),
-                                )
-                              : TextButton(
-                                  onPressed: () => _load(force: true),
-                                  child: const Text('本轮推荐已看完，刷新获取新推荐'),
-                                ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+                  ),
+                ),
           ),
         ),
       ],

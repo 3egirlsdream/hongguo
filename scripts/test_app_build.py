@@ -19,8 +19,8 @@ class AppBuildTests(unittest.TestCase):
             path.write_bytes(plistlib.dumps(original))
             configure(path, '')
             actual = plistlib.loads(path.read_bytes())
-            self.assertEqual(actual['CFBundleDisplayName'], '红果鉴')
-            self.assertEqual(actual['CFBundleName'], 'hongguojian')
+            self.assertEqual(actual['CFBundleDisplayName'], '野果')
+            self.assertEqual(actual['CFBundleName'], 'yeguo')
             for key, value in original.items():
                 self.assertEqual(actual[key], value)
 
@@ -37,7 +37,7 @@ class AppBuildTests(unittest.TestCase):
             self.assertTrue(any(any(str(arg).endswith('build_native.py') for arg in call) for call in calls))
             self.assertTrue(any('build' in call for call in calls))
             self.assertTrue(any(any(str(arg).endswith('package_release.py') for arg in call) for call in calls))
-            self.assertEqual(BuildVariant().slug, 'hongguojian')
+            self.assertEqual(BuildVariant().slug, 'yeguo')
 
 
 if __name__ == '__main__':

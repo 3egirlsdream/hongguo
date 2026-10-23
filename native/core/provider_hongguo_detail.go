@@ -11,9 +11,11 @@ import (
 )
 
 type hongguoDetailEntry struct {
-	Drama     Drama
-	Chapters  []Chapter
-	ExpiresAt time.Time
+	CurrentSeason int
+	Drama         Drama
+	Seasons       []hongguoOfficialSeason
+	Chapters      []Chapter
+	ExpiresAt     time.Time
 }
 
 type hongguoDetailCall struct {
@@ -73,7 +75,8 @@ func parseHongguoAppDetail(result map[string]any, seriesID string) (hongguoDetai
 	if returnedID != seriesID {
 		return hongguoDetailEntry{}, errors.New("红果 App 未返回所请求的剧集")
 	}
-	entry := hongguoDetailEntry{Drama: hongguoDramaFromAny(detail, "短剧")}
+	season, _ := strconv.Atoi(mapString(detail, "season_index"))
+	entry := hongguoDetailEntry{Drama: hongguoDramaFromAny(detail, "短剧"), CurrentSeason: season}
 	seen := map[string]bool{}
 	episodes := map[int]bool{}
 	for _, row := range anyList(detail["video_list"]) {

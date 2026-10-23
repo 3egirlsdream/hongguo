@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 
 export 'app_build.dart';
 
-const appVersion = '0.2.64';
+const appVersion = '0.2.77';
 
 ThemeData televisionTheme(ThemeData theme) {
   final colors = theme.colorScheme;
@@ -44,9 +44,18 @@ ThemeData televisionTheme(ThemeData theme) {
 }
 
 class AppDevice {
-  const AppDevice({this.television = false, this.version = appVersion});
+  const AppDevice({
+    this.television = false,
+    this.version = appVersion,
+    this.flipDevice = false,
+    this.pictureInPicture = false,
+    this.innerSize = const Size(393, 852),
+  });
   final bool television;
   final String version;
+  final bool flipDevice;
+  final bool pictureInPicture;
+  final Size innerSize;
   static const channel = MethodChannel('duanju/device');
 
   static Future<AppDevice> detect({
@@ -64,6 +73,13 @@ class AppDevice {
       final version = data?['version'];
       return AppDevice(
         television: television,
+        flipDevice: data?['flipDevice'] == true,
+        pictureInPicture: data?['pictureInPicture'] == true,
+        innerSize: Size(
+          (data?['innerWidth'] as num?)?.toDouble() ?? fallback.innerSize.width,
+          (data?['innerHeight'] as num?)?.toDouble() ??
+              fallback.innerSize.height,
+        ),
         version: version is String && version.isNotEmpty
             ? version
             : fallback.version,
@@ -90,7 +106,9 @@ class AppDevice {
   static Future<void> setBrightness(double brightness) async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
-      await channel.invokeMethod('setBrightness', {'brightness': brightness.clamp(0.01, 1.0)});
+      await channel.invokeMethod('setBrightness', {
+        'brightness': brightness.clamp(0.01, 1.0),
+      });
     } catch (_) {}
   }
 

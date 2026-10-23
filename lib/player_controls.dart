@@ -326,10 +326,8 @@ class _PlayerControlsState extends State<PlayerControls> {
         child: Row(
           children: [
             _overlayIconButton(
-              tooltip: widget.fullscreen ? '退出全屏' : '返回',
-              onPressed: widget.fullscreen
-                  ? widget.onFullscreen
-                  : widget.onBack,
+              tooltip: '返回',
+              onPressed: widget.onBack,
               icon: widget.fullscreen
                   ? Icons.arrow_back_rounded
                   : Icons.arrow_back_ios_new_rounded,
@@ -344,12 +342,6 @@ class _PlayerControlsState extends State<PlayerControls> {
               )
             else
               const Spacer(),
-            if (compact)
-              _overlayIconButton(
-                tooltip: '进入全屏',
-                onPressed: widget.onFullscreen,
-                icon: Icons.fullscreen_rounded,
-              ),
           ],
         ),
       ),

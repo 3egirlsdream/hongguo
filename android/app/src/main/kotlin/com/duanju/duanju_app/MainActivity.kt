@@ -30,6 +30,43 @@ class MainActivity : FlutterActivity() {
     private var thermalHeadroom: Double? = null
     private var deviceChannel: MethodChannel? = null
     private var televisionMode = false
+    private var playbackChannel: MethodChannel? = null
+    private var playbackOwner: String? = null
+    private var playbackSnapshot: String? = null
+    private var restoredPlayback: String? = null
+    private val continuityPreferences by lazy {
+        getSharedPreferences("playback_continuity", Context.MODE_PRIVATE)
+    }
+    private val flipDevice by lazy {
+        runCatching {
+            Class.forName("miui.util.MiuiMultiDisplayTypeInfo")
+                .getMethod("isFlipDevice").invoke(null) == true
+        }.getOrDefault(false)
+    }
+
+    private fun coverWindow(): Boolean {
+        val configuration = resources.configuration
+        return flipDevice && !isInPictureInPictureMode &&
+            configuration.screenWidthDp in 1..599 && configuration.screenHeightDp in 1..599
+    }
+
+    private fun rememberInnerWindow() {
+        if (!flipDevice || coverWindow() || isInPictureInPictureMode) return
+        val configuration = resources.configuration
+        val width = configuration.screenWidthDp
+        val height = configuration.screenHeightDp
+        if (width <= 0 || height <= 0) return
+        continuityPreferences.edit()
+            .putInt("innerWidth", width)
+            .putInt("innerHeight", height).apply()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        rememberInnerWindow()
+        if (coverWindow()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        playbackChannel?.invokeMethod("windowChanged", null)
+    }
 
     @Suppress("DEPRECATION")
     private fun isTelevisionDevice(): Boolean {
@@ -65,7 +102,9 @@ class MainActivity : FlutterActivity() {
 
     override fun setRequestedOrientation(requestedOrientation: Int) {
         super.setRequestedOrientation(
-            if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else requestedOrientation
+            if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else if (coverWindow()) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            else requestedOrientation
         )
     }
 
@@ -95,10 +134,15 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (savedInstanceState?.getBoolean("duanju.restorePlayback") == true) {
+            restoredPlayback = continuityPreferences.getString("snapshot", null)
+            playbackSnapshot = restoredPlayback
+        }
         televisionMode = if (savedInstanceState?.containsKey("duanju.televisionMode") == true) {
             savedInstanceState.getBoolean("duanju.televisionMode")
         } else isTelevisionDevice()
         super.onCreate(savedInstanceState)
+        rememberInnerWindow()
         if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
@@ -108,23 +152,94 @@ class MainActivity : FlutterActivity() {
 
     override fun onResume() {
         super.onResume()
+        retainTaskInRecents()
         if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        retainTaskInRecents()
+        playbackChannel?.invokeMethod("windowChanged", null)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun retainTaskInRecents() {
+        runCatching {
+            val manager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            manager?.appTasks?.firstOrNull {
+                val info = it.taskInfo
+                val id = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) info.taskId else info.id
+                id == taskId
+            }?.let { task ->
+                if ((task.taskInfo.baseIntent.flags and Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS) != 0) {
+                    task.setExcludeFromRecents(false)
+                }
+            }
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putBoolean("duanju.televisionMode", televisionMode)
+        outState.putBoolean("duanju.restorePlayback", playbackSnapshot != null)
         super.onSaveInstanceState(outState)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        AppUpdateBridge(this, flutterEngine)
+        playbackChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "duanju/playback")
+            .also { channel ->
+                channel.setMethodCallHandler { call, result ->
+                    when (call.method) {
+                        "checkpoint" -> {
+                            val owner = call.argument<String>("owner")
+                            val snapshot = call.argument<String>("snapshot")
+                            if (owner == null || snapshot == null || snapshot.length > 65536) {
+                                result.error("invalid_snapshot", "播放恢复信息无效", null)
+                            } else {
+                                playbackOwner = owner
+                                playbackSnapshot = snapshot
+                                continuityPreferences.edit().putString("snapshot", snapshot).apply()
+                                result.success(null)
+                            }
+                        }
+                        "clear" -> {
+                            if (call.argument<String>("owner") == playbackOwner && !isChangingConfigurations) {
+                                playbackSnapshot = null
+                                restoredPlayback = null
+                                continuityPreferences.edit().remove("snapshot").apply()
+                            }
+                            result.success(null)
+                        }
+                        "discardRestore" -> {
+                            if (playbackOwner == null) {
+                                playbackSnapshot = null
+                                continuityPreferences.edit().remove("snapshot").apply()
+                            }
+                            result.success(null)
+                        }
+                        "takeRestore" -> {
+                            result.success(restoredPlayback)
+                            restoredPlayback = null
+                        }
+                        else -> result.notImplemented()
+                    }
+                }
+            }
         deviceChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "duanju/device")
             .also { channel ->
                 channel.setMethodCallHandler { call, result ->
                     when (call.method) {
                         "deviceInfo" -> {
                             val version = packageManager.getPackageInfo(packageName, 0).versionName
-                            result.success(mapOf("television" to isTelevisionDevice(), "version" to version))
+                            result.success(mapOf(
+                                "television" to isTelevisionDevice(), "version" to version,
+                                "flipDevice" to flipDevice,
+                                "pictureInPicture" to isInPictureInPictureMode,
+                                "innerWidth" to continuityPreferences.getInt("innerWidth", 393),
+                                "innerHeight" to continuityPreferences.getInt("innerHeight", 852)
+                            ))
                         }
                         "setTelevisionMode" -> {
                             val enabled = call.argument<Boolean>("enabled")
@@ -260,7 +375,7 @@ class MainActivity : FlutterActivity() {
                 builder.setSourceRectHint(Rect(left, top, right, bottom))
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                builder.setAutoEnterEnabled(true)
+                builder.setAutoEnterEnabled(false)
             }
             val entered = enterPictureInPictureMode(builder.build())
             pictureInPictureStatus() + ("requested" to entered)
@@ -272,6 +387,8 @@ class MainActivity : FlutterActivity() {
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (!isInPictureInPictureMode) retainTaskInRecents()
+        playbackChannel?.invokeMethod("windowChanged", null)
         deviceChannel?.invokeMethod(
             "pictureInPictureChanged",
             mapOf("active" to isInPictureInPictureMode)
@@ -279,6 +396,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        playbackChannel?.setMethodCallHandler(null)
+        playbackChannel = null
         deviceChannel?.setMethodCallHandler(null)
         deviceChannel = null
         super.cleanUpFlutterEngine(flutterEngine)

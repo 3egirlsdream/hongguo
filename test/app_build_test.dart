@@ -19,7 +19,7 @@ void main() {
     () async {
       SharedPreferences.setMockInitialValues({'source': 'huangdou'});
       final store = testStore(await SharedPreferences.getInstance());
-      expect(appSlug, 'hongguojian');
+      expect(appSlug, 'yeguo');
       expect(SourceSite.values.map((source) => source.id), ['hongguo']);
       expect(store.sources.map((source) => source.id), ['hongguo']);
       expect(store.allowsSource('dsd'), isFalse);

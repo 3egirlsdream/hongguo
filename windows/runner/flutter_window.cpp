@@ -1,6 +1,8 @@
 #include "flutter_window.h"
 
 #include <optional>
+#include <shellapi.h>
+#include <string>
 #include <flutter/standard_method_codec.h>
 
 #include "flutter/generated_plugin_registrant.h"
@@ -26,6 +28,50 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
   RegisterPlugins(flutter_controller_->engine());
+  update_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(), "duanju/update",
+          &flutter::StandardMethodCodec::GetInstance());
+  update_channel_->SetMethodCallHandler(
+      [](const flutter::MethodCall<flutter::EncodableValue>& call,
+         std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+        if (call.method_name() == "info") {
+          flutter::EncodableMap values;
+          values[flutter::EncodableValue("version")] = flutter::EncodableValue(
+              std::to_string(FLUTTER_VERSION_MAJOR) + "." +
+              std::to_string(FLUTTER_VERSION_MINOR) + "." +
+              std::to_string(FLUTTER_VERSION_PATCH));
+          values[flutter::EncodableValue("build")] =
+              flutter::EncodableValue(std::to_string(FLUTTER_VERSION_BUILD));
+          values[flutter::EncodableValue("canInstall")] = flutter::EncodableValue(true);
+          result->Success(flutter::EncodableValue(values));
+          return;
+        }
+        if (call.method_name() == "openLink") {
+          const auto* arguments = call.arguments() == nullptr ? nullptr :
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (arguments != nullptr) {
+            const auto entry = arguments->find(flutter::EncodableValue("url"));
+            const auto* url = entry == arguments->end() ? nullptr :
+                std::get_if<std::string>(&entry->second);
+            if (url != nullptr && url->rfind("https://github.com/", 0) == 0 &&
+                url->find_first_of("\r\n\"") == std::string::npos) {
+              const std::wstring wide_url(url->begin(), url->end());
+              const auto status = reinterpret_cast<INT_PTR>(ShellExecuteW(
+                  nullptr, L"open", wide_url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+              if (status > 32) {
+                result->Success();
+              } else {
+                result->Error("open_failed", "无法打开浏览器");
+              }
+              return;
+            }
+          }
+          result->Error("invalid_url", "链接地址无效");
+          return;
+        }
+        result->NotImplemented();
+      });
   device_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "duanju/device",
@@ -66,6 +112,7 @@ bool FlutterWindow::OnCreate() {
 }
 
 void FlutterWindow::OnDestroy() {
+  update_channel_.reset();
   device_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;

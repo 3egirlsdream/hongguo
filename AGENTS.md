@@ -32,6 +32,8 @@
 
 ## 代码与资料
 
+Android 本机打包使用 `Watermark.Win` 项目的签名密钥：`/Users/jiangxinji/Documents/Projects/Watermark.Win/Watermark.Andorid/Signing/Watermark.Release.keystore`，密钥别名为 `temp`。口令从同目录 `AndroidSigning.props` 读取，仅配置在本项目被 Git 忽略的 `android/key.properties`；不将密钥或口令复制到源码、文档、提交或源码压缩包。打包后核对签名证书 SHA-256 为 `2B:1F:9D:EC:18:0E:97:2D:6C:37:36:C5:EF:D5:2E:E7:95:2E:DE:41:55:EE:EC:DB:BC:23:EA:33:1F:FA:07:6E`。
+
 保持单一 README.md 使用说明，并在其中维护优先级待办与平台验证状态；不要创建零散 docs 文档。AGENTS.md 仅记录开发约定。
 
 不新增解释性代码注释，必要的编译或工具指令除外。采用清晰命名和模块边界。不要提交密钥、个人配置、下载的视频、SDK 或构建缓存。

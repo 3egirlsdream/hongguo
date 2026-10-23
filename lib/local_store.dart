@@ -517,6 +517,21 @@ class LocalStore extends ChangeNotifier {
     });
   }
 
+  Set<int> playedEpisodes(String dramaId) {
+    try {
+      final data = jsonDecode(_string(_key('playedEpisodes')) ?? '{}') as Map;
+      final episodes = (data[dramaId] as List? ?? const [])
+          .map(intValue)
+          .where((number) => number > 0)
+          .toSet();
+      final latest = watched(dramaId);
+      if (latest != null && latest.position >= .1) episodes.add(latest.episode);
+      return episodes;
+    } catch (_) {
+      return {};
+    }
+  }
+
   Future<void> saveWatch(WatchEntry entry) {
     final epoch = _epoch;
     return _queue(() async {
@@ -543,7 +558,16 @@ class LocalStore extends ChangeNotifier {
           current.drama,
         );
       }
+      final played = jsonDecode(_string(_key('playedEpisodes')) ?? '{}') as Map;
+      if (entry.position >= .1) {
+        played[entry.drama.id] = (playedEpisodes(
+          entry.drama.id,
+        )..add(entry.episode)).toList()..sort();
+      }
+      final retained = sorted.take(300).map((entry) => entry.drama.id).toSet();
+      played.removeWhere((id, _) => !retained.contains(id));
       await _commit({
+        _key('playedEpisodes'): jsonEncode(played),
         _key('history'): jsonEncode(
           sorted.take(300).map((entry) => entry.toJson()).toList(),
         ),
@@ -596,7 +620,7 @@ class LocalStore extends ChangeNotifier {
       if (locked || epoch != _epoch) return;
       await _commit(
         {},
-        remove: [_key('history')],
+        remove: [_key('history'), _key('playedEpisodes')],
         clearSyncProgress: {..._history.keys, ...lanDocument.records.keys},
       );
       _loadLibrary();
@@ -609,8 +633,11 @@ class LocalStore extends ChangeNotifier {
     return _queue(() async {
       if (watched(id) == null || epoch != _epoch) return;
       final entries = Map.of(_history)..remove(id);
+      final played = jsonDecode(_string(_key('playedEpisodes')) ?? '{}') as Map;
+      played.remove(id);
       await _commit(
         {
+          _key('playedEpisodes'): jsonEncode(played),
           _key('history'): jsonEncode(
             entries.values.map((entry) => entry.toJson()).toList(),
           ),
@@ -880,6 +907,9 @@ class LocalStore extends ChangeNotifier {
           profile.id: {
             ..._backupFollowSync(profile.id),
             'history': readJsonList(_string(_key('history', profile.id))),
+            'playedEpisodes': jsonDecode(
+              _string(_key('playedEpisodes', profile.id)) ?? '{}',
+            ),
             'favorites': readJsonList(_string(_key('favorites', profile.id))),
             'followStates': jsonDecode(
               _string(_key('followStates', profile.id)) ?? '{}',
@@ -935,6 +965,19 @@ class LocalStore extends ChangeNotifier {
       final library = libraries[profile.id] as Map;
       final history = library['history'] as List,
           favorites = library['favorites'] as List;
+      final played = library['playedEpisodes'] as Map? ?? {};
+      if (played.length > 300 ||
+          played.entries.any(
+            (entry) =>
+                entry.key is! String ||
+                entry.value is! List ||
+                (entry.value as List).length > 10000 ||
+                (entry.value as List).any(
+                  (number) => number is! int || number < 1,
+                ),
+          )) {
+        throw const FormatException('备份分集播放记录无效');
+      }
       final media = library['mediaHistory'] as Map? ?? {};
       if (media.length > 300 ||
           history.length > 300 ||
@@ -1015,6 +1058,9 @@ class LocalStore extends ChangeNotifier {
             LanDocument(replica: lanID(), records: syncRecords).toJson(),
           ),
         _key('history', profile.id): jsonEncode(library['history']),
+        _key('playedEpisodes', profile.id): jsonEncode(
+          library['playedEpisodes'] ?? {},
+        ),
         _key('favorites', profile.id): jsonEncode(library['favorites']),
         _key('followStates', profile.id): jsonEncode(
           library['followStates'] ?? {},

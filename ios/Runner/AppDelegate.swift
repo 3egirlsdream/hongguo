@@ -15,6 +15,32 @@ import CFNetwork
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AppUpdate") {
+      let channel = FlutterMethodChannel(name: "duanju/update", binaryMessenger: registrar.messenger())
+      channel.setMethodCallHandler { call, result in
+        switch call.method {
+        case "info":
+          result([
+            "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "build": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+            "canInstall": false
+          ])
+        case "openLink":
+          guard let arguments = call.arguments as? [String: Any],
+                let text = arguments["url"] as? String,
+                let url = URL(string: text), url.scheme == "https", url.host == "github.com" else {
+            result(FlutterError(code: "invalid_url", message: "链接地址无效", details: nil))
+            return
+          }
+          UIApplication.shared.open(url) { opened in
+            if opened { result(nil) }
+            else { result(FlutterError(code: "open_failed", message: "无法打开浏览器", details: nil)) }
+          }
+        default:
+          result(FlutterMethodNotImplemented)
+        }
+      }
+    }
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "DeviceSettings") {
       let channel = FlutterMethodChannel(name: "duanju/device", binaryMessenger: registrar.messenger())
       channel.setMethodCallHandler { call, result in

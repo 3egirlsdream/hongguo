@@ -7,7 +7,10 @@ import 'follow_state.dart';
 import 'local_store.dart';
 import 'models.dart';
 import 'player_screen.dart';
+import 'playback_trace.dart';
 import 'widgets.dart';
+
+final _playbackLaunches = Expando<bool>();
 
 Future<void> openPlaybackDirectly(
   BuildContext context, {
@@ -16,9 +19,16 @@ Future<void> openPlaybackDirectly(
   required LocalStore store,
   WatchEntry? resumeOverride,
 }) async {
+  final navigator = Navigator.of(context);
+  if (_playbackLaunches[navigator] == true) return;
+  _playbackLaunches[navigator] = true;
+  final trace = PlaybackTrace('click');
   final profileEpoch = store.profileEpoch;
   try {
-    final detail = await repository.detail(drama);
+    final detail = await trace.measure(
+      'detail',
+      () => repository.detail(drama),
+    );
     if (!context.mounted || profileEpoch != store.profileEpoch) return;
     final mergedDrama = repository.catalogUpdates
         .current(drama)
@@ -27,9 +37,18 @@ Future<void> openPlaybackDirectly(
       mergedDrama,
       detail.episodes,
       warning: detail.warning,
+      seasons: detail.seasons,
     );
     repository.catalogUpdates.publish(mergedDrama, retryCover: true);
-    await saveUserChange(context, () => store.refreshDrama(mergedDrama));
+    unawaited(
+      saveUserChange(
+        context,
+        () => trace.measure(
+          'metadata_save',
+          () => store.refreshDrama(mergedDrama),
+        ),
+      ),
+    );
     if (!context.mounted || profileEpoch != store.profileEpoch) return;
     if (merged.episodes.isEmpty) {
       throw AppFailure('暂时没有可播放的集数');
@@ -40,21 +59,24 @@ Future<void> openPlaybackDirectly(
     final index = resumeEpisodeIndex(merged.episodes, watched);
     final episode = merged.episodes[index];
     if (episode.vip) {
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('这是一集 VIP 内容'),
-          content: const Text('部分内容可能仅提供试看或限制播放。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('尝试播放'),
-            ),
-          ],
+      final accepted = await trace.measure(
+        'vip_confirmation',
+        () => showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('这是一集 VIP 内容'),
+            content: const Text('部分内容可能仅提供试看或限制播放。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('尝试播放'),
+              ),
+            ],
+          ),
         ),
       );
       if (accepted != true || !context.mounted) return;
@@ -72,6 +94,7 @@ Future<void> openPlaybackDirectly(
           initialPosition: position,
           repository: repository,
           store: store,
+          trace: trace,
         ),
       ),
     );
@@ -82,9 +105,10 @@ Future<void> openPlaybackDirectly(
       retryCover: true,
     );
     final message = error is AppFailure ? error.message : '暂时无法播放，请重试';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  } finally {
+    _playbackLaunches[navigator] = false;
   }
 }
 
@@ -124,9 +148,13 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
 
   Future<void> _load() async {
     final generation = ++_generation;
+    final trace = PlaybackTrace('launch');
     setState(() => _error = null);
     try {
-      final detail = await widget.repository.detail(widget.drama);
+      final detail = await trace.measure(
+        'detail',
+        () => widget.repository.detail(widget.drama),
+      );
       if (!mounted ||
           generation != _generation ||
           _profileEpoch != widget.store.profileEpoch) {
@@ -139,9 +167,18 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
         drama,
         detail.episodes,
         warning: detail.warning,
+        seasons: detail.seasons,
       );
       widget.repository.catalogUpdates.publish(drama, retryCover: true);
-      await saveUserChange(context, () => widget.store.refreshDrama(drama));
+      unawaited(
+        saveUserChange(
+          context,
+          () => trace.measure(
+            'metadata_save',
+            () => widget.store.refreshDrama(drama),
+          ),
+        ),
+      );
       if (!mounted ||
           generation != _generation ||
           _profileEpoch != widget.store.profileEpoch) {
@@ -198,6 +235,7 @@ class _PlaybackLaunchScreenState extends State<PlaybackLaunchScreen> {
             initialPosition: position,
             repository: widget.repository,
             store: widget.store,
+            trace: trace,
           ),
         ),
       );

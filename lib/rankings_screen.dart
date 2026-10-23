@@ -13,9 +13,13 @@ class RankingsScreen extends StatefulWidget {
     super.key,
     required this.repository,
     required this.store,
+    this.embedded = false,
+    this.active = true,
   });
   final AppRepository repository;
   final LocalStore store;
+  final bool embedded;
+  final bool active;
 
   @override
   State<RankingsScreen> createState() => _RankingsScreenState();
@@ -53,7 +57,12 @@ class _RankingsScreenState extends State<RankingsScreen> {
   }
 
   void _onScroll() {
-    if (!mounted || !_hasMore || _loading || _more || !_scroll.hasClients) {
+    if (!mounted ||
+        !widget.active ||
+        !_hasMore ||
+        _loading ||
+        _more ||
+        !_scroll.hasClients) {
       return;
     }
     final position = _scroll.position;
@@ -165,7 +174,8 @@ class _RankingsScreenState extends State<RankingsScreen> {
         .toList();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('榜单'),
+        automaticallyImplyLeading: !widget.embedded,
+        title: const Text('排行榜'),
         actions: [
           RefreshAction(
             loading: _loading || _more,

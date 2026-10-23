@@ -15,59 +15,67 @@ import (
 type hongguoMediaRequestKey struct{}
 
 func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoID string) (providerMedia, error) {
-	if !hongguoNumericID.MatchString(videoID) {
-		return providerMedia{}, errors.New("红果视频 ID 无效")
-	}
-	single := map[string]any{
-		"video_id": videoID, "content_type": 1,
-		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
-	}
-	batch := map[string]any{
-		"mixed_video_id_map": map[string]any{"1004": []string{videoID}},
-		"biz_param":          map[string]any{"detail_page_version": 0, "device_level": 3, "disable_digg_stat": false, "need_all_video_definition": true, "need_mp4_align": false, "use_os_player": false, "use_server_dns": false, "video_platform": 1024},
-	}
 	var failures []error
 	for _, endpoint := range []struct {
-		path    string
-		payload map[string]any
-		batch   bool
-	}{
-		{"/novel/player/multi_video_model/v1/", batch, true},
-		{"/novel/player/video_model/v1/", single, false},
-	} {
-		requestCtx, cancel := context.WithTimeout(context.WithValue(ctx, hongguoMediaRequestKey{}, true), 12*time.Second)
-		result, err := downloader.hongguoAppRequest(requestCtx, http.MethodPost, endpoint.path, nil, endpoint.payload)
-		if err == nil {
-			data := nestedMap(result, "data")
-			if endpoint.batch {
-				data = nestedMap(data, videoID)
-			}
-			var model map[string]any
-			model, err = hongguoVideoModel(data)
-			if err == nil && model != nil {
-				var media providerMedia
-				media, err = selectHongguoAppMedia(model)
-				if err != nil && model["fallback_api"] != nil {
-					model, err = downloader.hongguoFallbackModel(requestCtx, model["fallback_api"])
-					if err == nil {
-						media, err = selectHongguoAppMedia(model)
-					}
-				}
-				if err == nil {
-					cancel()
-					return media, nil
-				}
-			} else if err == nil {
-				err = errors.New("未返回所请求分集的播放模型")
-			}
-		}
+		batch  bool
+		budget time.Duration
+	}{{true, 6 * time.Second}, {false, 4 * time.Second}} {
+		requestCtx, cancel := context.WithTimeout(ctx, endpoint.budget)
+		media, err := downloader.resolveHongguoAppMediaEndpoint(requestCtx, videoID, endpoint.batch)
 		cancel()
+		if err == nil {
+			return media, nil
+		}
 		if ctx.Err() != nil {
 			return providerMedia{}, ctx.Err()
 		}
-		failures = append(failures, fmt.Errorf("%s: %w", endpoint.path, err))
+		failures = append(failures, err)
 	}
 	return providerMedia{}, errors.Join(failures...)
+}
+
+func (downloader *Downloader) resolveHongguoAppMediaEndpoint(ctx context.Context, videoID string, batch bool) (media providerMedia, err error) {
+	if !hongguoNumericID.MatchString(videoID) {
+		return providerMedia{}, errors.New("红果视频 ID 无效")
+	}
+	path, stage := "/novel/player/video_model/v1/", "app_single"
+	payload := map[string]any{
+		"video_id": videoID, "content_type": 1,
+		"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
+	}
+	if batch {
+		path, stage = "/novel/player/multi_video_model/v1/", "app_batch"
+		payload = map[string]any{
+			"mixed_video_id_map": map[string]any{"1004": []string{videoID}},
+			"biz_param":          map[string]any{"detail_page_version": 0, "device_level": 3, "disable_digg_stat": false, "need_all_video_definition": true, "need_mp4_align": false, "use_os_player": false, "use_server_dns": false, "video_platform": 1024},
+		}
+	}
+	finish := startPlaybackStage(ctx, stage)
+	defer func() { finish(err) }()
+	ctx = context.WithValue(ctx, hongguoMediaRequestKey{}, true)
+	result, err := downloader.hongguoAppRequest(ctx, http.MethodPost, path, nil, payload)
+	if err != nil {
+		return providerMedia{}, fmt.Errorf("%s: %w", path, err)
+	}
+	data := nestedMap(result, "data")
+	if batch {
+		data = nestedMap(data, videoID)
+	}
+	model, err := hongguoVideoModel(data)
+	if err != nil {
+		return providerMedia{}, err
+	}
+	if model == nil {
+		return providerMedia{}, errors.New("未返回所请求分集的播放模型")
+	}
+	media, err = selectHongguoAppMedia(model)
+	if err != nil && model["fallback_api"] != nil {
+		model, err = downloader.hongguoFallbackModel(ctx, model["fallback_api"])
+		if err == nil {
+			media, err = selectHongguoAppMedia(model)
+		}
+	}
+	return media, err
 }
 
 // hongguoVideoModel 兼容三种下发结构：

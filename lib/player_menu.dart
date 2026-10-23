@@ -26,6 +26,7 @@ class PlayerMenu extends StatefulWidget {
     required this.onEpisode,
     required this.onPreferences,
     required this.onFavorite,
+    this.playedNumbers = const {},
     this.showDanmaku = false,
     this.danmakuStatus = '',
     this.onRetryDanmaku,
@@ -43,6 +44,7 @@ class PlayerMenu extends StatefulWidget {
   final bool local;
   final bool favorite;
   final bool mobile;
+  final Set<int> playedNumbers;
   final bool showDanmaku;
   final String danmakuStatus;
   final VoidCallback? onRetryDanmaku;
@@ -133,6 +135,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
                       episodes: widget.episodes,
                       currentIndex: widget.currentIndex,
                       keyPrefix: 'menu-episode',
+                      playedNumbers: widget.playedNumbers,
                       onSelected: widget.onEpisode,
                     )
                   : SingleChildScrollView(
@@ -313,9 +316,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           ),
           const SizedBox(height: 20),
           Text(
-            widget.mobile
-                ? '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。'
-                : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 3 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
+            widget.mobile ? '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。' : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 3 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
             style: helperStyle.copyWith(height: 1.6),
           ),
         ],
@@ -333,22 +334,36 @@ class PlayerEpisodeGrid extends StatelessWidget {
     this.keyPrefix = 'play-episode',
     this.compact = false,
     this.title = '选集',
+    this.playedNumbers = const {},
   });
   final List<Episode> episodes;
+  final Set<int> playedNumbers;
   final int currentIndex;
   final ValueChanged<int> onSelected;
   final String keyPrefix;
   final bool compact;
   final String title;
   @override
-  Widget build(BuildContext context) => EpisodeBrowser(
-    episodes: episodes,
-    currentNumber: episodes.isEmpty
-        ? null
-        : episodes[currentIndex.clamp(0, episodes.length - 1)].number,
-    onSelected: onSelected,
-    keyPrefix: keyPrefix,
-    compact: compact,
-    title: title,
+  Widget build(BuildContext context) => Column(
+    children: [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(12, 6, 12, 2),
+        child: Text('▶ 当前 · ✓ 已播放 · 无标记未播放', style: TextStyle(fontSize: 12)),
+      ),
+      Expanded(
+        child: EpisodeBrowser(
+          episodes: episodes,
+          playedNumbers: playedNumbers,
+          showPlaybackState: true,
+          currentNumber: episodes.isEmpty
+              ? null
+              : episodes[currentIndex.clamp(0, episodes.length - 1)].number,
+          onSelected: onSelected,
+          keyPrefix: keyPrefix,
+          compact: compact,
+          title: title,
+        ),
+      ),
+    ],
   );
 }

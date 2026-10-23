@@ -116,34 +116,44 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
     }
   }
 
+  bool _openingPlayback = false;
+
   Future<void> _play(LocalMediaItem item) async {
-    final watch = widget.store.mediaWatched(item.id);
-    final episode = Episode({
-      'id': item.id,
-      'title': item.merged ? '合并视频' : '第 ${item.episodes.first} 集',
-      'currentEpisode': item.episodes.first,
-    }, 1);
-    await Navigator.push(
-      context,
-      MaterialPageRoute<void>(
-        builder: (_) => PlayerScreen(
-          detail: DramaDetail(item.drama, [episode]),
-          initialIndex: 0,
-          initialPosition: watch == null || watch.finished ? 0 : watch.position,
-          repository: _LocalFileRepository(
-            widget.repository,
-            widget.store,
-            item,
-            library.fileFor(item),
+    if (_openingPlayback) return;
+    _openingPlayback = true;
+    try {
+      final watch = widget.store.mediaWatched(item.id);
+      final episode = Episode({
+        'id': item.id,
+        'title': item.merged ? '合并视频' : '第 ${item.episodes.first} 集',
+        'currentEpisode': item.episodes.first,
+      }, 1);
+      await Navigator.push(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => PlayerScreen(
+            detail: DramaDetail(item.drama, [episode]),
+            initialIndex: 0,
+            initialPosition: watch == null || watch.finished
+                ? 0
+                : watch.position,
+            repository: LocalFileRepository(
+              widget.repository,
+              widget.store,
+              item,
+              library.fileFor(item),
+            ),
+            store: widget.store,
+            localOnly: true,
+            allowOnlineFallback: false,
+            mediaId: item.id,
           ),
-          store: widget.store,
-          localOnly: true,
-          allowOnlineFallback: false,
-          mediaId: item.id,
         ),
-      ),
-    );
-    if (mounted) await _refresh();
+      );
+      if (mounted) await _refresh();
+    } finally {
+      _openingPlayback = false;
+    }
   }
 
   Future<void> _remove(LocalMediaItem item) async {
@@ -307,9 +317,9 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
                               children: [
                                 Text(
                                   item.drama.title,
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.titleMedium,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium,
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
@@ -322,9 +332,9 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
                                 if (item.merged)
                                   Text(
                                     '视频转码 ${item.videoTranscodes} 集 · 音轨处理 ${item.audioTranscodes} 集',
-                                    style: Theme.of(
-                                      context,
-                                    ).textTheme.bodySmall,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodySmall,
                                   ),
                                 if (item.merged)
                                   TextButton.icon(
@@ -380,8 +390,8 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
   );
 }
 
-class _LocalFileRepository extends AppRepository {
-  _LocalFileRepository(this.parent, this.store, this.item, this.file);
+class LocalFileRepository extends AppRepository {
+  LocalFileRepository(this.parent, this.store, this.item, this.file);
   final AppRepository parent;
   final LocalStore store;
   final LocalMediaItem item;

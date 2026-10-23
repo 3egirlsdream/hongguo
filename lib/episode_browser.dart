@@ -152,6 +152,8 @@ class EpisodeBrowser extends StatefulWidget {
     required this.onSelected,
     this.currentNumber,
     this.selectedNumbers,
+    this.playedNumbers = const {},
+    this.showPlaybackState = false,
     this.keyPrefix = 'episode',
     this.title = '选集',
     this.compact = false,
@@ -160,6 +162,8 @@ class EpisodeBrowser extends StatefulWidget {
   final ValueChanged<int> onSelected;
   final int? currentNumber;
   final Set<int>? selectedNumbers;
+  final Set<int> playedNumbers;
+  final bool showPlaybackState;
   final String keyPrefix;
   final String title;
   final bool compact;
@@ -296,6 +300,8 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
                     key: ValueKey('${widget.keyPrefix}-${episode.number}'),
                     number: episode.number,
                     vip: episode.vip,
+                    played: widget.playedNumbers.contains(episode.number),
+                    showPlaybackState: widget.showPlaybackState,
                     compact: widget.compact,
                     current:
                         widget.selectedNumbers?.contains(episode.number) ??
@@ -414,6 +420,8 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
                   key: ValueKey('${widget.keyPrefix}-${episode.number}'),
                   number: episode.number,
                   vip: episode.vip,
+                  played: widget.playedNumbers.contains(episode.number),
+                  showPlaybackState: widget.showPlaybackState,
                   compact: true,
                   current:
                       widget.selectedNumbers?.contains(episode.number) ??

@@ -129,6 +129,14 @@ func (c *hgAccountHTTP) request(ctx context.Context, path, method string, params
 	for k, v := range map[string]string{"User-Agent": hongguoAppUserAgent, "Accept": "application/json", "X-XS-From-Web": "0", "Sdk-Version": "2", "Passport-Sdk-Version": "6031190", "X-SS-DP": "8662", "X-Tt-Store-Region": "cn", "X-Tt-Store-Region-Src": "did"} {
 		r.Header.Set(k, v)
 	}
+	if strings.HasPrefix(path, "/reading/") {
+		nonce, err := hgAuthRand()
+		if err != nil {
+			return nil, err
+		}
+		r.Header.Set("Lc", "101")
+		r.Header.Set("X-Reading-Request", fmt.Sprintf("%d-%d", time.Now().UnixMilli(), nonce))
+	}
 	if strings.HasPrefix(path, "/passport/") {
 		r.Header.Set("Passport-Sdk-Version", "5051452")
 		r.Header.Set("X-Vc-Bdturing-Sdk-Version", "4.0.3.cn")

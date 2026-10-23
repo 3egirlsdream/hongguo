@@ -3,10 +3,12 @@ package core
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -17,6 +19,16 @@ type hongguoProbeTransport struct {
 }
 
 func (p hongguoProbeTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if r.Method != http.MethodHead && !strings.HasPrefix(r.URL.Path, "/player/") && !map[string]bool{
+		"/service/2/device_register/":         true,
+		"/novel/player/video_detail/v1/":      true,
+		"/novel/player/multi_video_model/v1/": true,
+		"/novel/player/video_model/v1/":       true,
+		"/reading/bookapi/plan/v":             true,
+		"/api/hongguo/play":                   true,
+	}[r.URL.Path] {
+		return nil, fmt.Errorf("probe blocked non-playback path %s", r.URL.Path)
+	}
 	start := time.Now()
 	response, err := p.base.RoundTrip(r)
 	if err != nil {
@@ -48,30 +60,84 @@ func TestHongguoAPILiveProbe(t *testing.T) {
 	d := engine.downloader
 	d.client.Transport = hongguoProbeTransport{base: d.client.Transport, t: t}
 	series := "7694653385668037657"
+	for _, route := range []string{"guest_detail", "official_detail", "related_seasons"} {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		started := time.Now()
+		var probeErr error
+		if route == "guest_detail" {
+			_, probeErr = d.hongguoAppDetail(ctx, series)
+		} else {
+			account, err := engine.officialAccount("api-probe")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if route == "official_detail" {
+				client := hgNewAccountHTTP(d, account.disk.Session)
+				probeErr = client.register(ctx)
+				if probeErr == nil {
+					account.disk.Session = hgCloneSession(client.session)
+					var result map[string]any
+					result, probeErr = client.json(ctx, "/novel/player/video_detail/v1/", http.MethodPost, nil, hongguoOfficialDetailPayload(series), false)
+					if probeErr == nil {
+						_, probeErr = parseHongguoAppDetail(result, series)
+					}
+				}
+			} else {
+				_, probeErr = account.seasons(ctx, series)
+			}
+		}
+		cancel()
+		if probeErr != nil {
+			t.Logf("route=%s unavailable elapsed=%s: %s", route, time.Since(started).Round(time.Millisecond), publicError(probeErr))
+			if route == "official_detail" {
+				t.Error("official playback detail API did not return valid episodes")
+			}
+		} else {
+			t.Logf("route=%s usable elapsed=%s", route, time.Since(started).Round(time.Millisecond))
+		}
+	}
 	for _, video := range []string{"7694655440692448281", "7694655210777480217"} {
-		ctx, cancel := context.WithTimeout(context.Background(), 55*time.Second)
-		for _, route := range []string{"web", "app", "backup"} {
+		for _, route := range []string{"app_batch", "app_single", "web_primary", "web_alias", "backup", "app_first_chain"} {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			started := time.Now()
 			var media providerMedia
 			var resolveErr error
+			var playbackSession string
 			switch route {
-			case "web":
-				media, resolveErr = d.resolveHongguoWebMedia(ctx, series, video)
-			case "app":
-				media, resolveErr = d.resolveHongguoAppMedia(ctx, video)
+			case "app_batch", "app_single":
+				media, resolveErr = d.resolveHongguoAppMediaEndpoint(ctx, video, route == "app_batch")
+			case "web_primary":
+				media, resolveErr = d.resolveHongguoWebMediaAt(ctx, hongguoBaseURL, series, video)
+			case "web_alias":
+				media, resolveErr = d.resolveHongguoWebMediaAt(ctx, "https://novelquickapp.com", series, video)
 			case "backup":
-				backupCtx, stop := context.WithTimeout(ctx, 12*time.Second)
+				backupCtx, stop := context.WithTimeout(ctx, 3*time.Second)
 				media, resolveErr = d.resolveHongguoPlaybackAPI(backupCtx, series, video)
 				stop()
+			case "app_first_chain":
+				trace := &playbackTrace{id: "probe-" + video, started: time.Now(), downloader: d}
+				var plan nativePlan
+				plan, resolveErr = engine.nativeResolve(context.WithValue(ctx, playbackTimingKey{}, trace), nativeInput{Drama: nativeDrama{ID: providerDramaID(sourceHongguo, series)}, Chapter: Chapter{VideoURL: "hongguo-cenc://" + video}, Force: true})
+				playbackSession = plan.Session
+				media = providerMedia{URL: plan.URL, Quality: plan.Quality}
+				t.Logf("chain encrypted=%t quality=%d routes=%d", plan.Key != "", plan.Quality, plan.RouteCount)
+				for _, stage := range trace.snapshot() {
+					t.Logf("chain_stage=%s elapsed_ms=%d ok=%t", stage.Stage, stage.ElapsedMS, stage.OK)
+					if strings.HasPrefix(stage.Stage, "web_") || stage.Stage == "backup" {
+						t.Error("App-first chain fell back instead of using the healthy App API")
+					}
+				}
 			}
 			if resolveErr != nil {
-				t.Logf("video=%s route=%s unavailable: %s", video, route, publicError(resolveErr))
-				if route == "app" {
+				cancel()
+				t.Logf("video=%s route=%s unavailable elapsed=%s: %s", video, route, time.Since(started).Round(time.Millisecond), publicError(resolveErr))
+				if route == "app_batch" || route == "app_first_chain" {
 					t.Errorf("App API did not resolve video %s", video)
 				}
 				continue
 			}
 			u, _ := url.Parse(media.URL)
-			t.Logf("video=%s route=%s resolved host=%s variants=%d encrypted=%t quality=%d", video, route, u.Host, len(media.Variants), len(media.CENCKey) > 0, media.Quality)
+			t.Logf("video=%s route=%s resolved elapsed=%s host=%s variants=%d encrypted=%t quality=%d", video, route, time.Since(started).Round(time.Millisecond), u.Host, len(media.Variants), len(media.CENCKey) > 0, media.Quality)
 			r, err := http.NewRequestWithContext(ctx, http.MethodHead, media.URL, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -81,16 +147,19 @@ func TestHongguoAPILiveProbe(t *testing.T) {
 			response, err := d.doCatalogRequestWithTimeout(r, 8*time.Second)
 			if err != nil {
 				t.Logf("media HEAD unavailable: %s", publicError(err))
-				if route == "app" {
+				if route == "app_batch" || route == "app_first_chain" {
 					t.Errorf("App media HEAD failed for video %s", video)
 				}
 			} else {
-				if route == "app" && response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+				if (route == "app_batch" || route == "app_first_chain") && response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
 					t.Errorf("App media HEAD returned HTTP %d", response.StatusCode)
 				}
 				response.Body.Close()
 			}
+			if playbackSession != "" {
+				engine.nativeReleasePlayback(playbackSession)
+			}
+			cancel()
 		}
-		cancel()
 	}
 }

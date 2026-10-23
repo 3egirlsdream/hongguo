@@ -46,8 +46,12 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasMore = false;
   String? _error;
   int _generation = 0;
-  int _tab = 0;
-  final _visitedTabs = <int>{0};
+  static const _homeTab = 0;
+  static const _rankingsTab = 1;
+  static const _searchTab = 2;
+  static const _myTab = 3;
+  int _tab = _homeTab;
+  final _visitedTabs = <int>{_homeTab};
   String _submittedQuery = '';
   late final CatalogBrowser _browser;
   late final LibraryUpdater _updater;
@@ -128,13 +132,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openRankings() {
     _pauseCatalog();
-    Navigator.push<void>(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            RankingsScreen(repository: widget.repository, store: widget.store),
-      ),
-    );
+    _changeTab(_rankingsTab);
   }
 
   Future<void> _manageSources() async {
@@ -209,8 +207,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _televisionBack() {
     if (_selectionMode) {
       _cancelSelection();
-    } else if (_tab != 0) {
-      _changeTab(0);
+    } else if (_tab != _homeTab) {
+      _changeTab(_homeTab);
     }
   }
 
@@ -247,7 +245,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _onCatalogScroll() {
     if (!mounted ||
-        _tab != 1 ||
+        _tab != _searchTab ||
         !_hasMore ||
         _loading ||
         _loadingMore ||
@@ -261,7 +259,7 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _catalogLoadScheduled = false;
       if (!mounted ||
-          _tab != 1 ||
+          _tab != _searchTab ||
           !_hasMore ||
           _loading ||
           _loadingMore ||
@@ -366,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _submitSearch(String query) {
-    if (_tab != 1) _changeTab(1);
+    if (_tab != _searchTab) _changeTab(_searchTab);
     _selectionMode = false;
     _selectedDramas.clear();
     _search.text = query.trim();
@@ -563,36 +561,46 @@ class _HomeScreenState extends State<HomeScreen> {
               repository: widget.repository,
               store: widget.store,
               embedded: true,
-              active: _tab == 0,
+              active: _tab == _homeTab,
             ),
-            if (_visitedTabs.contains(1))
+            if (_visitedTabs.contains(_rankingsTab))
+              RankingsScreen(
+                key: ValueKey('rankings-${widget.store.profileEpoch}'),
+                repository: widget.repository,
+                store: widget.store,
+                embedded: true,
+                active: _tab == _rankingsTab,
+              )
+            else
+              const SizedBox.shrink(),
+            if (_visitedTabs.contains(_searchTab))
               KeyedSubtree(
                 key: ValueKey('search-${widget.store.profileEpoch}'),
                 child: _catalog(selectionInBody: desktop || television),
               )
             else
               const SizedBox.shrink(),
-            if (_visitedTabs.contains(2))
+            if (_visitedTabs.contains(_myTab))
               MyScreen(
                 key: ValueKey('my-${widget.store.profileEpoch}'),
                 repository: widget.repository,
                 store: widget.store,
-                active: _tab == 2,
+                active: _tab == _myTab,
                 onSearch: () {
-                  _changeTab(1);
+                  _changeTab(_searchTab);
                   if (television) unawaited(_televisionSearch());
                 },
                 onSort: () async {
                   await _chooseCatalogView();
-                  if (mounted) _changeTab(1);
+                  if (mounted) _changeTab(_searchTab);
                 },
                 onRankings: _openRankings,
                 onSelectDownloads: () {
-                  _changeTab(1);
+                  _changeTab(_searchTab);
                   setState(() => _selectionMode = true);
                 },
                 onRefresh: () {
-                  _changeTab(1);
+                  _changeTab(_searchTab);
                   unawaited(_refreshCatalog());
                 },
                 onDisplayMode: _chooseDisplayMode,
@@ -631,6 +639,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           label: Text('首页'),
                         ),
                         NavigationRailDestination(
+                          icon: Icon(Icons.leaderboard_outlined),
+                          selectedIcon: Icon(Icons.leaderboard_rounded),
+                          label: Text('排行榜'),
+                        ),
+                        NavigationRailDestination(
                           icon: Icon(Icons.search_rounded),
                           label: Text('搜索'),
                         ),
@@ -664,6 +677,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         label: '首页',
                       ),
                       NavigationDestination(
+                        icon: Icon(Icons.leaderboard_outlined),
+                        selectedIcon: Icon(Icons.leaderboard_rounded),
+                        label: '排行榜',
+                      ),
+                      NavigationDestination(
                         icon: Icon(Icons.search_rounded),
                         label: '搜索',
                       ),
@@ -675,11 +693,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
           );
-          if (!television && !_selectionMode && _tab == 0) {
+          if (!television && !_selectionMode && _tab == _homeTab) {
             return scaffold;
           }
           return PopScope(
-            canPop: !_selectionMode && _tab == 0,
+            canPop: !_selectionMode && _tab == _homeTab,
             onPopInvokedWithResult: (didPop, result) {
               if (!didPop) _televisionBack();
             },

@@ -11,6 +11,7 @@ class AppOrientationController {
     : _television = television;
 
   bool _television;
+  bool _coverWindow = false;
   bool _disposed = false;
   bool? _nativeTelevision;
   Object? _playbackOwner;
@@ -87,6 +88,11 @@ class AppOrientationController {
 
   Future<void> refresh() => _apply(force: true);
 
+  Future<void> setCoverWindow(bool value) {
+    _coverWindow = value;
+    return _apply();
+  }
+
   Future<void> _apply({bool force = false}) {
     final next = _pending.catchError((Object _) {}).then((_) async {
       if (_disposed ||
@@ -110,6 +116,8 @@ class AppOrientationController {
       if (_disposed || television != _television) return;
       final preferred = television
           ? orientations(television: true)
+          : _coverWindow
+          ? DeviceOrientation.values
           : _playbackOrientations;
       if (force || !listEquals(preferred, _appliedOrientations)) {
         await SystemChrome.setPreferredOrientations(preferred);
@@ -129,10 +137,12 @@ class AppOrientationScope extends StatefulWidget {
   const AppOrientationScope({
     super.key,
     required this.television,
+    this.coverWindow = false,
     required this.child,
   });
 
   final bool television;
+  final bool coverWindow;
   final Widget child;
 
   static AppOrientationController? maybeOf(BuildContext context) => context
@@ -153,12 +163,16 @@ class _AppOrientationScopeState extends State<AppOrientationScope>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _apply(_controller.setCoverWindow(widget.coverWindow));
     _apply(_controller.refresh());
   }
 
   @override
   void didUpdateWidget(covariant AppOrientationScope oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.coverWindow != widget.coverWindow) {
+      _apply(_controller.setCoverWindow(widget.coverWindow));
+    }
     if (oldWidget.television != widget.television) {
       _apply(_controller.setTelevision(widget.television));
     }

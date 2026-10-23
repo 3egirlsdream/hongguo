@@ -236,7 +236,14 @@ class _TelevisionControlsState extends State<TelevisionControls> {
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
-    for (final node in [_surface, _play, _episodes, _diary, _settings, _progress]) {
+    for (final node in [
+      _surface,
+      _play,
+      _episodes,
+      _diary,
+      _settings,
+      _progress,
+    ]) {
       node.dispose();
     }
     super.dispose();
@@ -483,9 +490,11 @@ class TelevisionEpisodeDialog extends StatelessWidget {
     super.key,
     required this.episodes,
     required this.currentIndex,
+    this.playedNumbers = const {},
   });
   final List<Episode> episodes;
   final int currentIndex;
+  final Set<int> playedNumbers;
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -506,6 +515,8 @@ class TelevisionEpisodeDialog extends StatelessWidget {
             number: episodes[index].number,
             vip: episodes[index].vip,
             current: index == currentIndex,
+            played: playedNumbers.contains(episodes[index].number),
+            showPlaybackState: true,
             focusNode: node,
             onFocus: onFocus,
             onPressed: () => Navigator.pop(context, index),

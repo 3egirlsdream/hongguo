@@ -12,10 +12,7 @@ import 'widgets.dart';
 enum SwipeAction { none, brightness, episode }
 
 class GestureHudState {
-  const GestureHudState({
-    this.type = SwipeAction.none,
-    this.value = 0.0,
-  });
+  const GestureHudState({this.type = SwipeAction.none, this.value = 0.0});
   final SwipeAction type;
   final double value; // 0.0 ~ 1.0
 }
@@ -33,12 +30,14 @@ class PlayerInteractions extends ChangeNotifier {
     _playing = player.stream.playing.listen((playing) {
       if (!playing) cancel();
     });
-    AppDevice.getBrightness().then((val) {
-      if (!_disposed) {
-        _brightness = val;
-        notifyListeners();
-      }
-    }).catchError((_) {});
+    AppDevice.getBrightness()
+        .then((val) {
+          if (!_disposed) {
+            _brightness = val;
+            notifyListeners();
+          }
+        })
+        .catchError((_) {});
   }
 
   final Player player;
@@ -90,6 +89,7 @@ class PlayerInteractions extends ChangeNotifier {
   void dismissBrightnessHud() {
     _scheduleDismissHud();
   }
+
   String get feedback => _feedback;
   bool get boosting => _boosting;
   bool get suppressTap => DateTime.now().isBefore(_ignoreTapUntil);
@@ -191,20 +191,19 @@ class PlayerInteractions extends ChangeNotifier {
     _moved = _held = false;
     _swipeAction = SwipeAction.none;
 
+    _initialBrightness = _brightness;
     if (_swipeEnabled && width > 0) {
-      // 判定触摸落点：
-      // 左侧 35% 区域 -> 呼出并拉动红果风格亮度条
-      // 其余区域 -> 刷剧切集，绝对不调节音量
-      if (event.localPosition.dx < width * 0.35) {
-        _swipeAction = SwipeAction.brightness;
-        AppDevice.getBrightness().then((val) {
-          if (_pointer == event.pointer) {
-            _initialBrightness = _brightness = val;
-            _showHud(SwipeAction.brightness, _brightness);
-          }
-        });
-      } else {
-        _swipeAction = SwipeAction.episode;
+      _swipeAction = event.localPosition.dx < width * 0.35
+          ? SwipeAction.brightness
+          : SwipeAction.episode;
+      if (_swipeAction == SwipeAction.brightness) {
+        AppDevice.getBrightness()
+            .then((value) {
+              if (!_disposed && _pointer == event.pointer && !_moved) {
+                _initialBrightness = _brightness = value;
+              }
+            })
+            .catchError((Object _) {});
       }
     }
     _beginHold();
@@ -223,7 +222,10 @@ class PlayerInteractions extends ChangeNotifier {
     final dy = _origin!.dy - event.localPosition.dy; // 向上滑动为增加，向下滑动为减少
     final deltaRatio = dy / (_viewHeight * 0.6);
 
-    if (_swipeAction == SwipeAction.brightness) {
+    if (_swipeAction == SwipeAction.brightness &&
+        !_held &&
+        diff.dy.abs() > 12 &&
+        diff.dy.abs() > diff.dx.abs() * 1.5) {
       _brightness = (_initialBrightness + deltaRatio).clamp(0.01, 1.0);
       AppDevice.setBrightness(_brightness);
       _showHud(SwipeAction.brightness, _brightness);
@@ -239,7 +241,9 @@ class PlayerInteractions extends ChangeNotifier {
     }
     if (_pointer != event.pointer || _origin == null) return;
     final delta = (_lastPosition ?? event.localPosition) - _origin!;
-    final isVertical = delta.dy.abs() >= _swipeThreshold && delta.dy.abs() > delta.dx.abs() * 1.5;
+    final isVertical =
+        delta.dy.abs() >= _swipeThreshold &&
+        delta.dy.abs() > delta.dx.abs() * 1.5;
 
     if (_swipeAction == SwipeAction.episode &&
         _swipeEnabled &&
