@@ -27,8 +27,7 @@ class LocalMediaScreen extends StatefulWidget {
 class _LocalMediaScreenState extends State<LocalMediaScreen> {
   late final MediaLibrary library =
       MediaLibrary.current ?? MediaLibrary(widget.repository, widget.store);
-  List<DownloadJob> _jobs = [];
-  bool _loading = true, _merged = true;
+  bool _loading = true;
   String? _error;
 
   @override
@@ -45,11 +44,9 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
 
   Future<void> _refresh() async {
     try {
-      final jobs = await widget.repository.downloads();
       await library.reload();
       if (mounted) {
         setState(() {
-          _jobs = jobs.where((job) => job.completed).toList();
           _error = null;
         });
       }
@@ -60,60 +57,19 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
     }
   }
 
-  Future<void> _create(bool merge) async {
-    if (merge) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => MergeQueueScreen(
-            library: library,
-            repository: widget.repository,
-            store: widget.store,
-            addOnOpen: true,
-          ),
+  Future<void> _create() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => MergeQueueScreen(
+          library: library,
+          repository: widget.repository,
+          store: widget.store,
+          addOnOpen: true,
         ),
-      );
-      if (mounted) await _refresh();
-      return;
-    }
-    final groups = <String, List<DownloadJob>>{};
-    for (final job in _jobs) {
-      (groups[job.drama.id] ??= []).add(job);
-    }
-    final selected = await showDialog<String>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('导出哪部剧到 Emby？'),
-        children: [
-          if (_jobs.isNotEmpty)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, '*'),
-              child: Text('全部已下载 · ${_jobs.length} 集'),
-            ),
-          for (final entry in groups.entries)
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, entry.key),
-              child: Text(
-                '${entry.value.first.drama.title} · 已下载 ${entry.value.length} 集',
-              ),
-            ),
-          if (groups.isEmpty)
-            const Padding(padding: EdgeInsets.all(20), child: Text('请先下载分集')),
-        ],
       ),
     );
-    if (selected == null || !mounted) return;
-    final jobs = selected == '*' ? _jobs : groups[selected]!;
-    setState(() {
-      _error = null;
-      _merged = false;
-    });
-    try {
-      await library.exportJobs(jobs);
-      if (mounted) await _refresh();
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    }
+    if (mounted) await _refresh();
   }
 
   bool _openingPlayback = false;
@@ -161,9 +117,7 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('删除此媒体文件？'),
-        content: Text(
-          '将删除此成品文件。已单独保存的原分集不受影响。${item.merged || item.special ? '' : '此分集不再自动导出，需要时可手动重新导出。'}',
-        ),
+        content: const Text('将删除此成品文件。已单独保存的原分集不受影响。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -184,27 +138,11 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
     }
   }
 
-  Future<void> _exportMerged(LocalMediaItem item) async {
-    try {
-      await library.exportMerged(item);
-      if (mounted) {
-        setState(() {
-          _merged = false;
-          _error = null;
-        });
-      }
-    } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
-    }
-  }
-
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: library,
     builder: (_, _) {
-      final items = library.items
-          .where((item) => item.merged == _merged)
-          .toList();
+      final items = library.items;
       return Scaffold(
         appBar: AppBar(
           title: const Text('本地媒体'),
@@ -225,22 +163,10 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
                 spacing: 12,
                 runSpacing: 8,
                 children: [
-                  ChoiceChip(
-                    label: const Text('合并成品'),
-                    selected: _merged,
-                    onSelected: (_) => setState(() => _merged = true),
-                  ),
-                  ChoiceChip(
-                    label: const Text('Emby 导出'),
-                    selected: !_merged,
-                    onSelected: (_) => setState(() => _merged = false),
-                  ),
                   FilledButton.icon(
-                    onPressed: library.busy && !_merged
-                        ? null
-                        : () => _create(_merged),
-                    icon: Icon(_merged ? Icons.merge : Icons.output),
-                    label: Text(_merged ? '合并已下载分集' : '导出已下载分集'),
+                    onPressed: _create,
+                    icon: const Icon(Icons.merge),
+                    label: const Text('合并已下载分集'),
                   ),
                 ],
               ),
@@ -271,39 +197,11 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
                 padding: const EdgeInsets.all(16),
                 child: Text(_error ?? library.error),
               ),
-            if (!_merged)
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '将 exports 目录加入 Emby 电视节目库，可读取分集名称和海报元数据。自动导出可在设置中开启。',
-                    ),
-                    if (library.root != null)
-                      TextButton.icon(
-                        onPressed: () => Clipboard.setData(
-                          ClipboardData(
-                            text:
-                                '${library.root}${Platform.pathSeparator}exports',
-                          ),
-                        ),
-                        icon: const Icon(Icons.copy),
-                        label: const Text('复制 Emby 媒体目录'),
-                      ),
-                  ],
-                ),
-              ),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : items.isEmpty
-                  ? Center(
-                      child: Text(_merged ? '合并成品会显示在这里，可直接播放和续播。' : '暂未导出媒体'),
-                    )
+                  ? const Center(child: Text('本地成品会显示在这里，可直接播放和续播。'))
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                       itemCount: items.length,
@@ -323,11 +221,7 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  '${item.merged
-                                      ? '已合并 ${item.episodes.length} 集'
-                                      : item.special
-                                      ? '特别篇 ${item.specialNumber} · 第 ${item.episodes.first}–${item.episodes.last} 集'
-                                      : '第 ${item.episodes.first} 集'} · ${storageSize(item.bytes)}',
+                                  '${item.merged ? '已合并 ${item.episodes.length} 集' : '本地视频 · 第 ${item.episodes.first}–${item.episodes.last} 集'} · ${storageSize(item.bytes)}',
                                 ),
                                 if (item.merged)
                                   Text(
@@ -335,14 +229,6 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
                                     style: Theme.of(context)
                                         .textTheme
                                         .bodySmall,
-                                  ),
-                                if (item.merged)
-                                  TextButton.icon(
-                                    onPressed: library.busy
-                                        ? null
-                                        : () => _exportMerged(item),
-                                    icon: const Icon(Icons.output_rounded),
-                                    label: const Text('导出到 Emby 特别篇'),
                                   ),
                                 Row(
                                   children: [

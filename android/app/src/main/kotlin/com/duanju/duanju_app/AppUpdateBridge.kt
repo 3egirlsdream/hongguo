@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -42,6 +43,14 @@ class AppUpdateBridge(private val activity: Activity, engine: FlutterEngine) {
                         result.success(null)
                     }
                     "install" -> result.success(install(requireNotNull(call.argument<String>("path"))))
+                    "showUpdateToast" -> {
+                        val version = requireNotNull(call.argument<String>("version"))
+                        require(Regex("\\d+\\.\\d+\\.\\d+\\+\\d+").matches(version)) { "版本信息无效" }
+                        if (!activity.isFinishing && !activity.isDestroyed) {
+                            Toast.makeText(activity, "发现新版本 $version，可在设置中更新", Toast.LENGTH_LONG).show()
+                        }
+                        result.success(null)
+                    }
                     else -> result.notImplemented()
                 }
             } catch (error: Exception) {

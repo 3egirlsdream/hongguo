@@ -138,7 +138,7 @@ class MergePlan {
         probes.any(
           (p) => p.video['extradata_hash'] != video.video['extradata_hash'],
         )) {
-      throw AppFailure('视频编码参数不适合直接拼接，可保留分集并导出 Emby。');
+      throw AppFailure('视频编码参数不适合直接拼接，请保留分集单独播放。');
     }
     return MergePlan._(video, audio, vc, ac, transport, canonicalAac);
   }

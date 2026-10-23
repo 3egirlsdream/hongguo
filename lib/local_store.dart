@@ -259,8 +259,6 @@ class LocalStore extends ChangeNotifier {
     return const ThemeAppearance();
   }
 
-  bool get autoExport => !locked && (_bool('autoExport') ?? false);
-  bool get exportPosters => !locked && (_bool('exportPosters') ?? false);
   String get source {
     if (locked) return '';
     final value = _string(_key('source')) ?? '';
@@ -396,10 +394,6 @@ class LocalStore extends ChangeNotifier {
     });
   }
 
-  Future<void> setExportPosters(bool value) =>
-      _setting('exportPosters', value, admin: true);
-  Future<void> setAutoExport(bool value) =>
-      _setting('autoExport', value, admin: true);
   Future<void> setForceLogin(bool value) =>
       _setting('forceLogin', value, admin: true);
   Future<void> setSource(String value) {
@@ -889,8 +883,6 @@ class LocalStore extends ChangeNotifier {
       'app': 'zhenguojian',
       'profiles': _profiles.map((profile) => profile.toJson()).toList(),
       'themeMode': themeMode,
-      'autoExport': autoExport,
-      'exportPosters': exportPosters,
       'forceLogin': forceLogin,
       'libraries': {
         for (final profile in _profiles)
@@ -1029,8 +1021,6 @@ class LocalStore extends ChangeNotifier {
       ),
       'activeProfile': profiles.firstWhere((profile) => profile.admin).id,
       'themeMode': data['themeMode'] as String? ?? themeMode,
-      'autoExport': data['autoExport'] == true,
-      'exportPosters': data['exportPosters'] == true,
       'forceLogin': data['forceLogin'] is bool
           ? data['forceLogin'] as bool
           : profiles.firstWhere((profile) => profile.admin).protected,

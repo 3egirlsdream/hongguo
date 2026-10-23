@@ -107,9 +107,7 @@ class MergeQueueJob {
 
 class MergeQueue {
   MergeQueue(this.library) {
-    if (!library.automaticWorker) {
-      _timer = Timer.periodic(const Duration(seconds: 3), (_) => _start());
-    }
+    _timer = Timer.periodic(const Duration(seconds: 3), (_) => _start());
   }
   final MediaLibrary library;
   List<MergeQueueJob> _jobs = [];
@@ -139,7 +137,7 @@ class MergeQueue {
   }
 
   Future<void> _load() async {
-    if (_disposed || library.automaticWorker) return;
+    if (_disposed) return;
     final root = await library.repository.downloadDirectory();
     if (_loaded && _root == root) return;
     if (_running != null) return;

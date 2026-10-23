@@ -99,6 +99,18 @@ class AppUpdateService extends ChangeNotifier {
   bool get downloaded => _downloaded != null;
   double? get progress => package == null ? null : received / package!.size;
 
+  static Future<void> showUpdateToast(String version) async {
+    try {
+      await _channel.invokeMethod<void>('showUpdateToast', {
+        'version': version,
+      });
+    } on PlatformException {
+      return;
+    } on MissingPluginException {
+      return;
+    }
+  }
+
   Future<void> loadInstalledVersion() async {
     try {
       final info = await _channel.invokeMapMethod<String, dynamic>('info');
@@ -179,7 +191,6 @@ class AppUpdateService extends ChangeNotifier {
         throw const FormatException('更新清单版本不一致');
       }
       notes = manifest['notes'] as String? ?? '';
-      availableVersion = version;
       final architecture = switch (Abi.current()) {
         Abi.androidArm64 => 'arm64-v8a',
         _ => '',
@@ -196,6 +207,7 @@ class AppUpdateService extends ChangeNotifier {
       } else {
         message = '发现新版本 ${version.text}，请前往下载页面选择安装包';
       }
+      availableVersion = version;
     } catch (error) {
       message = '检查更新失败：$error';
     } finally {

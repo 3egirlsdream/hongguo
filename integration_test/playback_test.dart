@@ -549,9 +549,8 @@ void main() {
         await binding.takeScreenshot('android-offline-playback');
         await tester.tap(
           find.byTooltip(
-            MaterialLocalizations.of(
-              tester.element(find.byType(Video)),
-            ).backButtonTooltip,
+            MaterialLocalizations.of(tester.element(find.byType(Video)))
+                .backButtonTooltip,
           ),
         );
         await until(
@@ -565,19 +564,17 @@ void main() {
           expect(merged.videoTranscodes, 0);
           final probe = await FFmpegExecutor().probe(library.fileFor(merged));
           verifyMediaDuration(probe, 60);
-          await library.exportJobs(jobs);
-          expect(library.items.where((item) => !item.merged), hasLength(3));
+          expect(library.items, hasLength(1));
           for (final item in library.items) {
             final inspected = await FFmpegExecutor().probe(
               library.fileFor(item),
             );
-            verifyMediaDuration(inspected, item.merged ? 60 : 20);
+            verifyMediaDuration(inspected, 60);
           }
           binding.reportData ??= {};
           binding.reportData!['localMedia'] = {
             'mergeDuration': probe.duration,
             'videoTranscodes': merged.videoTranscodes,
-            'exports': 3,
           };
           for (final item in library.items.toList()) {
             await library.remove(item);
@@ -635,7 +632,6 @@ void main() {
       final repository = DownloadFixtureRepository();
       await repository.initialize();
       final preferences = await SharedPreferences.getInstance();
-      await preferences.setBool('autoExport', false);
       final store = LocalStore(preferences);
       const drama = Drama(
         id: 'hongguo:700009',

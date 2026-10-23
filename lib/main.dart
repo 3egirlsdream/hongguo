@@ -22,10 +22,11 @@ import 'playback_continuity.dart';
 import 'playback_restore_screen.dart';
 import 'theme_appearance.dart';
 import 'diary_service.dart';
+import 'app_update.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  DiaryService.add('[App] 应用启动，版本: 0.2.86+93, 平台: Android');
+  DiaryService.add('[App] 应用启动，版本: 0.2.88+95, 平台: Android');
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.dark));
   MediaKit.ensureInitialized();
@@ -47,6 +48,8 @@ class _AppBootstrapState extends State<AppBootstrap>
   LocalStore? store;
   PlaybackSnapshot? _pendingPlayback;
   bool _restoreScheduled = false;
+  bool _updateCheckScheduled = false;
+  String? _pendingUpdateNotice;
   Object? error;
   late AppDevice device = widget.device;
 
@@ -74,7 +77,29 @@ class _AppBootstrapState extends State<AppBootstrap>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_refreshDevice());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshDevice());
+      unawaited(_showUpdateNotice());
+    }
+  }
+
+  Future<void> _checkStartupUpdate() async {
+    final updates = AppUpdateService.instance;
+    await updates.check();
+    if (!mounted || updates.availableVersion == null) return;
+    _pendingUpdateNotice = updates.availableVersion!.text;
+    await _showUpdateNotice();
+  }
+
+  Future<void> _showUpdateNotice() async {
+    final version = _pendingUpdateNotice;
+    if (!mounted ||
+        version == null ||
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      return;
+    }
+    _pendingUpdateNotice = null;
+    await AppUpdateService.showUpdateToast(version);
   }
 
   Future<void> _refreshDevice() async {
@@ -145,6 +170,12 @@ class _AppBootstrapState extends State<AppBootstrap>
           };
         });
         _restorePlayback();
+        if (!_updateCheckScheduled) {
+          _updateCheckScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(_checkStartupUpdate());
+          });
+        }
       }
     } catch (failure) {
       if (mounted) {

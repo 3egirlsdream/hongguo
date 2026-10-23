@@ -31,8 +31,6 @@ class LocalSnapshot {
     'activeProfile',
     'themeMode',
     'themeAppearance',
-    'autoExport',
-    'exportPosters',
     'sourceGateEnabled',
     'sourceGateOff',
     'sourceGateSalt',
@@ -68,7 +66,9 @@ class LocalSnapshot {
       throw const FormatException('本地配置快照无效');
     }
     final values = Map<String, Object>.from(decoded['values'] as Map)
-      ..remove('displayMode');
+      ..remove('displayMode')
+      ..remove('autoExport')
+      ..remove('exportPosters');
     if (!values.containsKey('profiles')) {
       throw const FormatException('本地配置快照无效');
     }
@@ -80,8 +80,6 @@ class LocalSnapshot {
     for (final entry in values.entries) {
       final boolean = {
         'hideVip',
-        'autoExport',
-        'exportPosters',
         'sourceGateEnabled',
         'sourceGateOff',
         'forceLogin',

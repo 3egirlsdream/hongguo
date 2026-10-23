@@ -166,87 +166,50 @@ void main() {
     expect(plan.audioTranscodes, 2);
   });
 
-  test(
-    'NFO escapes metadata and includes an HTTP poster URL without fetching it',
-    () {
-      const drama = Drama(
-        id: 'hongguo:1',
-        source: 'hongguo',
-        title: '甲 & <乙>',
-        cover: 'https://example.invalid/poster.jpg?a=1&b=2',
-      );
-      final body = embyShowNfo(drama);
-      expect(body, contains('甲 &amp; &lt;乙&gt;'));
-      expect(body, contains('https://example.invalid/poster.jpg?a=1&amp;b=2'));
-      expect(body, contains('<thumb aspect="poster">'));
-      expect(
-        embyShowNfo(drama, localPoster: true),
-        contains('>poster.jpg</thumb>'),
-      );
-      expect(
-        embyShowNfo(
-          const Drama(
-            id: '1',
-            source: 'hongguo',
-            title: 'x',
-            cover: 'file:///secret',
-          ),
-        ),
-        isNot(contains('<thumb')),
-      );
-      expect(
-        () => LocalMediaItem.fromJson({'file': '../elsewhere'}),
-        throwsFormatException,
-      );
-    },
-  );
+  test('local media rejects paths outside the library', () {
+    expect(
+      () => LocalMediaItem.fromJson({'file': '../elsewhere'}),
+      throwsFormatException,
+    );
+  });
 
-  test(
-    'cancelling while resolving local media releases the lease without starting FFmpeg',
-    () async {
-      final directory = await Directory.systemTemp.createTemp('zgj-cancel-');
-      SharedPreferences.setMockInitialValues({});
-      final store = LocalStore(await SharedPreferences.getInstance());
-      final executor = ProcessMediaExecutor();
-      const drama = Drama(
-        id: 'hongguo:cancel',
-        source: 'hongguo',
-        title: '取消测试',
+  test('cancelling while resolving local media releases the lease without starting FFmpeg', () async {
+    final directory = await Directory.systemTemp.createTemp('zgj-cancel-');
+    SharedPreferences.setMockInitialValues({});
+    final store = LocalStore(await SharedPreferences.getInstance());
+    final executor = ProcessMediaExecutor();
+    const drama = Drama(id: 'hongguo:cancel', source: 'hongguo', title: '取消测试');
+    final jobs = [
+      for (var i = 0; i < 2; i++)
+        DownloadJob(
+          id: 'cancel-$i',
+          drama: drama,
+          episode: Episode({'id': '$i', 'currentEpisode': i + 1}, i + 1),
+          state: 'completed',
+          created: i + 1,
+        ),
+    ];
+    final repository = FileRepository(directory.path, [
+      'unused-1',
+      'unused-2',
+    ], jobs);
+    final library = MediaLibrary(repository, store, executor: executor);
+    repository.onLocalPlayback = () => unawaited(library.cancel());
+    try {
+      await expectLater(
+        library.merge(jobs),
+        throwsA(predicate((Object error) => error.toString().contains('已取消'))),
       );
-      final jobs = [
-        for (var i = 0; i < 2; i++)
-          DownloadJob(
-            id: 'cancel-$i',
-            drama: drama,
-            episode: Episode({'id': '$i', 'currentEpisode': i + 1}, i + 1),
-            state: 'completed',
-            created: i + 1,
-          ),
-      ];
-      final repository = FileRepository(directory.path, [
-        'unused-1',
-        'unused-2',
-      ], jobs);
-      final library = MediaLibrary(repository, store, executor: executor);
-      repository.onLocalPlayback = () => unawaited(library.cancel());
-      try {
-        await expectLater(
-          library.merge(jobs),
-          throwsA(
-            predicate((Object error) => error.toString().contains('已取消')),
-          ),
-        );
-        expect(executor.commands, isEmpty);
-        expect(repository.leased, isFalse);
-        expect(library.busy, isFalse);
-        expect(directory.listSync(), isEmpty);
-      } finally {
-        library.dispose();
-        store.dispose();
-        await directory.delete(recursive: true);
-      }
-    },
-  );
+      expect(executor.commands, isEmpty);
+      expect(repository.leased, isFalse);
+      expect(library.busy, isFalse);
+      expect(directory.listSync(), isEmpty);
+    } finally {
+      library.dispose();
+      store.dispose();
+      await directory.delete(recursive: true);
+    }
+  });
 
   bool available;
   try {
@@ -256,7 +219,7 @@ void main() {
   }
 
   test(
-    'real offline merge, CENC remux and Emby export remain playable after deleting inputs',
+    'real offline merge and CENC remux remain playable after deleting inputs',
     () async {
       final directory = await Directory.systemTemp.createTemp("真果鉴 '合成-");
       SharedPreferences.setMockInitialValues({});
@@ -330,28 +293,6 @@ void main() {
         expect(merged.audioTranscodes, 0);
         expect(repository.leased, isFalse);
         expect(merged.episodes, [1, 2, 3]);
-        await library.exportJobs(jobs);
-        final exported = library.items.where((i) => !i.merged).toList();
-        expect(exported, hasLength(3));
-        final show = File(library.fileFor(exported.first)).parent.parent;
-        await File(path.join(show.path, 'tvshow.nfo')).delete();
-        final episodeNfo = File(
-          path.setExtension(library.fileFor(exported.first), '.nfo'),
-        );
-        await episodeNfo.delete();
-        final commandsBefore = executor.commands.length;
-        await library.exportJobs(jobs);
-        expect(await episodeNfo.exists(), isTrue);
-        expect(
-          executor.commands.length,
-          commandsBefore,
-          reason: 'unchanged exports should not be remuxed again',
-        );
-        final nfo = await File(
-          path.join(show.path, 'tvshow.nfo'),
-        ).readAsString();
-        expect(nfo, contains('合成 &lt;&amp;&gt; 测试'));
-        expect(nfo, contains('https://example.invalid/poster.jpg'));
         for (final file in files) {
           await File(file).delete();
         }
@@ -373,10 +314,7 @@ void main() {
             0,
             reason: '${item.file}: ${decoded.stderr}',
           );
-          verifyMediaDuration(
-            await executor.probe(library.fileFor(item)),
-            item.merged ? 6 : 2,
-          );
+          verifyMediaDuration(await executor.probe(library.fileFor(item)), 6);
         }
         expect(
           directory.listSync().where(
@@ -384,11 +322,12 @@ void main() {
           ),
           isEmpty,
         );
-        await library.remove(exported.first);
-        expect(await File(library.fileFor(exported.first)).exists(), isFalse);
-        expect(await File(library.fileFor(merged)).exists(), isTrue);
         await library.reload();
-        expect(library.items, hasLength(3));
+        expect(library.items, hasLength(1));
+        await library.remove(merged);
+        expect(await File(library.fileFor(merged)).exists(), isFalse);
+        await library.reload();
+        expect(library.items, isEmpty);
       } finally {
         library?.dispose();
         store.dispose();

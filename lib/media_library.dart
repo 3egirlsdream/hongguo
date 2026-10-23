@@ -14,7 +14,6 @@ import 'models.dart';
 
 part 'media_merge_queue.dart';
 part 'media_merge.dart';
-part 'media_exports.dart';
 
 class LocalMediaItem {
   LocalMediaItem({
@@ -28,15 +27,11 @@ class LocalMediaItem {
     required this.created,
     this.videoTranscodes = 0,
     this.audioTranscodes = 0,
-    this.jobId = '',
     this.sourceVersion = '',
     this.decodeVerified = false,
-    this.specialNumber = 0,
   });
-  final String id, file, kind, jobId, sourceVersion;
+  final String id, file, kind, sourceVersion;
   final bool decodeVerified;
-  final int specialNumber;
-  bool get special => kind == 'special';
   final Drama drama;
   final List<int> episodes;
   final double duration;
@@ -54,10 +49,8 @@ class LocalMediaItem {
     'created': created.toIso8601String(),
     'videoTranscodes': videoTranscodes,
     'audioTranscodes': audioTranscodes,
-    'jobId': jobId,
     'sourceVersion': sourceVersion,
     'decodeVerified': decodeVerified,
-    'specialNumber': specialNumber,
   };
   factory LocalMediaItem.fromJson(Map<String, dynamic> value) {
     final file = value['file'] as String;
@@ -75,74 +68,27 @@ class LocalMediaItem {
       created: DateTime.parse(value['created'] as String),
       videoTranscodes: intValue(value['videoTranscodes']),
       audioTranscodes: intValue(value['audioTranscodes']),
-      jobId: value['jobId'] as String? ?? '',
       sourceVersion: value['sourceVersion'] as String? ?? '',
       decodeVerified: value['decodeVerified'] == true,
-      specialNumber: intValue(value['specialNumber']),
     );
   }
 }
 
-String xmlText(String value) => value
-    .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F]'), '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&apos;');
-
-String embyShowNfo(Drama drama, {bool localPoster = false}) {
-  final uri = Uri.tryParse(drama.cover);
-  final cover = localPoster
-      ? 'poster.jpg'
-      : uri != null && {'https', 'http'}.contains(uri.scheme)
-      ? drama.cover
-      : '';
-  return '<?xml version="1.0" encoding="utf-8"?>\n<tvshow>'
-      '<title>${xmlText(drama.title)}</title><plot>${xmlText(drama.description)}</plot>'
-      '<uniqueid type="zhenguojian" default="true">${xmlText(drama.id)}</uniqueid>'
-      '${cover.isEmpty ? '' : '<thumb aspect="poster">${xmlText(cover)}</thumb>'}'
-      '<season>1</season><episode>${drama.episodes}</episode></tvshow>\n';
-}
-
-String embyEpisodeNfo(DownloadJob job) =>
-    '<?xml version="1.0" encoding="utf-8"?>\n'
-    '<episodedetails><title>${xmlText(job.episode.title)}</title>'
-    '<showtitle>${xmlText(job.drama.title)}</showtitle><season>1</season><episode>${job.episode.number}</episode>'
-    '<plot>${xmlText(job.drama.description)}</plot>'
-    '<uniqueid type="zhenguojian" default="true">${xmlText(job.id)}</uniqueid></episodedetails>\n';
-
-String _safeName(String name) {
-  var result = name
-      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
-      .trim()
-      .replaceAll(RegExp(r'[. ]+$'), '');
-  if (result.isEmpty) result = '短剧';
-  return String.fromCharCodes(result.runes.take(60));
-}
-
 class MediaLibrary extends ChangeNotifier {
-  MediaLibrary(
-    this.repository,
-    this.store, {
-    MediaExecutor? executor,
-    this.automaticWorker = false,
-  }) : executor = executor ?? FFmpegExecutor() {
+  MediaLibrary(this.repository, this.store, {MediaExecutor? executor})
+    : executor = executor ?? FFmpegExecutor() {
     _observedEpoch = store.profileEpoch;
     store.addListener(_accessChanged);
   }
   final AppRepository repository;
   final LocalStore store;
   final MediaExecutor executor;
-  final bool automaticWorker;
   static MediaLibrary? current;
   MergeQueue? _merges;
   MergeQueue get merges => _merges ??= MergeQueue(this);
   int? _taskEpoch;
   late int _observedEpoch;
   Set<String> _taskSources = const {};
-  final _showFolders = <String, String>{};
-  final _specialNumbers = <String, int>{};
 
   void _accessChanged() {
     if (_observedEpoch != store.profileEpoch || !store.canDownload) {
@@ -160,24 +106,15 @@ class MediaLibrary extends ChangeNotifier {
 
   String? root;
   List<LocalMediaItem> _items = [];
-  final _skipped = <String>{};
-  bool busy = false, _checking = false, _cancelled = false;
+  bool busy = false, _cancelled = false;
 
   String status = '', error = '';
   double progress = 0;
-  DateTime _retryAfter = DateTime(2000);
 
   static void attach(AppRepository repository, LocalStore store) {
     current?.dispose();
     final library = MediaLibrary(repository, store);
     current = library;
-    if (store.autoExport) {
-      unawaited(
-        BackgroundDownloads.ensureStarted().catchError((Object error) {
-          library.error = error.toString();
-        }),
-      );
-    }
   }
 
   List<LocalMediaItem> get items =>
@@ -201,9 +138,6 @@ class MediaLibrary extends ChangeNotifier {
     if (directory.isEmpty) throw AppFailure('无法读取下载位置');
     final file = File(path.join(directory, 'media-library.json'));
     var items = <LocalMediaItem>[];
-    final skipped = <String>{},
-        folders = <String, String>{},
-        numbers = <String, int>{};
     if (await file.exists()) {
       if (await file.length() > 16 * 1024 * 1024) {
         throw AppFailure('本地媒体记录过大，原文件已保留');
@@ -219,57 +153,10 @@ class MediaLibrary extends ChangeNotifier {
       if (items.map((item) => item.id).toSet().length != items.length) {
         throw AppFailure('本地媒体记录重复，原文件已保留');
       }
-      skipped.addAll((data['skipped'] as List? ?? []).cast<String>());
-      for (final entry in (data['showFolders'] as Map? ?? {}).entries) {
-        final folder = entry.value as String;
-        if (!_validShowFolder(folder)) throw AppFailure('导出目录记录无效，原文件已保留');
-        folders[entry.key as String] = folder;
-      }
-      for (final entry in (data['specialNumbers'] as Map? ?? {}).entries) {
-        final number = intValue(entry.value);
-        if (number < 1 || number > 100000) throw AppFailure('特别篇编号无效，原文件已保留');
-        numbers[entry.key as String] = number;
-      }
-      for (final item in items.where((item) => !item.merged)) {
-        final folder = path.dirname(path.dirname(item.file));
-        if (_validShowFolder(folder)) {
-          folders.putIfAbsent(item.drama.id, () => folder);
-        }
-      }
-      if (folders.values.toSet().length != folders.length) {
-        throw AppFailure('不同剧集的导出目录冲突，原文件已保留');
-      }
-      for (final item in items.where(
-        (item) =>
-            item.special &&
-            item.specialNumber > 0 &&
-            item.id.startsWith('special-'),
-      )) {
-        numbers.putIfAbsent(
-          '${item.drama.id}\u0000${item.id.substring(8)}',
-          () => item.specialNumber,
-        );
-      }
-      final uniqueNumbers = <String>{};
-      for (final entry in numbers.entries) {
-        final show = entry.key.split('\u0000').first;
-        if (!uniqueNumbers.add('$show\u0000${entry.value}')) {
-          throw AppFailure('特别篇编号重复，原文件已保留');
-        }
-      }
     }
     if (busy && !duringTask) return;
     root = directory;
     _items = items;
-    _skipped
-      ..clear()
-      ..addAll(skipped);
-    _showFolders
-      ..clear()
-      ..addAll(folders);
-    _specialNumbers
-      ..clear()
-      ..addAll(numbers);
     notifyListeners();
   }
 
@@ -283,9 +170,6 @@ class MediaLibrary extends ChangeNotifier {
   Future<void> _save() async {
     final content = jsonEncode({
       'items': _items.map((item) => item.toJson()).toList(),
-      'skipped': _skipped.toList(),
-      'showFolders': _showFolders,
-      'specialNumbers': _specialNumbers,
     });
     if (utf8.encode(content).length > 16 * 1024 * 1024) {
       throw AppFailure('本地媒体记录已满，请先整理成品记录');
@@ -325,7 +209,7 @@ class MediaLibrary extends ChangeNotifier {
     Directory? temporary;
     bool lease = false;
     try {
-      if (!automaticWorker) await BackgroundDownloads.ensureStarted();
+      await BackgroundDownloads.ensureStarted();
       await repository.workLease('media', 'start');
       lease = true;
       await reload(duringTask: true);
@@ -426,113 +310,6 @@ class MediaLibrary extends ChangeNotifier {
       '${job.created}-${job.bytes}-${job.actualQuality}'
       '${job.revision > 0 ? '-${job.revision}' : ''}';
 
-  Future<void> _exportMetadata(DownloadJob job, File target) async {
-    await _writeShowMetadata(job.drama, target.parent.parent);
-    _check();
-    await _writeText(
-      File(path.setExtension(target.path, '.nfo')),
-      embyEpisodeNfo(job),
-    );
-  }
-
-  Future<void> exportJobs(
-    List<DownloadJob> selected, {
-    bool automatic = false,
-  }) async {
-    final jobs = selected.where((job) => job.completed).toList()
-      ..sort((a, b) => a.episode.number.compareTo(b.episode.number));
-    if (jobs.isEmpty) throw AppFailure('没有已下载的分集');
-    await _task('准备导出 Emby', (temporary) async {
-      for (var i = 0; i < jobs.length; i++) {
-        _check();
-        final job = jobs[i], id = 'export-${jobs[i].id}';
-        if (automatic && _skipped.contains(job.id)) continue;
-        final existing = _items.where((item) => item.id == id).firstOrNull;
-        if (existing?.sourceVersion == _sourceVersion(job) &&
-            await File(fileFor(existing!)).exists()) {
-          if (!automatic) {
-            await _exportMetadata(job, File(fileFor(existing)));
-          }
-          progress = (i + 1) / jobs.length;
-          notifyListeners();
-          continue;
-        }
-        final intermediate = path.join(temporary.path, 'export-$i.mkv');
-        final probe = await _prepare(
-          job,
-          intermediate,
-          i / jobs.length,
-          .8 / jobs.length,
-        );
-        _check();
-        status = '导出第 ${job.episode.number} 集';
-        notifyListeners();
-        final show = await _showDirectory(job.drama);
-        final relative = path.join(
-          show,
-          'Season 01',
-          'S01E${job.episode.number.toString().padLeft(3, '0')}.mkv',
-        );
-        final target = File(path.join(root!, relative));
-        await target.parent.create(recursive: true);
-        await File(intermediate).rename(target.path);
-        await _exportMetadata(job, target);
-        _items.removeWhere((item) => item.id == id);
-        _items.add(
-          LocalMediaItem(
-            id: id,
-            drama: job.drama,
-            file: relative,
-            kind: 'export',
-            episodes: [job.episode.number],
-            duration: probe.duration,
-            bytes: await target.length(),
-            created: DateTime.now(),
-            jobId: job.id,
-            sourceVersion: _sourceVersion(job),
-          ),
-        );
-        _skipped.remove(job.id);
-        await _save();
-        progress = (i + 1) / jobs.length;
-        notifyListeners();
-      }
-    }, sources: jobs.map((job) => job.drama.source).toSet());
-  }
-
-  Future<void> maybeExport() async {
-    if (_checking || busy || DateTime.now().isBefore(_retryAfter)) {
-      return;
-    }
-    _checking = true;
-    try {
-      if (automaticWorker) await store.reload();
-      if (!store.autoExport) return;
-      final jobs = await repository.downloads();
-      if (!jobs.any((job) => job.completed)) return;
-      await reload();
-      final pending = <DownloadJob>[];
-      for (final job in jobs.where(
-        (job) => job.completed && !_skipped.contains(job.id),
-      )) {
-        final item = _items
-            .where((item) => item.id == 'export-${job.id}')
-            .firstOrNull;
-        if (item == null ||
-            item.sourceVersion != _sourceVersion(job) ||
-            !await File(fileFor(item)).exists()) {
-          pending.add(job);
-        }
-      }
-      if (pending.isNotEmpty) await exportJobs(pending, automatic: true);
-    } catch (failure) {
-      _retryAfter = DateTime.now().add(const Duration(minutes: 2));
-      error = failure.toString();
-    } finally {
-      _checking = false;
-    }
-  }
-
   Future<void> remove(LocalMediaItem selected) async {
     await _task('删除本地媒体', (_) async {
       final item = _items.where((item) => item.id == selected.id).firstOrNull;
@@ -546,7 +323,6 @@ class MediaLibrary extends ChangeNotifier {
         if (await file.exists()) await file.delete();
         final metadata = File(path.setExtension(file.path, '.nfo'));
         if (await metadata.exists()) await metadata.delete();
-        if (item.jobId.isNotEmpty) _skipped.add(item.jobId);
       }
       _items.removeWhere((entry) => entry.id == item.id);
       await _save();

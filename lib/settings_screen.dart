@@ -7,22 +7,16 @@ import 'package:path_provider/path_provider.dart';
 
 import 'core_bridge.dart';
 import 'app_theme.dart';
-import 'background_downloads.dart';
 import 'local_store.dart';
 import 'profiles_screen.dart';
 import 'app_build.dart';
 import 'catalog_management_screen.dart';
-import 'hongguo_account_screen.dart';
 import 'widgets.dart';
 import 'resource_settings_screen.dart';
 import 'theme_settings_screen.dart';
 import 'lan_screen.dart';
 import 'diary_service.dart';
 import 'about_screen.dart';
-import 'catalog_sort_sheet.dart';
-import 'downloads_screen.dart';
-import 'rankings_screen.dart';
-import 'search_screen.dart';
 
 String storageSize(int bytes) {
   if (bytes < 0) return '暂不可用';
@@ -111,19 +105,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       Navigator.of(context)
           .push<void>(MaterialPageRoute<void>(builder: (_) => page));
 
-  Future<void> _chooseCatalogView() async {
-    final selection = await chooseCatalogView(
-      context,
-      widget.store.catalogView,
-    );
-    if (selection != null && mounted) {
-      await saveUserChange(
-        context,
-        () => widget.store.setCatalogView(selection),
-      );
-    }
-  }
-
   Widget _tile({
     Key? key,
     required IconData icon,
@@ -190,18 +171,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 key: const PageStorageKey('settings-list'),
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
                 children: [
-                  _section('账号与同步', [
-                    if (widget.repository.supportsOfficialAccount)
-                      _tile(
-                        icon: Icons.account_circle_outlined,
-                        title: '账号与同步',
-                        subtitle: '手机号登录、账号同步与待上传进度',
-                        action: () => openHongguoAccount(
-                          context,
-                          widget.repository,
-                          widget.store,
-                        ),
-                      ),
+                  _section('用户管理', [
                     _tile(
                       key: const ValueKey('profiles-settings'),
                       icon: Icons.people_outline,
@@ -210,52 +180,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       action: () => _page(ProfilesScreen(store: widget.store)),
                     ),
                   ]),
-                  _section('浏览与内容', [
-                    _tile(
-                      key: const ValueKey('search-settings'),
-                      icon: Icons.search_rounded,
-                      title: '搜索',
-                      subtitle: '查找短剧、查看最近搜索',
-                      action: () => _page(
-                        SearchScreen(
-                          repository: widget.repository,
-                          store: widget.store,
-                        ),
-                      ),
-                    ),
-                    _tile(
-                      key: const ValueKey('rankings-settings'),
-                      icon: Icons.leaderboard_outlined,
-                      title: '排行榜',
-                      subtitle: '查看热门短剧与榜单分类',
-                      action: () => _page(
-                        RankingsScreen(
-                          repository: widget.repository,
-                          store: widget.store,
-                        ),
-                      ),
-                    ),
-                    _tile(
-                      key: const ValueKey('sort-settings'),
-                      icon: Icons.sort_rounded,
-                      title: '排序与筛选',
-                      subtitle: '设置搜索结果排序与连载状态筛选',
-                      action: _chooseCatalogView,
-                    ),
-                    if (widget.repository.supportsSourceManagement) ...[
-                      _tile(
-                        key: const ValueKey('refresh-settings'),
-                        icon: Icons.refresh_rounded,
-                        title: '更新内容',
-                        subtitle: '更新本机目录并查看进度',
-                        action: () => _page(
-                          CatalogManagementScreen(
-                            repository: widget.repository,
-                            store: widget.store,
-                            updateOnOpen: true,
-                          ),
-                        ),
-                      ),
+                  if (widget.repository.supportsSourceManagement)
+                    _section('内容管理', [
                       _tile(
                         key: const ValueKey('catalog-settings'),
                         icon: Icons.dns_outlined,
@@ -268,8 +194,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
-                    ],
-                  ]),
+                    ]),
                   _section('外观与操作', [
                     _tile(
                       key: const ValueKey('theme-setting'),
@@ -283,32 +208,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ]),
                   if (widget.store.canDownload)
                     _section('下载与存储', [
-                      if (widget.repository.supportsDownloads) ...[
-                        _tile(
-                          icon: Icons.download_rounded,
-                          title: '下载管理',
-                          subtitle: '查看任务与已下载的分集',
-                          action: () => _page(
-                            DownloadsScreen(
-                              repository: widget.repository,
-                              store: widget.store,
-                            ),
-                          ),
-                        ),
-                        _tile(
-                          key: const ValueKey('batch-download-settings'),
-                          icon: Icons.checklist_rounded,
-                          title: '批量下载',
-                          subtitle: '搜索并选择多部短剧，一次最多 50 部',
-                          action: () => _page(
-                            SearchScreen(
-                              repository: widget.repository,
-                              store: widget.store,
-                              startSelecting: true,
-                            ),
-                          ),
-                        ),
-                      ],
                       _tile(
                         icon: Icons.tune_rounded,
                         title: '下载偏好',
@@ -328,44 +227,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                       ),
-                      if (widget.store.profile.admin) ...[
-                        SwitchListTile(
-                          secondary: const Icon(Icons.video_library_outlined),
-                          value: widget.store.autoExport,
-                          title: const Text('下载完成后自动导出 Emby'),
-                          subtitle: const Text(
-                            '在下载目录的 exports 中生成视频和海报 URL 元数据，可将该目录加入 Emby 媒体库。',
-                          ),
-                          onChanged: _busy
-                              ? null
-                              : (value) async {
-                                  try {
-                                    if (value)
-                                      await BackgroundDownloads.ensureStarted();
-                                    await widget.store.setAutoExport(value);
-                                  } catch (error) {
-                                    if (mounted)
-                                      setState(
-                                        () => _message = error.toString(),
-                                      );
-                                  }
-                                },
-                        ),
-                        SwitchListTile(
-                          secondary: const Icon(Icons.image_outlined),
-                          value: widget.store.exportPosters,
-                          title: const Text('同时导出海报文件'),
-                          subtitle: const Text(
-                            '默认只写海报 URL。源站海报需要解密或外部读取失败时可开启。',
-                          ),
-                          onChanged: _busy
-                              ? null
-                              : (value) => saveUserChange(
-                                  context,
-                                  () => widget.store.setExportPosters(value),
-                                ),
-                        ),
-                      ],
                     ]),
                   _section('网络与设备', [
                     _tile(
@@ -500,7 +361,7 @@ class _StorageScreenState extends State<StorageScreen> {
       builder: (context) => AlertDialog(
         title: const Text('迁移已下载内容？'),
         content: Text(
-          '将视频、合并成品及导出内容迁移到：\n$parent\n\n下载会先暂停，复制成功后清理旧目录。请保证目标有足够空间，并在完成后继续下载。',
+          '将视频及本地成品迁移到：\n$parent\n\n下载会先暂停，复制成功后清理旧目录。请保证目标有足够空间，并在完成后继续下载。',
         ),
         actions: [
           TextButton(
@@ -561,7 +422,7 @@ class _StorageScreenState extends State<StorageScreen> {
                   label: const Text('复制路径'),
                 ),
                 const SizedBox(height: 20),
-                const Text('在下载页删除不需要的分集，在本地媒体页删除合并成品或 Emby 导出，可释放空间。'),
+                const Text('在下载页删除不需要的分集，在本地媒体页删除不需要的成品，可释放空间。'),
               ],
               if (_busy || (_info == null && _error == null))
                 const Padding(

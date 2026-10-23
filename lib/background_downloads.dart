@@ -4,11 +4,7 @@ import 'dart:io';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
-import 'package:shared_preferences/shared_preferences.dart';
-
 import 'core_bridge.dart';
-import 'local_store.dart';
-import 'media_library.dart';
 import 'app_build.dart';
 
 @pragma('vm:entry-point')
@@ -65,18 +61,12 @@ class BackgroundDownloads {
 
 class DownloadTaskHandler extends TaskHandler {
   final repository = NativeRepository(background: true);
-  MediaLibrary? library;
   bool _polling = false;
   int _idle = 0;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     await repository.initialize();
-    library = MediaLibrary(
-      repository,
-      LocalStore(await SharedPreferences.getInstance()),
-      automaticWorker: true,
-    );
     await _update();
   }
 
@@ -89,7 +79,6 @@ class DownloadTaskHandler extends TaskHandler {
     if (_polling) return;
     _polling = true;
     try {
-      if (library != null) unawaited(library!.maybeExport());
       final jobs = await repository.downloads();
       final active = jobs.where((job) => job.active).toList();
       final work = await repository.workLease('', '');
@@ -133,8 +122,6 @@ class DownloadTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
-    await library?.cancel();
-    library?.dispose();
     if (isTimeout) {
       await repository.controlDownloads('pauseAll');
       await FFmpegKit.cancel();
