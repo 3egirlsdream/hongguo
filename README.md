@@ -205,6 +205,8 @@ python3 scripts/sync_source.py --check
 
 发布流程：检测版本 → 构建 Android arm64 → 核对正式签名和包信息 → 上传完整附件到草稿 Release → 公开为 latest → 同步并回读更新后台。
 
+2026-10-23 自动触发复验：此前推送未产生运行，已核对用户 OAuth 凭据、仓库权限及事件策略，移除路径过滤并重新启用工作流后，[自动 push 运行 39925937754](https://github.com/3egirlsdream/hongguo/actions/runs/39925937754) 成功；检测到 `0.2.84+91` 已发布，正常跳过重复构建。GitHub 未返回此前漏触发的具体原因，不能将路径过滤认定为已证实的唯一原因。
+
 | 项目 | 约定 |
 | --- | --- |
 | Release 标签 | `app-vX.Y.Z-build` |
