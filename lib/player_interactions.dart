@@ -92,7 +92,11 @@ class PlayerInteractions extends ChangeNotifier {
 
   String get feedback => _feedback;
   bool get boosting => _boosting;
-  bool get suppressTap => DateTime.now().isBefore(_ignoreTapUntil);
+  bool get suppressTap =>
+      _held ||
+      _boosting ||
+      _cancelUntilRelease ||
+      DateTime.now().isBefore(_ignoreTapUntil);
   Future<void> get pendingRates => _rates;
 
   void hint(String message, {bool persistent = false}) {
@@ -128,14 +132,12 @@ class PlayerInteractions extends ChangeNotifier {
     _keyboardHold = keyboard;
     _holdTimer = Timer(const Duration(milliseconds: 350), () {
       _holdTimer = null;
-      if (_disposed ||
-          !available() ||
-          !player.state.playing ||
-          player.state.completed) {
+      if (_disposed || !available()) {
         return;
       }
-      _boosting = true;
       _held = true;
+      if (!player.state.playing || player.state.completed) return;
+      _boosting = true;
       unawaited(_setRate(3));
       hint('3 倍速 · 松开恢复', persistent: true);
     });

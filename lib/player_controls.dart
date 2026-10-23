@@ -112,7 +112,6 @@ class _PlayerControlsState extends State<PlayerControls> {
         }
       }),
     );
-    widget.interactions.addListener(_interactionChanged);
     _scheduleHide();
   }
 
@@ -146,10 +145,6 @@ class _PlayerControlsState extends State<PlayerControls> {
     }
   }
 
-  void _interactionChanged() {
-    if (mounted && widget.interactions.feedback.isNotEmpty) _show();
-  }
-
   void _scheduleHide() {
     _hideTimer?.cancel();
     if (!widget.enabled ||
@@ -164,7 +159,6 @@ class _PlayerControlsState extends State<PlayerControls> {
           !widget.panelOpen &&
           widget.player.state.playing &&
           !widget.player.state.buffering &&
-          !widget.interactions.boosting &&
           _seekValue == null) {
         setState(() => _visible = false);
       }
@@ -194,7 +188,6 @@ class _PlayerControlsState extends State<PlayerControls> {
   @override
   void dispose() {
     _hideTimer?.cancel();
-    widget.interactions.removeListener(_interactionChanged);
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
@@ -313,24 +306,30 @@ class _PlayerControlsState extends State<PlayerControls> {
           fontWeight: FontWeight.w400,
         ),
         child: Stack(
+          fit: StackFit.expand,
           children: [
             if (widget.enabled && !buffering)
-              Align(
-                alignment: const Alignment(0, -.05),
-                child: _centerPlayback(playing, centerSize),
+              Positioned.fill(
+                child: Align(
+                  alignment: const Alignment(0, -.05),
+                  child: _centerPlayback(playing, centerSize),
+                ),
               ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom),
-              child: Stack(
-                children: [
-                  _topBar(compact: compact),
-                  _bottomControls(
-                    compact: compact,
-                    duration: duration,
-                    position: position,
-                    buffered: buffered,
-                  ),
-                ],
+            Positioned(
+              top: top,
+              left: horizontal,
+              right: horizontal,
+              child: _topBar(compact: compact),
+            ),
+            Positioned(
+              bottom: bottom,
+              left: horizontal,
+              right: horizontal,
+              child: _bottomControls(
+                compact: compact,
+                duration: duration,
+                position: position,
+                buffered: buffered,
               ),
             ),
           ],
@@ -339,50 +338,46 @@ class _PlayerControlsState extends State<PlayerControls> {
     );
   }
 
-  Widget _topBar({required bool compact}) => Align(
-    alignment: Alignment.topCenter,
-    child: Row(
-      children: [
-        _chromeButton(
-          key: const ValueKey('player-back'),
-          tooltip: widget.fullscreen ? '返回（退出全屏）' : '返回',
-          onPressed: widget.onBack,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
-              const SizedBox(width: 6),
-              const Text('后退'),
-            ],
-          ),
+  Widget _topBar({required bool compact}) => Row(
+    children: [
+      _chromeButton(
+        key: const ValueKey('player-back'),
+        tooltip: widget.fullscreen ? '返回（退出全屏）' : '返回',
+        onPressed: widget.onBack,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+            const SizedBox(width: 6),
+            const Text('后退'),
+          ],
         ),
-        Container(
-          height: 18,
-          width: 1,
-          margin: EdgeInsets.symmetric(horizontal: compact ? 6 : 12),
-          color: Colors.white.withValues(alpha: .5),
-        ),
-        Expanded(
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: _chromeButton(
-              key: const ValueKey('player-episodes'),
-              tooltip: '${widget.title}，点击选集',
-              onPressed: widget.enabled
-                  ? () => _panel(widget.onEpisodes)
-                  : null,
-              child: Text(
-                widget.episodeLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+      ),
+      Container(
+        height: 18,
+        width: 1,
+        margin: EdgeInsets.symmetric(horizontal: compact ? 6 : 12),
+        color: Colors.white.withValues(alpha: .5),
+      ),
+      Expanded(
+        child: Align(
+          alignment: Alignment.centerLeft,
+          heightFactor: 1,
+          child: _chromeButton(
+            key: const ValueKey('player-episodes'),
+            tooltip: '${widget.title}，点击选集',
+            onPressed: widget.enabled ? () => _panel(widget.onEpisodes) : null,
+            child: Text(
+              widget.episodeLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
         ),
-        if (widget.onPush != null)
-          _lanPushTool(const ValueKey('fullscreen-lan-push')),
-      ],
-    ),
+      ),
+      if (widget.onPush != null)
+        _lanPushTool(const ValueKey('fullscreen-lan-push')),
+    ],
   );
 
   Widget _centerPlayback(bool playing, double size) => Tooltip(
@@ -421,20 +416,17 @@ class _PlayerControlsState extends State<PlayerControls> {
     required double duration,
     required double position,
     required double buffered,
-  }) => Align(
-    alignment: Alignment.bottomCenter,
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _progressRow(
-          compact: compact,
-          duration: duration,
-          position: position,
-          buffered: buffered,
-        ),
-        _playbackTools(compact: compact),
-      ],
-    ),
+  }) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      _progressRow(
+        compact: compact,
+        duration: duration,
+        position: position,
+        buffered: buffered,
+      ),
+      _playbackTools(compact: compact),
+    ],
   );
 
   Widget _progressRow({
