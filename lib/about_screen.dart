@@ -79,7 +79,9 @@ class _AboutScreenState extends State<AboutScreen> {
               ListTile(
                 leading: const Icon(Icons.system_update_alt_rounded),
                 title: const Text('检查更新'),
-                subtitle: Text(updates.checking ? '正在查询最新版本…' : '从版本后台获取更新'),
+                subtitle: Text(
+                  updates.checking ? '正在查询最新版本…' : '从版本后台获取版本和下载地址',
+                ),
                 onTap: updates.busy ? null : updates.check,
               ),
               if (updates.checking) const LinearProgressIndicator(),
@@ -104,8 +106,10 @@ class _AboutScreenState extends State<AboutScreen> {
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    '${(updates.received / 1048576).toStringAsFixed(1)} / '
-                    '${(updates.package!.size / 1048576).toStringAsFixed(1)} MB',
+                    updates.package == null
+                        ? '正在获取旧版更新包信息…'
+                        : '${(updates.received / 1048576).toStringAsFixed(1)} / '
+                              '${(updates.package!.size / 1048576).toStringAsFixed(1)} MB',
                   ),
                 ),
                 TextButton(
@@ -113,7 +117,7 @@ class _AboutScreenState extends State<AboutScreen> {
                   child: const Text('取消下载'),
                 ),
               ],
-              if (updates.package != null && !updates.downloading)
+              if (updates.canDownload && !updates.downloading)
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: FilledButton.icon(

@@ -23,11 +23,13 @@ type hongguoOfficialSeason struct {
 	Playable    bool        `json:"playable"`
 	Reservable  bool        `json:"reservable"`
 	PublishText string      `json:"publishText"`
+	Label       string      `json:"label"`
 }
 
 type hongguoOfficialSeasons struct {
 	CurrentSeason int                     `json:"currentSeason"`
 	Seasons       []hongguoOfficialSeason `json:"seasons"`
+	RelatedWorks  []hongguoOfficialSeason `json:"relatedWorks"`
 }
 
 func hongguoRelatedSeasonsQuery(seriesID string) url.Values {
@@ -39,7 +41,7 @@ func hongguoOfficialDetailPayload(seriesID string) map[string]any {
 }
 
 func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, currentSeason int) (hongguoOfficialSeasons, error) {
-	response := hongguoOfficialSeasons{CurrentSeason: currentSeason, Seasons: []hongguoOfficialSeason{}}
+	response := hongguoOfficialSeasons{CurrentSeason: currentSeason, Seasons: []hongguoOfficialSeason{}, RelatedWorks: []hongguoOfficialSeason{}}
 	if _, ok := result["code"]; !ok {
 		return response, errors.New("红果相关作品未返回操作状态")
 	}
@@ -62,11 +64,12 @@ func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, cur
 		}
 		for _, item := range rows {
 			row := nestedMap(item)
-			tag := hongguoOfficialSeasonTag.FindStringSubmatch(strings.TrimSpace(mapString(nestedMap(row, "tag_info"), "text")))
-			if tag == nil {
-				continue
+			label := strings.TrimSpace(mapString(nestedMap(row, "tag_info"), "text"))
+			tag := hongguoOfficialSeasonTag.FindStringSubmatch(label)
+			number := 0
+			if tag != nil {
+				number, _ = strconv.Atoi(tag[1])
 			}
-			number, _ := strconv.Atoi(tag[1])
 			id := mapString(row, "series_id")
 			if !hongguoNumericID.MatchString(id) || seen[id] {
 				continue
@@ -80,14 +83,25 @@ func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, cur
 			if drama.Title == "" {
 				continue
 			}
-			if drama.ID == current.ID {
+			if tag != nil && drama.ID == current.ID {
 				response.CurrentSeason = number
 			}
 			publish := firstNonEmpty(mapString(row, "expected_rec_text", "publish_text"), hongguoOnlineDate(row, time.Now()))
-			response.Seasons = append(response.Seasons, hongguoOfficialSeason{Drama: drama, Number: number, Playable: playable, Reservable: reservable, PublishText: publish})
+			work := hongguoOfficialSeason{Drama: drama, Number: number, Playable: playable, Reservable: reservable, PublishText: publish, Label: label}
+			response.RelatedWorks = append(response.RelatedWorks, work)
+			if tag != nil {
+				response.Seasons = append(response.Seasons, work)
+			}
 		}
 	}
-	if response.CurrentSeason > 0 && !seen[current.SourceID] {
+	currentIncluded := false
+	for _, season := range response.Seasons {
+		if season.Drama.ID == current.ID {
+			currentIncluded = true
+			break
+		}
+	}
+	if response.CurrentSeason > 0 && !currentIncluded {
 		response.Seasons = append(response.Seasons, hongguoOfficialSeason{Drama: current, Number: response.CurrentSeason, Playable: current.Episodes > 0})
 	}
 	sort.SliceStable(response.Seasons, func(i, j int) bool { return response.Seasons[i].Number < response.Seasons[j].Number })

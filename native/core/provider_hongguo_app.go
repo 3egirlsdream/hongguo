@@ -130,6 +130,10 @@ func hongguoCatalogHasMore(state *hongguoCatalogState) bool {
 }
 
 func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, path string, extra url.Values, payload any) (map[string]any, error) {
+	switch path {
+	case "/reading/distribution/category/landpage/v/", "/novel/player/video_detail/v1/", "/novel/player/video_model/v1/", "/novel/player/multi_video_model/v1/":
+		ctx = context.WithValue(ctx, cdnRecoveryKey{}, true)
+	}
 	client := downloader.hongguoClient()
 	client.mu.Lock()
 	base, deviceID, installID := client.baseURL, client.state.DeviceID, client.state.InstallID

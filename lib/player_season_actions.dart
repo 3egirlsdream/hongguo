@@ -17,6 +17,7 @@ class PlayerSeasonActions extends StatefulWidget {
     this.opening = false,
     this.label = '下一季',
     this.bottomInset = true,
+    this.playLabel = '播放下一季',
   });
   final DramaSeason season;
   final AppRepository repository;
@@ -25,6 +26,7 @@ class PlayerSeasonActions extends StatefulWidget {
   final bool opening;
   final String label;
   final bool bottomInset;
+  final String playLabel;
 
   @override
   State<PlayerSeasonActions> createState() => _PlayerSeasonActionsState();
@@ -144,9 +146,8 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
         throw AppFailure('预约状态尚未确认，请刷新后重试');
       }
       setState(() => _reserved = desired);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(desired ? '已确认预约下一季' : '已确认取消预约')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(desired ? '已确认预约' : '已确认取消预约')));
     } catch (error) {
       if (mounted && epoch == widget.store.profileEpoch) {
         ScaffoldMessenger.of(context)
@@ -220,7 +221,7 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
               if (season.playable)
                 FilledButton(
                   onPressed: widget.opening ? null : widget.onPlay,
-                  child: Text(widget.opening ? '正在打开' : '播放下一季'),
+                  child: Text(widget.opening ? '正在打开' : widget.playLabel),
                 ),
             ],
           ),

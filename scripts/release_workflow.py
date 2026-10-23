@@ -200,6 +200,7 @@ def sync_backend():
         if (found is None or found['size'] != package['size'] or
                 urllib.parse.unquote(found['url']) != urllib.parse.unquote(package['url'])):
             raise ValueError('Release 附件不完整')
+    backend_memo = json.dumps(manifest, ensure_ascii=False, separators=(',', ':'))
     base = os.environ.get('BACKEND_BASE_URL', 'http://thankful.top:4396').rstrip('/')
     if os.environ.get('BACKEND_CLIENT', CLIENT) != CLIENT:
         raise ValueError('禁止写入其他软件类型')
@@ -208,8 +209,8 @@ def sync_backend():
     if current.get('success') is not True:
         raise ValueError('后台查询失败')
     data = current.get('data')
-    payload = {'Client': CLIENT, 'Version': backend_version, 'Path': expected, 'Memo': manifest['notes']}
-    fields = {'CLIENT': CLIENT, 'VERSION': backend_version, 'PATH': expected, 'MEMO': manifest['notes']}
+    payload = {'Client': CLIENT, 'Version': backend_version, 'Path': expected, 'Memo': backend_memo}
+    fields = {'CLIENT': CLIENT, 'VERSION': backend_version, 'PATH': expected, 'MEMO': backend_memo}
     if not matches_fields(data, fields):
         if data:
             if data.get('CLIENT') != CLIENT:
@@ -227,7 +228,7 @@ def sync_backend():
     verified = request_json(query)
     if verified.get('success') is not True or not matches_fields(verified.get('data'), fields):
         raise ValueError('后台独立回读校验失败')
-    summary(f'后台类型：{CLIENT}\n\n已同步版本：{version}\n\n更新清单：{expected}')
+    summary(f'后台类型：{CLIENT}\n\n已同步版本：{version}\n\n兼容清单：{expected}\n\nAPK 直链及校验信息已写入后台')
 
 
 def main():

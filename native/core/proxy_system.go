@@ -11,10 +11,11 @@ import (
 )
 
 type nativeSystemProxy struct {
-	HTTP   string   `json:"http"`
-	HTTPS  string   `json:"https"`
-	Bypass []string `json:"bypass"`
-	PAC    bool     `json:"pac"`
+	HTTP    string   `json:"http"`
+	HTTPS   string   `json:"https"`
+	Bypass  []string `json:"bypass"`
+	PAC     bool     `json:"pac"`
+	Network string   `json:"network,omitempty"`
 }
 
 func (proxy nativeSystemProxy) resolve(request *http.Request) (*url.URL, error) {
@@ -61,10 +62,13 @@ func (engine *nativeEngine) updateSystemProxy(proxy nativeSystemProxy) error {
 	if len(proxy.Bypass) > 1000 {
 		return errors.New("系统代理排除列表过长")
 	}
+	if len(proxy.Network) > 128 {
+		return errors.New("系统网络标识无效")
+	}
 	router := engine.downloader.proxyRouter
 	router.mu.Lock()
 	if router.system.HTTP == proxy.HTTP && router.system.HTTPS == proxy.HTTPS &&
-		router.system.PAC == proxy.PAC && slices.Equal(router.system.Bypass, proxy.Bypass) {
+		router.system.PAC == proxy.PAC && router.system.Network == proxy.Network && slices.Equal(router.system.Bypass, proxy.Bypass) {
 		router.mu.Unlock()
 		return nil
 	}

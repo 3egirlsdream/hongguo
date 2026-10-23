@@ -92,11 +92,16 @@ class AppUpdateService extends ChangeNotifier {
   bool canInstall = false;
   int received = 0;
   File? _downloaded;
+  Uri? _legacyManifestUrl;
   HttpClient? _downloadClient;
   bool _cancelled = false;
 
   bool get busy => checking || downloading || installing;
   bool get downloaded => _downloaded != null;
+  bool get canDownload =>
+      canInstall &&
+      Abi.current() == Abi.androidArm64 &&
+      (package != null || _legacyManifestUrl != null);
   double? get progress => package == null ? null : received / package!.size;
 
   static Future<void> showUpdateToast(String version) async {
@@ -132,6 +137,7 @@ class AppUpdateService extends ChangeNotifier {
     message = null;
     availableVersion = null;
     package = null;
+    _legacyManifestUrl = null;
     _downloaded = null;
     installPermissionRequired = false;
     received = 0;
@@ -184,25 +190,18 @@ class AppUpdateService extends ChangeNotifier {
         message = '当前已是最新版本';
         return;
       }
-      final manifest = await _json(client, manifestUrl);
-      if (manifest['schema'] != 1 ||
-          manifest['client'] != updateClient ||
-          manifest['version'] != version.text) {
-        throw const FormatException('更新清单版本不一致');
+      final memo = data['MEMO'] as String? ?? '';
+      if (memo.trimLeft().startsWith('{')) {
+        final manifest = jsonDecode(memo);
+        if (manifest is! Map<String, dynamic>) {
+          throw const FormatException('后台更新信息格式无效');
+        }
+        _applyManifest(manifest, version);
+      } else {
+        notes = memo;
+        _legacyManifestUrl = manifestUrl;
       }
-      notes = manifest['notes'] as String? ?? '';
-      final architecture = switch (Abi.current()) {
-        Abi.androidArm64 => 'arm64-v8a',
-        _ => '',
-      };
-      final packages = manifest['packages'] as List;
-      final candidates = packages.whereType<Map<String, dynamic>>().where(
-        (item) =>
-            item['platform'] == 'android' &&
-            item['architecture'] == architecture,
-      );
-      if (canInstall && candidates.length == 1) {
-        package = AppUpdatePackage(candidates.single, version);
+      if (canDownload) {
         message = '发现新版本 ${version.text}';
       } else {
         message = '发现新版本 ${version.text}，请前往下载页面选择安装包';
@@ -217,21 +216,52 @@ class AppUpdateService extends ChangeNotifier {
     }
   }
 
+  void _applyManifest(Map<String, dynamic> manifest, AppVersion version) {
+    if (manifest['schema'] != 1 ||
+        manifest['client'] != updateClient ||
+        manifest['version'] != version.text) {
+      throw const FormatException('后台更新信息版本不一致');
+    }
+    notes = manifest['notes'] as String? ?? '';
+    final architecture = switch (Abi.current()) {
+      Abi.androidArm64 => 'arm64-v8a',
+      _ => '',
+    };
+    final packages = manifest['packages'] as List;
+    final candidates = packages.whereType<Map<String, dynamic>>().where(
+      (item) =>
+          item['platform'] == 'android' && item['architecture'] == architecture,
+    );
+    package = canInstall && candidates.length == 1
+        ? AppUpdatePackage(candidates.single, version)
+        : null;
+  }
+
   Future<void> download() async {
-    final update = package;
-    if (busy || update == null) return;
+    if (busy || !canDownload) return;
     downloading = true;
     _cancelled = false;
     received = 0;
     _downloaded = null;
     installPermissionRequired = false;
-    message = '正在下载更新';
+    message = package == null ? '正在获取旧版更新包信息…' : '正在下载更新';
     notifyListeners();
     final client = _client();
     _downloadClient = client;
     File? partial;
     IOSink? sink;
     try {
+      if (package == null) {
+        final manifest = await _json(client, _legacyManifestUrl!);
+        if (_cancelled) throw const HttpException('下载已取消');
+        _applyManifest(manifest, availableVersion!);
+        notifyListeners();
+      }
+      final update = package;
+      if (update == null) throw const FormatException('没有适合当前设备的更新包');
+      _legacyManifestUrl = null;
+      message = '正在下载更新';
+      notifyListeners();
       final cache = await getTemporaryDirectory();
       final directory = Directory(p.join(cache.path, 'app-updates'));
       await directory.create(recursive: true);
@@ -336,13 +366,26 @@ class AppUpdateService extends ChangeNotifier {
   static Future<HttpClientResponse> _get(HttpClient client, Uri url) async {
     var target = url;
     for (var redirects = 0; redirects <= 5; redirects++) {
-      final request = await client
-          .getUrl(target)
-          .timeout(const Duration(seconds: 20));
-      request.followRedirects = false;
-      final response = await request.close().timeout(
-        const Duration(seconds: 30),
-      );
+      final HttpClientResponse response;
+      try {
+        final request = await client
+            .getUrl(target)
+            .timeout(const Duration(seconds: 20));
+        request.followRedirects = false;
+        response = await request.close().timeout(const Duration(seconds: 30));
+      } on HandshakeException catch (error) {
+        throw HttpException(
+          '${target.host} 的 HTTPS 握手失败：${error.message}。请检查 WiFi、代理或切换网络后重试',
+          uri: target,
+        );
+      } on SocketException catch (error) {
+        throw HttpException(
+          '无法连接 ${target.host}：${error.message}',
+          uri: target,
+        );
+      } on TimeoutException {
+        throw HttpException('连接 ${target.host} 超时，请稍后重试', uri: target);
+      }
       if ([301, 302, 303, 307, 308].contains(response.statusCode)) {
         final location = response.headers.value(HttpHeaders.locationHeader);
         await response.drain<void>().timeout(const Duration(seconds: 10));
@@ -357,7 +400,10 @@ class AppUpdateService extends ChangeNotifier {
         continue;
       }
       if (response.statusCode != HttpStatus.ok) {
-        throw HttpException('服务器返回 HTTP ${response.statusCode}');
+        throw HttpException(
+          '${target.host} 返回 HTTP ${response.statusCode}',
+          uri: target,
+        );
       }
       return response;
     }
@@ -367,9 +413,13 @@ class AppUpdateService extends ChangeNotifier {
   static Future<Map<String, dynamic>> _json(HttpClient client, Uri url) async {
     final response = await _get(client, url);
     final bytes = BytesBuilder(copy: false);
-    await for (final chunk in response.timeout(const Duration(seconds: 30))) {
-      bytes.add(chunk);
-      if (bytes.length > 1024 * 1024) throw const FormatException('版本响应过大');
+    try {
+      await for (final chunk in response.timeout(const Duration(seconds: 30))) {
+        bytes.add(chunk);
+        if (bytes.length > 1024 * 1024) throw const FormatException('版本响应过大');
+      }
+    } on TimeoutException {
+      throw HttpException('读取 ${url.host} 的更新信息超时，请稍后重试', uri: url);
     }
     final data = jsonDecode(utf8.decode(bytes.takeBytes()));
     if (data is! Map<String, dynamic>) throw const FormatException('版本响应格式无效');

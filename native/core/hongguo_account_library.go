@@ -341,7 +341,7 @@ func (c *hgAccountHTTP) reservationPage(ctx context.Context, mode string, offset
 		}
 		drama := nativeNormalize(hongguoDramaFromAny(sub, ""))
 		drama.ID, drama.Source, drama.SourceID = providerDramaID(sourceHongguo, sid), sourceHongguo, sid
-		drama.Title = firstNonEmpty(mapString(sub, "series_title", "series_name"), mapString(r, "name"), "红果短剧 "+sid)
+		drama.Title = firstNonEmpty(mapString(sub, "series_title", "series_name", "title"), mapString(r, "name"), "红果短剧 "+sid)
 		if drama.Cover == "" {
 			drama.Cover = mapString(r, "cover")
 		}

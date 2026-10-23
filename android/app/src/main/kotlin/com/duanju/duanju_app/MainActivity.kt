@@ -211,6 +211,7 @@ class MainActivity : FlutterActivity() {
                                 "http" to address,
                                 "https" to address,
                                 "bypass" to (proxy?.exclusionList?.toList() ?: emptyList<String>()),
+                                "network" to connection.activeNetwork?.toString().orEmpty(),
                                 "pac" to (proxy != null && proxy.pacFileUrl != Uri.EMPTY)
                             ))
                         }

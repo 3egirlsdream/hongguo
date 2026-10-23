@@ -4,12 +4,26 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
 )
+
+type cdnRecoveryKey struct{}
+
+type cdnResponseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (body *cdnResponseBody) Close() error {
+	err := body.ReadCloser.Close()
+	body.cancel()
+	return err
+}
 
 type cdnRoute struct {
 	address string
@@ -22,6 +36,7 @@ type cdnTransport struct {
 	mu         sync.Mutex
 	transports map[string]*http.Transport
 	preferred  map[string]cdnRoute
+	generation uint64
 }
 
 func newCDNTransport(base *http.Transport, resolver *dnsResolver) *cdnTransport {
@@ -29,8 +44,11 @@ func newCDNTransport(base *http.Transport, resolver *dnsResolver) *cdnTransport 
 }
 
 func (transport *cdnTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Scheme != "https" || (!protectedCDNHost(request.URL.Hostname()) && request.Context().Value(nativeCoverNetworkKey{}) != true) || (request.Method != http.MethodGet && request.Method != http.MethodHead) {
+	if !cdnCanRecover(request) {
 		return transport.base.RoundTrip(request)
+	}
+	if request.Body != nil {
+		defer request.Body.Close()
 	}
 	var proxyURL *url.URL
 	var err error
@@ -40,12 +58,13 @@ func (transport *cdnTransport) RoundTrip(request *http.Request) (*http.Response,
 			return nil, err
 		}
 	}
-	routeKey := request.URL.Host
+	routeKey := request.URL.Scheme + "://" + request.URL.Host
 	if proxyURL != nil {
 		routeKey += "|" + proxyURL.String()
 	}
 	transport.mu.Lock()
 	preferred := transport.preferred[routeKey]
+	generation := transport.generation
 	transport.mu.Unlock()
 	tried := map[string]bool{}
 	var response *http.Response
@@ -55,19 +74,25 @@ func (transport *cdnTransport) RoundTrip(request *http.Request) (*http.Response,
 		if err == nil {
 			return response, nil
 		}
-	} else {
-		response, err = transport.base.RoundTrip(request)
-		if err == nil {
-			return response, nil
+		transport.mu.Lock()
+		if transport.preferred[routeKey] == preferred {
+			delete(transport.preferred, routeKey)
 		}
+		transport.mu.Unlock()
+	}
+	response, err = cdnRoundTrip(transport.base, request)
+	if err == nil {
+		return response, nil
 	}
 	if request.Context().Err() != nil {
 		return nil, request.Context().Err()
 	}
 	lastErr := err
-	subnets := []string{dnsAlternateSubnet, ""}
+	subnets := []string{"", dnsAlternateSubnet}
 	for _, subnet := range subnets {
-		entry, lookupErr := transport.resolver.lookupEntry(request.Context(), request.URL.Hostname(), subnet)
+		lookupCtx, cancel := context.WithTimeout(request.Context(), cdnAttemptBudget(request.Context()))
+		entry, lookupErr := transport.resolver.lookupEntry(lookupCtx, request.URL.Hostname(), subnet)
+		cancel()
 		if lookupErr != nil {
 			if request.Context().Err() != nil {
 				return nil, request.Context().Err()
@@ -75,14 +100,16 @@ func (transport *cdnTransport) RoundTrip(request *http.Request) (*http.Response,
 			continue
 		}
 		for _, address := range entry.addresses {
-			if tried[address] || len(tried) >= 4 {
+			if tried[address] || len(tried) >= 2 {
 				continue
 			}
 			tried[address] = true
 			response, err = transport.roundTripAddress(request, proxyURL, routeKey, address)
 			if err == nil {
 				transport.mu.Lock()
-				transport.preferred[routeKey] = cdnRoute{address: address, expires: entry.expires}
+				if transport.generation == generation {
+					transport.preferred[routeKey] = cdnRoute{address: address, expires: entry.expires}
+				}
 				transport.mu.Unlock()
 				return response, nil
 			}
@@ -91,8 +118,62 @@ func (transport *cdnTransport) RoundTrip(request *http.Request) (*http.Response,
 			}
 			lastErr = err
 		}
+		if len(tried) >= 2 {
+			break
+		}
 	}
-	return nil, fmt.Errorf("资源 %s 连接失败（已尝试备用 DNS 地址）: %w", request.URL.Hostname(), publicError(lastErr))
+	return nil, fmt.Errorf("资源 %s 连接失败（已尝试备用 DNS 解析）: %w", request.URL.Hostname(), publicError(lastErr))
+}
+
+func cdnCanRecover(request *http.Request) bool {
+	if request.URL.Scheme != "https" && request.URL.Scheme != "http" || net.ParseIP(request.URL.Hostname()) != nil {
+		return false
+	}
+	explicit := request.Context().Value(cdnRecoveryKey{}) == true
+	if !protectedCDNHost(request.URL.Hostname()) && request.Context().Value(nativeCoverNetworkKey{}) != true && !explicit {
+		return false
+	}
+	if request.Body != nil && request.Body != http.NoBody && request.GetBody == nil {
+		return false
+	}
+	return request.Method == http.MethodGet || request.Method == http.MethodHead || explicit && request.Method == http.MethodPost && request.GetBody != nil
+}
+
+func cdnAttemptBudget(ctx context.Context) time.Duration {
+	budget := 4 * time.Second
+	if deadline, ok := ctx.Deadline(); ok {
+		budget = min(budget, time.Until(deadline)/3)
+	}
+	return max(budget, time.Millisecond)
+}
+
+func cdnRoundTrip(transport *http.Transport, request *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithCancel(request.Context())
+	upstream := request.Clone(ctx)
+	if request.GetBody != nil {
+		body, err := request.GetBody()
+		if err != nil {
+			cancel()
+			return nil, err
+		}
+		upstream.Body = body
+	}
+	timer := time.AfterFunc(cdnAttemptBudget(request.Context()), cancel)
+	response, err := transport.RoundTrip(upstream)
+	timedOut := !timer.Stop()
+	if err != nil || timedOut {
+		cancel()
+		if response != nil {
+			response.Body.Close()
+		}
+		if timedOut && request.Context().Err() == nil {
+			return nil, context.DeadlineExceeded
+		}
+		return nil, err
+	}
+	response.Request = request
+	response.Body = &cdnResponseBody{ReadCloser: response.Body, cancel: cancel}
+	return response, nil
 }
 
 func (transport *cdnTransport) roundTripAddress(request *http.Request, proxyURL *url.URL, routeKey, address string) (*http.Response, error) {
@@ -106,7 +187,7 @@ func (transport *cdnTransport) roundTripAddress(request *http.Request, proxyURL 
 	if port := request.URL.Port(); port != "" {
 		upstream.URL.Host = net.JoinHostPort(address, port)
 	}
-	response, err := pinned.RoundTrip(upstream)
+	response, err := cdnRoundTrip(pinned, upstream)
 	if response != nil {
 		response.Request = request
 	}
@@ -181,8 +262,10 @@ func (transport *cdnTransport) tlsProxyDialer(host string) func(context.Context,
 func (transport *cdnTransport) CloseIdleConnections() {
 	transport.base.CloseIdleConnections()
 	transport.resolver.client.CloseIdleConnections()
+	transport.resolver.clearCache()
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
+	transport.generation++
 	for key, pinned := range transport.transports {
 		pinned.CloseIdleConnections()
 		delete(transport.transports, key)

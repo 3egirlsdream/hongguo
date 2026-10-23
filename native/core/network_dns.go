@@ -21,11 +21,12 @@ type dnsCacheEntry struct {
 }
 
 type dnsResolver struct {
-	client    *http.Client
-	mu        sync.Mutex
-	cache     map[string]dnsCacheEntry
-	inFlight  map[string]chan struct{}
-	endpoints []string
+	client     *http.Client
+	mu         sync.Mutex
+	cache      map[string]dnsCacheEntry
+	inFlight   map[string]chan struct{}
+	endpoints  []string
+	generation uint64
 }
 
 func newDNSResolver(transport *http.Transport) *dnsResolver {
@@ -45,6 +46,7 @@ func (resolver *dnsResolver) lookup(ctx context.Context, host string) ([]string,
 
 func (resolver *dnsResolver) lookupEntry(ctx context.Context, host, subnet string) (dnsCacheEntry, error) {
 	cacheKey := host + "|" + subnet
+	var generation uint64
 	for {
 		resolver.mu.Lock()
 		if entry, found := resolver.cache[cacheKey]; found && time.Now().Before(entry.expires) {
@@ -61,12 +63,13 @@ func (resolver *dnsResolver) lookupEntry(ctx context.Context, host, subnet strin
 			}
 		}
 		resolver.inFlight[cacheKey] = make(chan struct{})
+		generation = resolver.generation
 		resolver.mu.Unlock()
 		break
 	}
 	entry, err := resolver.query(ctx, host, subnet)
 	resolver.mu.Lock()
-	if err == nil {
+	if err == nil && resolver.generation == generation {
 		resolver.cache[cacheKey] = entry
 	}
 	close(resolver.inFlight[cacheKey])
@@ -75,9 +78,16 @@ func (resolver *dnsResolver) lookupEntry(ctx context.Context, host, subnet strin
 	return entry, err
 }
 
+func (resolver *dnsResolver) clearCache() {
+	resolver.mu.Lock()
+	defer resolver.mu.Unlock()
+	resolver.generation++
+	resolver.cache = map[string]dnsCacheEntry{}
+}
+
 func (resolver *dnsResolver) query(ctx context.Context, host, subnet string) (dnsCacheEntry, error) {
 	lastErr := errors.New("DoH 未返回公网 IPv4 地址")
-	for _, endpoint := range resolver.endpoints {
+	for index, endpoint := range resolver.endpoints {
 		if err := ctx.Err(); err != nil {
 			return dnsCacheEntry{}, err
 		}
@@ -92,13 +102,20 @@ func (resolver *dnsResolver) query(ctx context.Context, host, subnet string) (dn
 			query.Set("edns_client_subnet", subnet)
 		}
 		lookupURL.RawQuery = query.Encode()
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, lookupURL.String(), nil)
+		budget := 2 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			budget = min(budget, time.Until(deadline)/time.Duration(len(resolver.endpoints)-index))
+		}
+		queryCtx, cancel := context.WithTimeout(ctx, budget)
+		request, err := http.NewRequestWithContext(queryCtx, http.MethodGet, lookupURL.String(), nil)
 		if err != nil {
+			cancel()
 			return dnsCacheEntry{}, err
 		}
 		request.Header.Set("Accept", "application/dns-json")
 		response, err := resolver.client.Do(request)
 		if err != nil {
+			cancel()
 			lastErr = publicError(err)
 			continue
 		}
@@ -112,6 +129,7 @@ func (resolver *dnsResolver) query(ctx context.Context, host, subnet string) (dn
 		}
 		err = json.NewDecoder(io.LimitReader(response.Body, 65536)).Decode(&payload)
 		response.Body.Close()
+		cancel()
 		if response.StatusCode != http.StatusOK || err != nil || payload.Status != 0 {
 			lastErr = errors.New("DoH 服务没有返回有效 DNS 记录")
 			continue

@@ -173,6 +173,7 @@ class DramaSeason {
     required this.reservable,
     this.publishText = '',
     this.next = false,
+    this.label = '',
   });
   final Drama drama;
   final int number;
@@ -180,6 +181,7 @@ class DramaSeason {
   final bool playable;
   final bool reservable;
   final String publishText;
+  final String label;
   factory DramaSeason.fromJson(Map<String, dynamic> json) => DramaSeason(
     drama: Drama.fromJson(Map<String, dynamic>.from(json['drama'] as Map)),
     number: intValue(json['number']),
@@ -187,6 +189,7 @@ class DramaSeason {
     playable: json['playable'] == true,
     reservable: json['reservable'] == true,
     publishText: json['publishText'] as String? ?? '',
+    label: json['label'] as String? ?? '',
   );
 }
 

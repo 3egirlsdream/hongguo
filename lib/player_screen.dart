@@ -153,6 +153,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _rotating = false;
   bool _openingSeason = false;
   List<DramaSeason> _seasons = const [];
+  List<DramaSeason> _relatedWorks = const [];
   int _currentSeason = 0;
   int _seasonsGeneration = 0;
   bool _seasonsLoading = false;
@@ -195,6 +196,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _fullscreen = widget.initialFullscreen;
     _profileEpoch = widget.handoff?.profileEpoch ?? widget.store.profileEpoch;
     _seasons = widget.detail.seasons;
+    _relatedWorks = widget.detail.seasons;
     unawaited(_loadSeasons());
     if (widget.repository.supportsOfficialAccount && widget.mediaId == null) {
       unawaited(
@@ -1707,6 +1709,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _loadSeasons() async {
     if (_closed ||
+        _seasonsLoading ||
         widget.localOnly ||
         widget.mediaId != null ||
         !widget.repository.supportsOfficialAccount ||
@@ -1733,9 +1736,17 @@ class _PlayerScreenState extends State<PlayerScreen>
         for (final row in result['seasons'] as List? ?? const [])
           DramaSeason.fromJson(Map<String, dynamic>.from(row as Map)),
       ];
+      final relatedWorks = [
+        for (final row
+            in result['relatedWorks'] as List? ??
+                result['seasons'] as List? ??
+                const [])
+          DramaSeason.fromJson(Map<String, dynamic>.from(row as Map)),
+      ];
       setState(() {
         _currentSeason = intValue(result['currentSeason']);
         _seasons = seasons;
+        _relatedWorks = relatedWorks;
       });
     } catch (error) {
       if (mounted &&
@@ -1797,7 +1808,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           generation != _generation ||
           widget.store.profileEpoch != _profileEpoch)
         return;
-      if (detail.episodes.isEmpty) throw AppFailure('下一季暂时没有可播放的集数');
+      if (detail.episodes.isEmpty) throw AppFailure('该作品暂时没有可播放的集数');
       await _serialize(() async {
         if (_closed || generation != _generation) return;
         _playIntent = false;
@@ -1901,7 +1912,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     ),
                                     SizedBox(
                                       width: wide ? 312 : 210,
-                                      child: _episodePanel(),
+                                      child: _mobilePlaybackPanel(),
                                     ),
                                   ],
                                 );
@@ -2145,7 +2156,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ? _episodePanel(compact: true)
                       : _mobileTab == 1
                       ? _mobileSynopsis()
-                      : _mobileDownload(),
+                      : _mobileTab == 2
+                      ? _mobileDownload()
+                      : _relatedWorksPanel(),
                 ),
               ),
             ),
@@ -2164,6 +2177,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           _mobileTabButton(0, '选集'),
           _mobileTabButton(1, '简介'),
           _mobileTabButton(2, '下载'),
+          _mobileTabButton(3, '相关作品'),
         ],
       ),
     ),
@@ -2195,6 +2209,82 @@ class _PlayerScreenState extends State<PlayerScreen>
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _relatedWorksPanel() {
+    if (widget.localOnly ||
+        widget.mediaId != null ||
+        !widget.repository.supportsOfficialAccount ||
+        widget.store.profileEpoch != _profileEpoch ||
+        !widget.store.allowsSource(widget.detail.drama.source)) {
+      return const StatusPanel(
+        title: '相关作品不可用',
+        message: '请在红果在线播放时查看相关作品。',
+        icon: Icons.video_library_outlined,
+      );
+    }
+    return ColoredBox(
+      color: Theme.of(context).colorScheme.surface,
+      child: ListView(
+        padding: const EdgeInsets.all(8),
+        children: [
+          Row(
+            children: [
+              const Expanded(child: Text('相关作品')),
+              TextButton.icon(
+                onPressed: _seasonsLoading ? null : _loadSeasons,
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('刷新'),
+              ),
+            ],
+          ),
+          if (_seasonsLoading) const LinearProgressIndicator(minHeight: 2),
+          if (_seasonsError != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('相关作品获取失败'),
+              subtitle: Text(_seasonsError!),
+              trailing: TextButton(
+                onPressed: _seasonsLoading ? null : _loadSeasons,
+                child: const Text('重试'),
+              ),
+            ),
+          if (!_seasonsLoading &&
+              _seasonsError == null &&
+              _relatedWorks.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Text('暂无相关作品'),
+            ),
+          for (final work in _relatedWorks)
+            if (work.drama.id == widget.detail.drama.id)
+              ListTile(
+                title: Text(work.drama.title),
+                subtitle: Text(work.label.isEmpty ? '当前作品' : work.label),
+                trailing: const Text('正在播放'),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: PlayerSeasonActions(
+                  key: ValueKey('related-${work.drama.id}'),
+                  season: work,
+                  label: work.label.isNotEmpty
+                      ? work.label
+                      : work.number > 0
+                      ? '第 ${work.number} 季'
+                      : '相关作品',
+                  playLabel: '播放',
+                  bottomInset: false,
+                  repository: widget.repository,
+                  store: widget.store,
+                  opening: _openingSeason,
+                  onPlay: () => _openNextSeason(work),
+                ),
+              ),
+        ],
       ),
     );
   }
