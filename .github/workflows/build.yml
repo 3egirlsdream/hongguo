@@ -1,9 +1,9 @@
 name: Release Yeguo
+run-name: Release Yeguo · ${{ github.event_name }} · ${{ github.sha }}
 
 on:
   push:
     branches: [main, master]
-    paths: [pubspec.yaml]
   workflow_dispatch:
     inputs:
       sync_backend_only:
