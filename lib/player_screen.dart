@@ -51,6 +51,7 @@ class PlayerScreen extends StatefulWidget {
     required this.store,
     this.initialPosition = 0,
     this.initialPlayWhenReady = true,
+    this.initialFullscreen = false,
     this.localOnly = false,
     this.allowOnlineFallback = true,
     this.mediaId,
@@ -63,6 +64,7 @@ class PlayerScreen extends StatefulWidget {
   final int initialIndex;
   final double initialPosition;
   final bool initialPlayWhenReady;
+  final bool initialFullscreen;
   final bool localOnly;
   final bool allowOnlineFallback;
   final String? mediaId;
@@ -132,6 +134,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool? _systemFullscreen;
   Orientation? _lastOrientation;
   bool _closed = false;
+  bool _leavingPlayback = false;
   bool _acceptErrors = false;
   bool _foreground = true;
   bool _playIntent = true;
@@ -160,6 +163,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _seasonsLoading = false;
   String? _seasonsError;
   bool _television = false;
+  bool _coverWindow = false;
   AppOrientationController? _orientationController;
   bool get _pictureInPictureVisible =>
       _pictureInPictureActive || _pictureInPictureRequested;
@@ -198,8 +202,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     _initialTrace = widget.trace ?? PlaybackTrace('player_enter');
     _initialTrace.mark('player_init');
     WidgetsBinding.instance.addObserver(this);
+    PlaybackContinuity.windowChanges.addListener(_windowChanged);
+    _lifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed;
+    _foreground = _lifecycleState == AppLifecycleState.resumed;
     _index = widget.initialIndex;
     _playIntent = widget.initialPlayWhenReady;
+    _fullscreen = widget.initialFullscreen;
     _profileEpoch = widget.handoff?.profileEpoch ?? widget.store.profileEpoch;
     _seasons = widget.detail.seasons;
     unawaited(_loadSeasons());
@@ -360,6 +369,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           setState(() {
             _aspectRatio = size.width / size.height;
           });
+          if (_fullscreen) _schedulePlaybackOrientation();
           _scheduleSystemUi();
         }
       }),
@@ -680,18 +690,15 @@ class _PlayerScreenState extends State<PlayerScreen>
         !renderObject.hasSize) {
       return null;
     }
-    final topLeft = renderObject.localToGlobal(Offset.zero);
-    final size = renderObject.size;
-    final ratio =
-        MediaQuery.maybeOf(paneContext)?.devicePixelRatio ??
-        View.of(paneContext).devicePixelRatio;
-    final left = (topLeft.dx * ratio).round().clamp(0, 100000);
-    final top = (topLeft.dy * ratio).round().clamp(0, 100000);
-    final right = ((topLeft.dx + size.width) * ratio).round().clamp(0, 100000);
-    final bottom = ((topLeft.dy + size.height) * ratio).round().clamp(
-      0,
-      100000,
+    final rect = Rect.fromPoints(
+      renderObject.localToGlobal(Offset.zero),
+      renderObject.localToGlobal(renderObject.size.bottomRight(Offset.zero)),
     );
+    final ratio = View.of(paneContext).devicePixelRatio;
+    final left = (rect.left * ratio).round().clamp(0, 100000);
+    final top = (rect.top * ratio).round().clamp(0, 100000);
+    final right = (rect.right * ratio).round().clamp(0, 100000);
+    final bottom = (rect.bottom * ratio).round().clamp(0, 100000);
     if (right <= left || bottom <= top) return null;
     return {'left': left, 'top': top, 'right': right, 'bottom': bottom};
   }
@@ -868,13 +875,43 @@ class _PlayerScreenState extends State<PlayerScreen>
       _interactions.cancel();
     }
     _television = television;
-    _orientationController = AppOrientationScope.maybeOf(context);
+    _coverWindow = AppLayout.isCoverWindow(context);
+    final controller = AppOrientationScope.maybeOf(context);
+    if (!identical(_orientationController, controller)) {
+      _orientationController = controller;
+      if (_fullscreen) _schedulePlaybackOrientation();
+    }
     final orientation = MediaQuery.orientationOf(context);
     if (_lastOrientation != null && _lastOrientation != orientation) {
       _automaticFullscreenSuppressed = false;
       _interactions.cancel();
     }
     _lastOrientation = orientation;
+    _scheduleSystemUi();
+  }
+
+  void _schedulePlaybackOrientation() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _closed || !_fullscreen) return;
+      unawaited(
+        _orientationController
+            ?.setPlayback(this, fullscreen: true, aspectRatio: _aspectRatio)
+            .catchError((Object _) {
+              if (!_closed) _notice('无法调整播放方向，请重试全屏');
+            }),
+      );
+    });
+  }
+
+  void _windowChanged() {
+    if (!mounted || _closed) return;
+    _interactions.cancel();
+    _checkpoint();
+    _health.reset();
+    _systemFullscreen = null;
+    unawaited(_saveProgress(flush: true));
+    unawaited(_refreshPictureInPictureStatus());
+    _applyLifecycleVisibility();
     _scheduleSystemUi();
   }
 
@@ -1010,6 +1047,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   void _checkpoint({double? position}) {
     if (_closed ||
+        _leavingPlayback ||
         widget.store.locked ||
         widget.store.profileEpoch != _profileEpoch ||
         !(ModalRoute.of(context)?.isCurrent ?? true)) {
@@ -1033,6 +1071,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           playing: _playIntent,
           localOnly: widget.localOnly,
           allowOnlineFallback: widget.allowOnlineFallback,
+          fullscreen: _fullscreen,
           mediaId: widget.mediaId,
         ),
       ),
@@ -1426,6 +1465,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _television ||
       _fullscreen ||
       (_mobile &&
+          !_coverWindow &&
           !_automaticFullscreenSuppressed &&
           _aspectRatio >= 1 &&
           MediaQuery.orientationOf(context) == Orientation.landscape);
@@ -1471,6 +1511,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     } finally {
       _rotating = false;
       if (mounted && !_closed) _scheduleSystemUi();
+      _checkpoint();
     }
   }
 
@@ -1644,7 +1685,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     } finally {
       if (mounted && !_closed) {
         setState(() => _panelOpen = false);
-        if (_advanceOnResume) _applyLifecycleVisibility();
+        _applyLifecycleVisibility();
         _playerFocus.requestFocus();
       }
     }
@@ -1775,7 +1816,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
-    unawaited(PlaybackContinuity.clear(_continuityOwner));
+    unawaited(
+      PlaybackContinuity.clear(
+        _continuityOwner,
+        preserveForRestart: !_leavingPlayback,
+      ),
+    );
     _closed = true;
     _seasonsGeneration++;
     final enhancementClosed = _enhancement.close();
@@ -1787,6 +1833,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _preloader.dispose();
     _generation++;
     WidgetsBinding.instance.removeObserver(this);
+    PlaybackContinuity.windowChanges.removeListener(_windowChanged);
     _saveTimer?.cancel();
     _healthTimer?.cancel();
     _errorTimer?.cancel();
@@ -1987,11 +2034,16 @@ class _PlayerScreenState extends State<PlayerScreen>
     final title = widget.detail.drama.title;
     final fullscreen = _showFullscreen;
     final pictureInPicture = _pictureInPictureVisible;
+    final showSeasonActions = !pictureInPicture && !fullscreen;
     final nextSeason = _nextSeason;
     final upcomingSeason = _upcomingSeason;
     return PopScope(
       canPop: _television || !fullscreen,
       onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          _leavingPlayback = true;
+          unawaited(PlaybackContinuity.clear(_continuityOwner));
+        }
         if (!didPop && fullscreen && !_television) {
           _rotate();
         }
@@ -2035,16 +2087,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ? _videoPane(context)
                       : SafeArea(
                           top: !_television && (fullscreen || _mobile),
-                          bottom: !fullscreen,
+                          bottom: !fullscreen || _coverWindow,
                           child: LayoutBuilder(
                             builder: (context, constraints) {
                               final desktop = constraints.maxWidth >= 840;
                               if (fullscreen) {
                                 return _videoPane(context);
                               }
-                              if (desktop ||
-                                  constraints.maxWidth >
-                                      constraints.maxHeight * 1.3) {
+                              if (!_coverWindow &&
+                                  (desktop ||
+                                      constraints.maxWidth >
+                                          constraints.maxHeight * 1.3)) {
                                 return Row(
                                   children: [
                                     Expanded(
@@ -2062,10 +2115,15 @@ class _PlayerScreenState extends State<PlayerScreen>
                                 );
                               }
                               if (_mobile) {
+                                final maxVideoHeight =
+                                    constraints.maxHeight *
+                                    (_coverWindow ? .62 : .56);
                                 final height =
                                     (constraints.maxWidth / _aspectRatio).clamp(
-                                      0.0,
-                                      constraints.maxHeight * .56,
+                                      _coverWindow
+                                          ? 148.0.clamp(0.0, maxVideoHeight)
+                                          : 0.0,
+                                      maxVideoHeight,
                                     );
                                 return Column(
                                   children: [
@@ -2097,9 +2155,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                           ),
                         ),
                 ),
-                if (!pictureInPicture && _showSeasonActions && _seasonsLoading)
+                if (showSeasonActions && _showSeasonActions && _seasonsLoading)
                   const LinearProgressIndicator(minHeight: 2),
-                if (!pictureInPicture &&
+                if (showSeasonActions &&
                     _showSeasonActions &&
                     _seasonsError != null)
                   SafeArea(
@@ -2118,7 +2176,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                       ),
                     ),
                   ),
-                if (!pictureInPicture && nextSeason != null)
+                if (showSeasonActions && nextSeason != null)
                   PlayerSeasonActions(
                     key: ValueKey(nextSeason.drama.id),
                     season: nextSeason,
@@ -2128,7 +2186,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                     opening: _openingSeason,
                     onPlay: () => _openNextSeason(nextSeason),
                   ),
-                if (!pictureInPicture && upcomingSeason != null)
+                if (showSeasonActions && upcomingSeason != null)
                   PlayerSeasonActions(
                     key: ValueKey(upcomingSeason.drama.id),
                     label: '后续新季',
@@ -2178,6 +2236,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             enhancement: _enhancementForUi,
             panelOpen: _panelOpen,
             fullscreen: _showFullscreen,
+            compact: _coverWindow,
             showOnPlaybackReady: _showControlsOnPlaybackReady,
             title: title,
             onTogglePlayback: _togglePlayback,

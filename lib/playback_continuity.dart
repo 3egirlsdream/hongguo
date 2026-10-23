@@ -15,6 +15,7 @@ class PlaybackSnapshot {
     required this.playing,
     required this.localOnly,
     required this.allowOnlineFallback,
+    this.fullscreen = false,
     this.mediaId,
   });
 
@@ -26,6 +27,7 @@ class PlaybackSnapshot {
   final bool playing;
   final bool localOnly;
   final bool allowOnlineFallback;
+  final bool fullscreen;
   final String? mediaId;
 
   String encode() => jsonEncode({
@@ -38,6 +40,7 @@ class PlaybackSnapshot {
     'playing': playing,
     'localOnly': localOnly,
     'allowOnlineFallback': allowOnlineFallback,
+    'fullscreen': fullscreen,
     'mediaId': mediaId,
     'updatedAt': DateTime.now().millisecondsSinceEpoch,
   });
@@ -64,6 +67,7 @@ class PlaybackSnapshot {
         playing: json['playing'] == true,
         localOnly: json['localOnly'] == true,
         allowOnlineFallback: json['allowOnlineFallback'] == true,
+        fullscreen: json['fullscreen'] == true,
         mediaId: json['mediaId'] as String?,
       );
     } catch (_) {
@@ -74,6 +78,7 @@ class PlaybackSnapshot {
 
 class PlaybackContinuity {
   static const _channel = MethodChannel('duanju/playback');
+  static final windowChanges = ChangeNotifier();
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
@@ -83,7 +88,10 @@ class PlaybackContinuity {
       listener == null
           ? null
           : (call) async {
-              if (call.method == 'windowChanged') await listener();
+              if (call.method == 'windowChanged') {
+                await listener();
+                windowChanges.notifyListeners();
+              }
               return null;
             },
     );
@@ -109,10 +117,16 @@ class PlaybackContinuity {
     } catch (_) {}
   }
 
-  static Future<void> clear(String owner) async {
+  static Future<void> clear(
+    String owner, {
+    bool preserveForRestart = false,
+  }) async {
     if (!_supported) return;
     try {
-      await _channel.invokeMethod<void>('clear', {'owner': owner});
+      await _channel.invokeMethod<void>('clear', {
+        'owner': owner,
+        'preserveForRestart': preserveForRestart,
+      });
     } catch (_) {}
   }
 
@@ -120,7 +134,10 @@ class PlaybackContinuity {
     if (!_supported) return null;
     try {
       final value = await _channel.invokeMethod<String>('takeRestore');
-      return value == null ? null : PlaybackSnapshot.decode(value);
+      if (value == null) return null;
+      final snapshot = PlaybackSnapshot.decode(value);
+      if (snapshot == null) await discardRestore();
+      return snapshot;
     } catch (_) {
       return null;
     }

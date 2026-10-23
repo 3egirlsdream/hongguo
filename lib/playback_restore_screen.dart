@@ -97,6 +97,7 @@ class _PlaybackRestoreScreenState extends State<PlaybackRestoreScreen> {
             initialIndex: index,
             initialPosition: snapshot.position,
             initialPlayWhenReady: snapshot.playing,
+            initialFullscreen: snapshot.fullscreen,
             localOnly: snapshot.localOnly,
             allowOnlineFallback: snapshot.allowOnlineFallback,
             mediaId: snapshot.mediaId,

@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,10 +41,11 @@ type hgOfficialLibrary struct {
 	LastSync  time.Time                  `json:"lastSync"`
 }
 type hgLoginAttempt struct {
-	Phone   string
-	Code    string
-	Data    map[string]any
-	Expires time.Time
+	Phone    string
+	Code     string
+	MFA      *hgAccountMFA
+	Verified bool
+	Expires  time.Time
 }
 type hgAccountInput struct {
 	Refresh         bool            `json:"refresh"`
@@ -72,6 +72,7 @@ type hgOfficialAccount struct {
 	cancel     context.CancelFunc
 	retry      time.Time
 	busy       bool
+	loginError string
 	syncError  string
 	library    hgOfficialLibrary
 }
@@ -178,6 +179,10 @@ func (a *hgOfficialAccount) status() map[string]any {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.attempt != nil && !time.Now().Before(a.attempt.Expires) {
+		a.loginError = "本次登录已超时，请在此重新获取验证码"
+		if a.attempt.MFA != nil {
+			a.loginError = "本次短信验证已过期，请在此重新获取验证码"
+		}
 		a.generation++
 		if a.cancel != nil {
 			a.cancel()
@@ -187,23 +192,20 @@ func (a *hgOfficialAccount) status() map[string]any {
 	phase := "phone"
 	if a.attempt != nil && time.Now().Before(a.attempt.Expires) {
 		phase = "code"
-		if a.attempt.Data != nil {
+		if a.attempt.MFA != nil {
 			phase = "mfa"
 		}
 	}
 	if a.disk.Profile != nil {
 		phase = "loggedIn"
 	}
-	result := map[string]any{"loggedIn": a.disk.Profile != nil, "profile": a.disk.Profile, "phase": phase, "busy": a.busy, "retryAfter": max(0, int(math.Ceil(time.Until(a.retry).Seconds()))), "pending": len(a.library.Pending), "lastSync": a.library.LastSync, "syncError": a.syncError}
+	result := map[string]any{"loggedIn": a.disk.Profile != nil, "profile": a.disk.Profile, "phase": phase, "busy": a.busy, "retryAfter": max(0, int(math.Ceil(time.Until(a.retry).Seconds()))), "pending": len(a.library.Pending), "lastSync": a.library.LastSync, "syncError": a.syncError, "loginError": a.loginError}
 	if phase == "mfa" {
-		ways := anyList(a.attempt.Data["verify_ways"])
-		for _, v := range ways {
-			row := nestedMap(v)
-			if mapString(row, "channel_mobile") != "" && mapString(row, "sms_content") != "" {
-				result["smsNumber"], result["smsContent"] = mapString(row, "channel_mobile"), mapString(row, "sms_content")
-				result["expiresAt"] = a.attempt.Expires
-				break
-			}
+		result["smsNumber"], result["smsContent"] = a.attempt.MFA.Number, a.attempt.MFA.Content
+		result["expiresAt"] = a.attempt.Expires
+		result["verificationState"] = "waiting"
+		if a.attempt.Verified {
+			result["verificationState"] = "verified"
 		}
 	}
 	return result
@@ -229,6 +231,7 @@ func (a *hgOfficialAccount) cancelLogin(logout bool) error {
 		a.cancel()
 	}
 	a.attempt = nil
+	a.loginError = ""
 	return nil
 }
 func (a *hgOfficialAccount) begin(ctx context.Context) (context.Context, *hgAccountHTTP, uint64, func(), error) {
@@ -282,6 +285,7 @@ func (a *hgOfficialAccount) sendCode(ctx context.Context, phone string) error {
 		a.mu.Unlock()
 		return errors.New("请先退出账号，或等待验证码倒计时结束")
 	}
+	a.loginError = ""
 	a.mu.Unlock()
 	if e = c.register(ctx); e != nil {
 		return e
@@ -297,7 +301,7 @@ func (a *hgOfficialAccount) sendCode(ctx context.Context, phone string) error {
 	a.retry = time.Now().Add(time.Minute)
 	a.attempt = &hgLoginAttempt{Phone: phone, Expires: time.Now().Add(10 * time.Minute)}
 	a.mu.Unlock()
-	payload, e := c.passport(ctx, "/passport/mobile/send_code/v1/", phone, "", "")
+	payload, e := c.passport(ctx, "/passport/mobile/send_code/v1/", phone, "", nil)
 	if e != nil {
 		var he *hgAccountHTTPError
 		if errors.As(e, &he) {
@@ -328,7 +332,7 @@ func (a *hgOfficialAccount) sendCode(ctx context.Context, phone string) error {
 	}
 	return a.persistClient(ctx, c, g)
 }
-func (a *hgOfficialAccount) login(ctx context.Context, code string, verify bool) error {
+func (a *hgOfficialAccount) login(ctx context.Context, code string, verify bool) (err error) {
 	if !verify && !hgCode.MatchString(code) {
 		return errors.New("请输入 4 至 8 位短信验证码")
 	}
@@ -337,68 +341,83 @@ func (a *hgOfficialAccount) login(ctx context.Context, code string, verify bool)
 		return e
 	}
 	defer finish()
+	defer func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		if err != nil && g == a.generation && a.disk.Profile == nil {
+			a.loginError = publicError(err).Error()
+		}
+	}()
 	a.mu.Lock()
 	if a.disk.Profile != nil || a.attempt == nil || !time.Now().Before(a.attempt.Expires) {
 		a.mu.Unlock()
 		return errors.New("请重新获取验证码")
 	}
 	attempt := *a.attempt
+	a.loginError = ""
 	a.mu.Unlock()
 	var payload map[string]any
 	if verify {
-		if attempt.Data == nil {
+		if attempt.MFA == nil {
 			return errors.New("当前没有待完成的短信验证")
 		}
-		d := attempt.Data
-		biz, _ := json.Marshal(map[string]string{"passport_mfa_retry_tag": "1", "sms_code_key": mapString(d, "sms_code_key")})
-		f := url.Values{"encrypt_uid": {mapString(d, "encrypt_uid")}, "verify_ticket": {""}, "verify_scene": {"sms_login"}, "verify_reason": {"ato"}, "copywriting_key": {"sms_login"}, "ies_safety_diversion_tag": {"mfa"}, "new_verify_flow": {""}, "new_authn_sdk_version": {"1.1.31"}, "new_authn_sdk_verify_reason": {"ato"}, "new_authn_sdk_verify_scene": {"sms_login"}, "request_tag_from": {"h5"}, "biz_params": {string(biz)}, "new_authn_sdk_log_id": {mapString(nestedMap(d, "event_params"), "log_id")}}
-		payload, e = c.request(ctx, "/passport/upsms/verify/", http.MethodPost, nil, []byte(f.Encode()), "application/x-www-form-urlencoded; charset=UTF-8", false)
-		if e != nil {
-			return e
+		if !hgCode.MatchString(attempt.Code) {
+			return errors.New("本次验证码已不可用，请在此重新获取验证码")
 		}
-		if firstNonEmpty(mapString(nestedMap(payload, "data"), "error_code"), mapString(payload, "error_code")) == "1045" {
-			return nil
+		if !attempt.Verified {
+			payload, e = c.verifyMFA(ctx, attempt.MFA)
+			if e != nil {
+				return fmt.Errorf("检查短信验证失败：%w；可在当前页面重试", e)
+			}
+			attempt.Verified, e = hgUpSMSVerified(payload)
+			if saveErr := a.persistLoginAttempt(ctx, c, g, attempt); saveErr != nil {
+				return saveErr
+			}
+			if e != nil {
+				if hgVerificationExpired(payload) {
+					return a.rejectExpiredLogin(ctx, g, payload)
+				}
+				return e
+			}
+			if !attempt.Verified {
+				return nil
+			}
 		}
-		if !hgPassportSuccess(payload) {
-			return errors.New("红果短信验证尚未完成或已失效")
-		}
-		ticket := mapString(nestedMap(payload, "data"), "ticket", "verify_ticket")
-		if ticket == "" {
-			return errors.New("红果验证未返回登录票据")
-		}
-		payload, e = c.passport(ctx, "/passport/mobile/sms_login/", attempt.Phone, attempt.Code, ticket)
+		payload, e = c.passport(ctx, "/passport/mobile/sms_login/", attempt.Phone, attempt.Code, attempt.MFA)
 	} else {
-		payload, e = c.passport(ctx, "/passport/mobile/sms_login/", attempt.Phone, code, "")
+		payload, e = c.passport(ctx, "/passport/mobile/sms_login/", attempt.Phone, code, nil)
 	}
 	if e != nil {
-		return e
+		return fmt.Errorf("完成登录失败：%w；可在当前页面重试", e)
 	}
 	data := nestedMap(payload, "data")
 	if !hgPassportSuccess(payload) {
-		upSMS := false
-		for _, v := range anyList(data["verify_ways"]) {
-			way := nestedMap(v)
-			if mapString(way, "channel_mobile") != "" && mapString(way, "sms_content") != "" {
-				upSMS = true
-				break
-			}
-		}
-		if mapString(data, "encrypt_uid") != "" && mapString(data, "sms_code_key") != "" && upSMS {
+		if mfa := hgParseAccountMFA(data); mfa != nil {
 			if !verify {
 				attempt.Code = code
 			}
-			attempt.Data = data
-			attempt.Expires = time.Now().Add(5 * time.Minute)
-			a.mu.Lock()
-			if g != a.generation || ctx.Err() != nil {
-				a.mu.Unlock()
-				return errors.New("登录已取消")
+			if attempt.MFA == nil || attempt.MFA.EncryptUID != mfa.EncryptUID || attempt.MFA.BizParams["sms_code_key"] != mfa.BizParams["sms_code_key"] {
+				attempt.Expires = time.Now().Add(5 * time.Minute)
 			}
-			a.attempt = &attempt
-			a.mu.Unlock()
-			return a.persistClient(ctx, c, g)
+			attempt.MFA, attempt.Verified = mfa, false
+			if e = a.persistLoginAttempt(ctx, c, g, attempt); e != nil {
+				return e
+			}
+			if verify {
+				return hgPassportFailure(payload, "红果要求再次短信验证，请按当前显示的号码和内容发送后继续检查")
+			}
+			return nil
 		}
-		return errors.New("红果登录未成功，请检查验证码；如需图形验证，请在官方 App 完成后重试")
+		if e = a.persistLoginAttempt(ctx, c, g, attempt); e != nil {
+			return e
+		}
+		if hgVerificationExpired(payload) {
+			return a.rejectExpiredLogin(ctx, g, payload)
+		}
+		if verify {
+			return hgPassportFailure(payload, "短信验证已通过，但登录未完成，请在当前页面重试；如需图形验证，请先在官方 App 完成")
+		}
+		return hgPassportFailure(payload, "红果登录未成功，请检查验证码；如需图形验证，请先在官方 App 完成")
 	}
 	uid, numeric := mapString(data, "user_id_str"), mapString(data, "user_id")
 	if uid == "" {
@@ -427,6 +446,7 @@ func (a *hgOfficialAccount) login(ctx context.Context, code string, verify bool)
 	a.disk = disk
 	a.attempt = nil
 	a.syncError = ""
+	a.loginError = ""
 	return nil
 }
 func (a *hgOfficialAccount) requireOwner(uid string) error {

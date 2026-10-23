@@ -33,6 +33,7 @@ class PlayerControls extends StatefulWidget {
     this.danmakuStatus = '',
     this.swipeEnabled = false,
     this.panelOpen = false,
+    this.compact = false,
     this.onSeek,
     this.onDanmaku,
     this.onRetryDanmaku,
@@ -63,6 +64,7 @@ class PlayerControls extends StatefulWidget {
   final String danmakuStatus;
   final bool swipeEnabled;
   final bool panelOpen;
+  final bool compact;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
@@ -291,7 +293,11 @@ class _PlayerControlsState extends State<PlayerControls> {
                               if (!state.buffering &&
                                   widget.enabled &&
                                   constraints.maxHeight >=
-                                      (widget.swipeEnabled ? 168 : 220))
+                                      (widget.compact
+                                          ? 260
+                                          : widget.swipeEnabled
+                                          ? 168
+                                          : 220))
                                 _centerPlayback(state.playing, showSkip: true),
                               _sideDanmakuControl(),
                               _bottomControls(
@@ -403,7 +409,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   );
 
   Widget _sideDanmakuControl() {
-    if (!widget.showDanmaku) return const SizedBox.shrink();
+    if (!widget.showDanmaku || widget.compact) return const SizedBox.shrink();
     return Align(
       alignment: Alignment.centerRight,
       child: Padding(
@@ -459,6 +465,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   double _topChromeInset() {
+    if (widget.compact) return 4;
     if (widget.fullscreen) {
       final top = MediaQuery.paddingOf(context).top;
       if (top <= 0) return 16;
@@ -471,6 +478,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   double _bottomChromeInset() {
+    if (widget.compact) return 4;
     if (widget.fullscreen) {
       return (MediaQuery.viewPaddingOf(context).bottom + 24).clamp(64.0, 104.0);
     }
@@ -785,6 +793,7 @@ class _PlayerControlsState extends State<PlayerControls> {
 
   Widget _mobileControlRow({required bool fullscreen}) {
     final tools = [
+      if (widget.compact && widget.showDanmaku) _danmakuTool(),
       _toolText(
         key: const ValueKey('player-speed'),
         tooltip: '倍速',
@@ -840,6 +849,27 @@ class _PlayerControlsState extends State<PlayerControls> {
         ),
       ),
     ];
+    if (widget.compact) {
+      return Row(
+        children: [
+          _toolIcon(
+            key: const ValueKey('cover-playback-toggle'),
+            tooltip: widget.player.state.playing ? '暂停播放' : '开始播放',
+            icon: widget.player.state.playing
+                ? Icons.pause_rounded
+                : Icons.play_arrow_rounded,
+            onPressed: widget.enabled ? widget.onTogglePlayback : null,
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(children: tools.take(tools.length - 1).toList()),
+            ),
+          ),
+          tools.last,
+        ],
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 0),
       child: _clusteredToolRow(tools),

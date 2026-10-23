@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'dart:ui' show DisplayFeature;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -20,7 +21,6 @@ import 'media_library.dart';
 import 'package_smoke.dart';
 import 'lan_controller.dart';
 import 'player_screen.dart';
-import 'cover_screen_viewport.dart';
 import 'playback_continuity.dart';
 import 'playback_restore_screen.dart';
 import 'theme_appearance.dart';
@@ -29,7 +29,7 @@ import 'diary_service.dart';
 
 Future<void> main(List<String> arguments) async {
   WidgetsFlutterBinding.ensureInitialized();
-  DiaryService.add('[App] 应用启动，版本: 0.2.77+84, 平台: ${Platform.operatingSystem}');
+  DiaryService.add('[App] 应用启动，版本: 0.2.84+91, 平台: ${Platform.operatingSystem}');
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.dark));
@@ -115,8 +115,7 @@ class _AppBootstrapState extends State<AppBootstrap>
         (device.television == detected.television &&
             device.version == detected.version &&
             device.flipDevice == detected.flipDevice &&
-            device.pictureInPicture == detected.pictureInPicture &&
-            device.innerSize == detected.innerSize)) {
+            device.pictureInPicture == detected.pictureInPicture)) {
       return;
     }
     setState(() => device = detected);
@@ -253,7 +252,6 @@ class _AppBootstrapState extends State<AppBootstrap>
     version: device.version,
     flipDevice: device.flipDevice,
     pictureInPicture: device.pictureInPicture,
-    innerSize: device.innerSize,
     navigatorKey: navigator,
   );
 }
@@ -270,7 +268,6 @@ class DuanjuApp extends StatelessWidget {
     this.navigatorKey,
     this.flipDevice = false,
     this.pictureInPicture = false,
-    this.innerSize = const Size(393, 852),
   });
   final AppRepository repository;
   final LocalStore? store;
@@ -279,7 +276,6 @@ class DuanjuApp extends StatelessWidget {
   final bool television;
   final bool flipDevice;
   final bool pictureInPicture;
-  final Size innerSize;
   final String version;
   final GlobalKey<NavigatorState>? navigatorKey;
 
@@ -318,6 +314,24 @@ class DuanjuApp extends StatelessWidget {
       data: media.copyWith(
         size: size / scale,
         devicePixelRatio: media.devicePixelRatio * scale,
+        padding: media.padding / scale,
+        viewPadding: media.viewPadding / scale,
+        viewInsets: media.viewInsets / scale,
+        systemGestureInsets: media.systemGestureInsets / scale,
+        displayFeatures: media.displayFeatures
+            .map(
+              (feature) => DisplayFeature(
+                bounds: Rect.fromLTRB(
+                  feature.bounds.left / scale,
+                  feature.bounds.top / scale,
+                  feature.bounds.right / scale,
+                  feature.bounds.bottom / scale,
+                ),
+                type: feature.type,
+                state: feature.state,
+              ),
+            )
+            .toList(),
       ),
       child: FittedBox(
         fit: BoxFit.contain,
@@ -330,106 +344,124 @@ class DuanjuApp extends StatelessWidget {
     );
   }
 
-  Widget _application() => MaterialApp(
-    navigatorKey: navigatorKey,
-    title: appName,
-    debugShowCheckedModeBanner: false,
-    locale: const Locale('zh', 'CN'),
-    supportedLocales: const [Locale('zh', 'CN')],
-    localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    theme: _themed(AppTheme.light, _appearance),
-    darkTheme: _themed(AppTheme.dark, _appearance),
-    themeMode: AppTheme.mode(store?.themeMode ?? 'system'),
-    builder: (context, child) {
-      final mode = store?.displayMode ?? 'auto';
-      final tv = mode == 'television' || mode == 'auto' && television;
-      final theme = Theme.of(context);
-      final window = MediaQuery.sizeOf(context);
-      final coverWindow =
-          flipDevice &&
-          !pictureInPicture &&
-          !tv &&
-          window.width < 600 &&
-          window.height < 600;
-      final content = AnnotatedRegion<SystemUiOverlayStyle>(
-        value: AppTheme.systemBars(theme.brightness),
-        child: ColoredBox(
-          color: theme.scaffoldBackgroundColor,
-          child: AppOrientationScope(
-            television: tv,
-            coverWindow: coverWindow,
-            child: AppLayout(
+  Widget _application() {
+    final navigationKey =
+        navigatorKey ?? GlobalObjectKey<NavigatorState>(repository);
+    return MaterialApp(
+      navigatorKey: navigationKey,
+      title: appName,
+      debugShowCheckedModeBanner: false,
+      locale: const Locale('zh', 'CN'),
+      supportedLocales: const [Locale('zh', 'CN')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      theme: _themed(AppTheme.light, _appearance),
+      darkTheme: _themed(AppTheme.dark, _appearance),
+      themeMode: AppTheme.mode(store?.themeMode ?? 'system'),
+      builder: (context, child) {
+        final mode = store?.displayMode ?? 'auto';
+        final tv = mode == 'television' || mode == 'auto' && television;
+        final theme = Theme.of(context);
+        final window = MediaQuery.sizeOf(context);
+        final coverWindow =
+            flipDevice &&
+            !pictureInPicture &&
+            !tv &&
+            window.width < 600 &&
+            window.height < 600;
+        final content = AnnotatedRegion<SystemUiOverlayStyle>(
+          value: AppTheme.systemBars(theme.brightness),
+          child: ColoredBox(
+            color: theme.scaffoldBackgroundColor,
+            child: AppOrientationScope(
               television: tv,
-              version: version,
-              child: Theme(
-                data: tv ? televisionTheme(theme) : theme,
-                child: Shortcuts(
-                  shortcuts: const {
-                    SingleActivator(
-                      LogicalKeyboardKey.select,
-                      includeRepeats: false,
-                    ): ActivateIntent(),
-                    SingleActivator(
-                      LogicalKeyboardKey.gameButtonA,
-                      includeRepeats: false,
-                    ): ActivateIntent(),
-                    SingleActivator(LogicalKeyboardKey.goBack): DismissIntent(),
-                  },
-                  child: FocusTraversalGroup(child: child!),
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-      return CoverScreenViewport(
-        enabled: coverWindow,
-        innerSize: innerSize,
-        child: Builder(
-          builder: (context) => _scaled(content, _appearance.scale, context),
-        ),
-      );
-    },
-    home: store != null
-        ? store!.locked
-              ? ProfilesScreen(store: store!, locked: true)
-              : HomeScreen(
-                  key: ValueKey(
-                    'profile-${store!.profile.id}-${store!.profileEpoch}',
-                  ),
-                  repository: repository,
-                  store: store!,
-                )
-        : Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.play_circle_fill_rounded,
-                      color: Color(0xFFFF765F),
-                      size: 72,
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      bootstrapError ?? '正在打开$appName',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 18),
-                    ),
-                    const SizedBox(height: 24),
-                    if (bootstrapError == null)
-                      const CircularProgressIndicator()
-                    else
-                      FilledButton(
-                        onPressed: onRetry,
-                        child: const Text('重新打开'),
+              coverWindow: coverWindow,
+              child: AppLayout(
+                television: tv,
+                coverWindow: coverWindow,
+                version: version,
+                child: Theme(
+                  data: tv ? televisionTheme(theme) : theme,
+                  child: CallbackShortcuts(
+                    bindings: {
+                      const SingleActivator(
+                        LogicalKeyboardKey.goBack,
+                        includeRepeats: false,
+                      ): () =>
+                          navigationKey.currentState?.maybePop(),
+                      const SingleActivator(
+                        LogicalKeyboardKey.escape,
+                        includeRepeats: false,
+                      ): () =>
+                          navigationKey.currentState?.maybePop(),
+                    },
+                    child: Shortcuts(
+                      shortcuts: const {
+                        SingleActivator(
+                          LogicalKeyboardKey.select,
+                          includeRepeats: false,
+                        ): ActivateIntent(),
+                        SingleActivator(
+                          LogicalKeyboardKey.gameButtonA,
+                          includeRepeats: false,
+                        ): ActivateIntent(),
+                      },
+                      child: Builder(
+                        builder: (context) => _scaled(
+                          FocusTraversalGroup(child: child!),
+                          _appearance.scale,
+                          context,
+                        ),
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
-  );
+        );
+        return content;
+      },
+      home: store != null
+          ? store!.locked
+                ? ProfilesScreen(store: store!, locked: true)
+                : HomeScreen(
+                    key: ValueKey(
+                      'profile-${store!.profile.id}-${store!.profileEpoch}',
+                    ),
+                    repository: repository,
+                    store: store!,
+                  )
+          : Scaffold(
+              body: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: Color(0xFFFF765F),
+                        size: 72,
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        bootstrapError ?? '正在打开$appName',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 18),
+                      ),
+                      const SizedBox(height: 24),
+                      if (bootstrapError == null)
+                        const CircularProgressIndicator()
+                      else
+                        FilledButton(
+                          onPressed: onRetry,
+                          child: const Text('重新打开'),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
 }

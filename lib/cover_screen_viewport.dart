@@ -1,65 +1,67 @@
-import 'dart:math' as math;
+import 'dart:ui' show DisplayFeature;
 
 import 'package:flutter/material.dart';
 
 class CoverScreenViewport extends StatelessWidget {
   const CoverScreenViewport({
     super.key,
-    required this.enabled,
-    required this.innerSize,
+    required this.quarterTurns,
     required this.child,
   });
 
-  final bool enabled;
-  final Size innerSize;
+  final int quarterTurns;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: Theme.of(context).scaffoldBackgroundColor,
-      child: SafeArea(
-        top: enabled,
-        bottom: enabled,
-        left: enabled,
-        right: enabled,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final media = MediaQuery.of(context);
-            final viewport = enabled ? innerSize : constraints.biggest;
-            final scale = math.min(
-              constraints.maxWidth / viewport.width,
-              constraints.maxHeight / viewport.height,
-            );
-            return Center(
-              child: FittedBox(
-                fit: BoxFit.contain,
-                child: SizedBox(
-                  width: viewport.width,
-                  height: viewport.height,
-                  child: MediaQuery(
-                    data: !enabled
-                        ? media
-                        : media.copyWith(
-                            size: viewport,
-                            devicePixelRatio: media.devicePixelRatio * scale,
-                            padding: EdgeInsets.zero,
-                            viewPadding: EdgeInsets.zero,
-                            viewInsets: EdgeInsets.fromLTRB(
-                              media.viewInsets.left / scale,
-                              media.viewInsets.top / scale,
-                              media.viewInsets.right / scale,
-                              media.viewInsets.bottom / scale,
-                            ),
-                          ),
-                    child: child,
-                  ),
-                ),
+    final media = MediaQuery.of(context);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var size = constraints.biggest;
+        var padding = media.padding;
+        var viewPadding = media.viewPadding;
+        var viewInsets = media.viewInsets;
+        var systemGestureInsets = media.systemGestureInsets;
+        var features = media.displayFeatures;
+        for (var turn = 0; turn < quarterTurns % 4; turn++) {
+          final width = size.width;
+          features = features.map((feature) {
+            final bounds = feature.bounds;
+            return DisplayFeature(
+              bounds: Rect.fromLTRB(
+                bounds.top,
+                width - bounds.right,
+                bounds.bottom,
+                width - bounds.left,
               ),
+              type: feature.type,
+              state: feature.state,
             );
-          },
-        ),
-      ),
+          }).toList();
+          padding = _rotateInsets(padding);
+          viewPadding = _rotateInsets(viewPadding);
+          viewInsets = _rotateInsets(viewInsets);
+          systemGestureInsets = _rotateInsets(systemGestureInsets);
+          size = Size(size.height, size.width);
+        }
+        return RotatedBox(
+          quarterTurns: quarterTurns,
+          child: MediaQuery(
+            data: media.copyWith(
+              size: size,
+              padding: padding,
+              viewPadding: viewPadding,
+              viewInsets: viewInsets,
+              systemGestureInsets: systemGestureInsets,
+              displayFeatures: features,
+            ),
+            child: child,
+          ),
+        );
+      },
     );
   }
+
+  static EdgeInsets _rotateInsets(EdgeInsets insets) =>
+      EdgeInsets.fromLTRB(insets.top, insets.right, insets.bottom, insets.left);
 }

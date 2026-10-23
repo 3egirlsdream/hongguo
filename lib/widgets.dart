@@ -16,9 +16,8 @@ Future<void> saveUserChange(
     await action();
   } catch (_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('未能保存，请检查存储空间和权限后重试。')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('未能保存，请检查存储空间和权限后重试。')));
     }
   }
 }
@@ -93,10 +92,14 @@ class DramaCover extends StatelessWidget {
     required this.drama,
     required this.repository,
     this.radius = 14,
+    this.showOverlay = true,
+    this.fit = BoxFit.cover,
   });
   final Drama drama;
   final AppRepository repository;
   final double radius;
+  final bool showOverlay;
+  final BoxFit fit;
   static const imagesDisabled = bool.fromEnvironment('DISABLE_REMOTE_IMAGES');
 
   @override
@@ -130,24 +133,26 @@ class DramaCover extends StatelessWidget {
               drama: drama,
               repository: repository,
               placeholder: placeholder,
+              fit: fit,
             ),
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.center,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withValues(alpha: .78),
-                    ],
+          if (showOverlay)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.center,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: .78),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
-          if (drama.episodes > 0)
+          if (showOverlay && drama.episodes > 0)
             Positioned(
               left: 9,
               bottom: 9,
@@ -156,7 +161,7 @@ class DramaCover extends StatelessWidget {
                 style: const TextStyle(color: Colors.white, fontSize: 12),
               ),
             ),
-          if (drama.vip)
+          if (showOverlay && drama.vip)
             Positioned(
               left: 8,
               top: 8,
@@ -188,10 +193,12 @@ class CachedCoverImage extends StatefulWidget {
     required this.drama,
     required this.repository,
     required this.placeholder,
+    this.fit = BoxFit.cover,
   });
   final Drama drama;
   final AppRepository repository;
   final Widget placeholder;
+  final BoxFit fit;
   @override
   State<CachedCoverImage> createState() => _CachedCoverImageState();
 }
@@ -310,7 +317,7 @@ class _CachedCoverImageState extends State<CachedCoverImage> {
       }
       return Image.file(
         File(snapshot.data!),
-        fit: BoxFit.cover,
+        fit: widget.fit,
         cacheWidth: 440,
         excludeFromSemantics: true,
         errorBuilder: (_, error, stack) => _failed(snapshot.data),
@@ -347,15 +354,13 @@ class DramaTile extends StatelessWidget {
   final VoidCallback? onLongPress;
 
   static double titleHeight(BuildContext context) =>
-      MediaQuery.textScalerOf(
-        context,
-      ).scale(AppLayout.isTelevision(context) ? 17 : 14) *
+      MediaQuery.textScalerOf(context)
+          .scale(AppLayout.isTelevision(context) ? 17 : 14) *
       2.6;
 
   static double subtitleHeight(BuildContext context) =>
-      MediaQuery.textScalerOf(
-        context,
-      ).scale(AppLayout.isTelevision(context) ? 14 : 12) *
+      MediaQuery.textScalerOf(context)
+          .scale(AppLayout.isTelevision(context) ? 14 : 12) *
       1.3;
 
   static double extentFor(BuildContext context, double width) =>

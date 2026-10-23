@@ -277,6 +277,11 @@ class NativeRepository extends AppRepository {
       final previous = accountStatus.value;
       if (previous['loggedIn'] != result['loggedIn'] ||
           previous['phase'] != result['phase'] ||
+          previous['verificationState'] != result['verificationState'] ||
+          previous['smsNumber'] != result['smsNumber'] ||
+          previous['smsContent'] != result['smsContent'] ||
+          previous['expiresAt'] != result['expiresAt'] ||
+          previous['loginError'] != result['loginError'] ||
           !mapEquals(previous['profile'] as Map?, result['profile'] as Map?)) {
         accountStatus.value = Map<String, dynamic>.unmodifiable(result);
       }

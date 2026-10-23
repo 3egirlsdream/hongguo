@@ -21,11 +21,13 @@ class CatalogManagementScreen extends StatefulWidget {
     required this.repository,
     required this.store,
     this.drama,
+    this.updateOnOpen = false,
   });
 
   final AppRepository repository;
   final LocalStore store;
   final Drama? drama;
+  final bool updateOnOpen;
 
   @override
   State<CatalogManagementScreen> createState() =>
@@ -44,7 +46,7 @@ class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_refresh());
+    unawaited(_initialize());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       _ticks++;
       if (_status?.retryAt != null) {
@@ -54,6 +56,18 @@ class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
         unawaited(_refresh());
       }
     });
+  }
+
+  Future<void> _initialize() async {
+    final epoch = widget.store.profileEpoch;
+    await _refresh();
+    if (mounted &&
+        widget.updateOnOpen &&
+        !widget.store.locked &&
+        widget.store.profileEpoch == epoch &&
+        _status?.running != true) {
+      await _run('update');
+    }
   }
 
   @override

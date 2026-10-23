@@ -231,7 +231,7 @@ func hgXor(s string) string {
 	}
 	return hex.EncodeToString(b)
 }
-func (c *hgAccountHTTP) passport(ctx context.Context, path, phone, code, ticket string) (map[string]any, error) {
+func (c *hgAccountHTTP) passport(ctx context.Context, path, phone, code string, mfa *hgAccountMFA) (map[string]any, error) {
 	f := url.Values{"mobile": {hgXor(phone)}, "account_sdk_source": {"app"}, "passport_support_flow": {"captcha,verify"}, "mix_mode": {"1"}}
 	if code == "" {
 		f.Set("auto_read", "0")
@@ -239,9 +239,16 @@ func (c *hgAccountHTTP) passport(ctx context.Context, path, phone, code, ticket 
 		f.Set("type", hgXor("24"))
 	} else {
 		f.Set("code", hgXor(code))
-		if ticket != "" {
-			f.Set("passport_mfa_retry_tag", "1")
-			f.Set("sms_code_key", hgXor(ticket))
+		if mfa != nil {
+			for key, value := range mfa.BizParams {
+				switch key {
+				case "mobile", "code", "mix_mode", "account_sdk_source", "passport_support_flow":
+					continue
+				case "sms_code_key":
+					value = hgXor(value)
+				}
+				f.Set(key, value)
+			}
 		}
 	}
 	return c.request(ctx, path, http.MethodPost, nil, []byte(f.Encode()), "application/x-www-form-urlencoded; charset=UTF-8", false)

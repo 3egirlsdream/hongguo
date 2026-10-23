@@ -75,6 +75,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   Timer? _clock;
   Timer? _verification;
   int _verificationRun = 0;
+  bool _checkingSMS = false;
+  int _verificationChecks = 0;
+  DateTime? _verificationDeadline;
   Map<String, dynamic> _status = {};
   final List<Map<String, dynamic>> _items = [];
   List<WatchEntry> _accountHistory = const [];
@@ -114,7 +117,10 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     WidgetsBinding.instance.addObserver(this);
     _refreshStatus(loadCollections: true);
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_active && !widget.collections && !_busy && !_loading)
+      if (_active &&
+          !widget.collections &&
+          (!_busy || _checkingSMS) &&
+          !_loading)
         _refreshStatus();
     });
   }
@@ -145,6 +151,11 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         !widget.collections &&
         !_logged &&
         _status['phase'] == 'mfa') {
+      if (_checkingSMS &&
+          !_busy &&
+          _verificationDeadline?.isBefore(DateTime.now()) == true) {
+        _stopSMSChecks();
+      }
       await _checkSMS();
     }
   }
@@ -153,6 +164,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     if (!_active) return;
     final result = widget.repository.accountStatus.value;
     final previousUID = _uid;
+    final previousLoginError = _status['loginError'] as String? ?? '';
     _statusVersion++;
     setState(() {
       _status = result;
@@ -161,6 +173,13 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         _items.clear();
         _accountHistory = const [];
         _hasMore = false;
+        _error = null;
+      }
+      final loginError = result['loginError'] as String? ?? '';
+      if (loginError.isNotEmpty) {
+        _error = loginError;
+      } else if (previousLoginError.isNotEmpty &&
+          _error == previousLoginError) {
         _error = null;
       }
     });
@@ -180,7 +199,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
 
   void _accessChanged() {
     if (!_active) {
-      _verification?.cancel();
+      _stopSMSChecks();
       _clock?.cancel();
       _revision++;
       if (mounted) setState(() {});
@@ -207,7 +226,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clock?.cancel();
-    _verification?.cancel();
+    _stopSMSChecks();
     _tabs.dispose();
     _phone.dispose();
     _code.dispose();
@@ -235,6 +254,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         final wasLogged = _logged;
         final previousUID = _uid;
         final previousSync = _status['lastSync'];
+        final previousLoginError = _status['loginError'] as String? ?? '';
         setState(() {
           _status = result;
           if (previousUID != _uid) {
@@ -244,6 +264,14 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
             _error = null;
             _hasMore = false;
           }
+          final loginError = result['loginError'] as String? ?? '';
+          if (loginError.isNotEmpty) {
+            _error = loginError;
+            _message = null;
+          } else if (previousLoginError.isNotEmpty &&
+              _error == previousLoginError) {
+            _error = null;
+          }
         });
         if (_logged &&
             widget.collections &&
@@ -251,6 +279,13 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
           await _readHistory();
         if ((loadCollections || !wasLogged) && _logged && widget.collections) {
           await _load();
+        }
+        if (loadCollections &&
+            !widget.collections &&
+            !_logged &&
+            _status['phase'] == 'mfa' &&
+            (_status['loginError'] as String? ?? '').isEmpty) {
+          unawaited(_checkSMS());
         }
       }
     } catch (error) {
@@ -269,6 +304,10 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     Map<String, dynamic> input = const {},
   ]) async {
     if (!_active || _busy || _loading) return false;
+    final loginOperation = {'sendCode', 'login', 'verifySMS'}.contains(command);
+    final loginRun = _verificationRun;
+    bool current() =>
+        _active && (!loginOperation || loginRun == _verificationRun);
     setState(() {
       _busy = true;
       _error = null;
@@ -276,14 +315,14 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     });
     try {
       final result = await widget.repository.hongguoAccount(command, input);
-      if (!_active) return false;
+      if (!current()) return false;
       _statusVersion++;
       setState(() {
         if (result.containsKey('loggedIn')) _status = result;
       });
       return true;
     } catch (error) {
-      if (_active) setState(() => _error = error.toString());
+      if (current()) setState(() => _error = error.toString());
       return false;
     } finally {
       if (_active) setState(() => _busy = false);
@@ -301,36 +340,102 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   Future<void> _login() async {
     if (await _run('login', {'code': _code.text.trim()})) {
       if (_logged) {
-        _code.clear();
-        _phone.clear();
-        await _sync();
+        await _completeLogin();
+      } else if (_status['phase'] == 'mfa') {
+        await _checkSMS();
       }
     } else {
       await _refreshStatus();
     }
   }
 
+  void _stopSMSChecks() {
+    _verificationRun++;
+    _verification?.cancel();
+    _verification = null;
+    _checkingSMS = false;
+    _verificationDeadline = null;
+  }
+
+  Future<void> _completeLogin() async {
+    if (!_active || !_logged) return;
+    final owner = _uid;
+    _stopSMSChecks();
+    _code.clear();
+    _phone.clear();
+    setState(() => _message = '登录成功，正在同步观看历史');
+    await _sync();
+    if (!_active || !_logged || _uid != owner) return;
+    setState(() {
+      _message = '登录成功';
+      if (_error != null) _error = '账号已登录，资料同步暂未完成：$_error';
+    });
+  }
+
   Future<void> _checkSMS() async {
+    if (!_active || _logged || _status['phase'] != 'mfa' || _checkingSMS) {
+      return;
+    }
     _verification?.cancel();
     final run = ++_verificationRun;
     final deadline = DateTime.now().add(const Duration(seconds: 90));
+    setState(() {
+      _checkingSMS = true;
+      _verificationChecks = 0;
+      _verificationDeadline = deadline;
+      _error = null;
+      _message = null;
+    });
     Future<void> poll() async {
       if (!_active || run != _verificationRun) return;
-      if (DateTime.now().isAfter(deadline)) {
-        setState(() => _message = '本轮验证等待已结束，可再次检查或取消登录。');
+      if (_logged) {
+        await _completeLogin();
         return;
       }
-      if (_busy) {
+      if (_status['phase'] != 'mfa') {
+        setState(() {
+          _stopSMSChecks();
+          final loginError = _status['loginError'] as String? ?? '';
+          _error = loginError.isNotEmpty ? loginError : '本次短信验证已结束，请在此重新获取验证码';
+        });
+        return;
+      }
+      if (DateTime.now().isAfter(deadline)) {
+        setState(() {
+          _stopSMSChecks();
+          _error = _status['verificationState'] == 'verified'
+              ? '短信已验证，但登录暂未完成。可点击“重试完成登录”，无需退出重登。'
+              : '90 秒内未确认短信验证结果。请确认短信已发送，可点击“继续检查”，无需退出重登。';
+        });
+        return;
+      }
+      if (_busy || _loading) {
         _verification = Timer(const Duration(seconds: 3), poll);
         return;
       }
+      setState(() => _verificationChecks++);
       final okay = await _run('verifySMS');
-      if (!_active || run != _verificationRun || !okay) return;
+      if (!_active || run != _verificationRun) return;
+      if (!okay) {
+        final failure = _error;
+        await _refreshStatus();
+        if (!_active || run != _verificationRun) return;
+        if (_logged) {
+          await _completeLogin();
+          return;
+        }
+        setState(() {
+          _stopSMSChecks();
+          final loginError = _status['loginError'] as String? ?? '';
+          _error = loginError.isNotEmpty
+              ? loginError
+              : failure ?? '检查未完成，请在当前页面重试';
+          _message = null;
+        });
+        return;
+      }
       if (_logged) {
-        _code.clear();
-        _phone.clear();
-        setState(() => _message = '登录成功，正在同步观看历史');
-        await _sync();
+        await _completeLogin();
         return;
       }
       _verification = Timer(const Duration(seconds: 3), poll);
@@ -341,19 +446,24 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
 
   Future<void> _cancel() async {
     if (!_active) return;
-    _verificationRun++;
-    _verification?.cancel();
-    if (await widget.repository
-        .hongguoAccount('cancel')
-        .then((value) {
-          if (_active) setState(() => _status = value);
-          return true;
-        })
-        .catchError((Object error) {
-          if (_active) setState(() => _error = error.toString());
-          return false;
-        })) {
+    setState(() {
+      _stopSMSChecks();
+      _statusVersion++;
+      _error = null;
+      _message = null;
+    });
+    try {
+      final result = await widget.repository.hongguoAccount('cancel');
+      if (!_active) return;
+      setState(() {
+        _statusVersion++;
+        _status = result;
+        _message = _logged ? '登录成功' : '已取消登录';
+      });
       _code.clear();
+      if (_logged) _phone.clear();
+    } catch (error) {
+      if (_active) setState(() => _error = error.toString());
     }
   }
 
@@ -378,7 +488,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     if (accepted == true && await _run('logout')) {
       _revision++;
       _items.clear();
-      _verification?.cancel();
+      _stopSMSChecks();
       _code.clear();
       _tabs.index = 0;
     }
@@ -751,17 +861,50 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       );
     }
     if (phase == 'mfa') {
+      final verified = _status['verificationState'] == 'verified';
+      final remaining =
+          _verificationDeadline
+              ?.difference(DateTime.now())
+              .inSeconds
+              .clamp(0, 90) ??
+          0;
+      final feedback = _checkingSMS
+          ? verified
+                ? '短信验证已通过，正在自动完成登录…'
+                : _busy
+                ? _verificationChecks == 0
+                      ? '正在准备检查短信验证状态…'
+                      : '正在进行第 $_verificationChecks 次检查，验证通过后会自动登录…'
+                : '等待红果确认短信，3 秒后自动检查。本轮剩余 $remaining 秒。'
+          : verified
+          ? '短信验证已通过，可直接重试完成登录，无需重新发送短信。'
+          : '检查已暂停，可在本页继续检查。';
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('账号需要进一步验证'),
-          const Text('请用登录手机号向以下号码发送本次指定的短信，然后检查验证结果。'),
-          SelectableText(
-            '号码：${_status['smsNumber'] ?? ''}\n内容：${_status['smsContent'] ?? ''}',
-          ),
+          Text(verified ? '短信验证已通过' : '账号需要短信验证'),
+          if (!verified) ...[
+            const SizedBox(height: 8),
+            const Text('请用登录手机号向以下号码发送本次指定的短信。发送后返回此页，将自动检查并完成登录。'),
+            const SizedBox(height: 8),
+            SelectableText(
+              '号码：${_status['smsNumber'] ?? ''}\n内容：${_status['smsContent'] ?? ''}',
+            ),
+          ],
+          const SizedBox(height: 16),
+          Semantics(liveRegion: true, child: Text(feedback)),
+          const SizedBox(height: 12),
           FilledButton(
-            onPressed: _busy ? null : _checkSMS,
-            child: const Text('我已发送，检查验证'),
+            onPressed: _busy || _checkingSMS ? null : _checkSMS,
+            child: Text(
+              _checkingSMS
+                  ? verified
+                        ? '正在完成登录…'
+                        : '自动检查中…'
+                  : verified
+                  ? '重试完成登录'
+                  : '继续检查',
+            ),
           ),
           TextButton(onPressed: _cancel, child: const Text('取消登录')),
         ],

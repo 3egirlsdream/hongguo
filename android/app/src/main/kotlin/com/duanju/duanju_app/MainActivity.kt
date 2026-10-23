@@ -19,6 +19,7 @@ import android.graphics.Rect
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.util.Rational
+import android.util.Log
 import android.view.InputDevice
 import android.view.WindowManager
 import android.provider.Settings
@@ -34,6 +35,7 @@ class MainActivity : FlutterActivity() {
     private var playbackOwner: String? = null
     private var playbackSnapshot: String? = null
     private var restoredPlayback: String? = null
+    private var activityResumed = false
     private val continuityPreferences by lazy {
         getSharedPreferences("playback_continuity", Context.MODE_PRIVATE)
     }
@@ -41,7 +43,9 @@ class MainActivity : FlutterActivity() {
         runCatching {
             Class.forName("miui.util.MiuiMultiDisplayTypeInfo")
                 .getMethod("isFlipDevice").invoke(null) == true
-        }.getOrDefault(false)
+        }.getOrDefault(false) ||
+            (Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true) &&
+                Build.MODEL.replace(" ", "").startsWith("MIXFLIP", ignoreCase = true))
     }
 
     private fun coverWindow(): Boolean {
@@ -50,22 +54,10 @@ class MainActivity : FlutterActivity() {
             configuration.screenWidthDp in 1..599 && configuration.screenHeightDp in 1..599
     }
 
-    private fun rememberInnerWindow() {
-        if (!flipDevice || coverWindow() || isInPictureInPictureMode) return
-        val configuration = resources.configuration
-        val width = configuration.screenWidthDp
-        val height = configuration.screenHeightDp
-        if (width <= 0 || height <= 0) return
-        continuityPreferences.edit()
-            .putInt("innerWidth", width)
-            .putInt("innerHeight", height).apply()
-    }
-
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        rememberInnerWindow()
         if (coverWindow()) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        playbackChannel?.invokeMethod("windowChanged", null)
+        notifyWindowChanged("configuration")
     }
 
     @Suppress("DEPRECATION")
@@ -134,7 +126,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (savedInstanceState?.getBoolean("duanju.restorePlayback") == true) {
+        if (savedInstanceState?.getBoolean("duanju.restorePlayback") == true || flipDevice) {
             restoredPlayback = continuityPreferences.getString("snapshot", null)
             playbackSnapshot = restoredPlayback
         }
@@ -142,7 +134,9 @@ class MainActivity : FlutterActivity() {
             savedInstanceState.getBoolean("duanju.televisionMode")
         } else isTelevisionDevice()
         super.onCreate(savedInstanceState)
-        rememberInnerWindow()
+        if (restoredPlayback != null) {
+            Log.i("PlaybackContinuity", "restore available: savedState=${savedInstanceState != null}")
+        }
         if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
@@ -151,16 +145,51 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onResume() {
+        activityResumed = true
         super.onResume()
         retainTaskInRecents()
         if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        notifyWindowChanged("resume")
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        super.onPause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        retainTaskInRecents()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && activityResumed) notifyWindowChanged("focus")
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         retainTaskInRecents()
+        notifyWindowChanged("launch")
+    }
+
+    private fun notifyWindowChanged(reason: String) {
+        if (flipDevice) {
+            val configuration = resources.configuration
+            Log.i("PlaybackContinuity",
+                "$reason: task=$taskId display=${window.decorView.display?.displayId} " +
+                    "window=${configuration.screenWidthDp}x${configuration.screenHeightDp} " +
+                    "cover=${coverWindow()} pip=$isInPictureInPictureMode resumed=$activityResumed")
+        }
         playbackChannel?.invokeMethod("windowChanged", null)
+    }
+
+    private fun clearPlaybackSnapshot() {
+        playbackOwner = null
+        playbackSnapshot = null
+        restoredPlayback = null
+        continuityPreferences.edit().remove("snapshot").remove("owner").apply()
     }
 
     @Suppress("DEPRECATION")
@@ -200,22 +229,27 @@ class MainActivity : FlutterActivity() {
                             } else {
                                 playbackOwner = owner
                                 playbackSnapshot = snapshot
-                                continuityPreferences.edit().putString("snapshot", snapshot).apply()
+                                continuityPreferences.edit()
+                                    .putString("snapshot", snapshot)
+                                    .putString("owner", owner).apply()
                                 result.success(null)
                             }
                         }
                         "clear" -> {
-                            if (call.argument<String>("owner") == playbackOwner && !isChangingConfigurations) {
-                                playbackSnapshot = null
-                                restoredPlayback = null
-                                continuityPreferences.edit().remove("snapshot").apply()
+                            val owner = call.argument<String>("owner")
+                            val preserve = call.argument<Boolean>("preserveForRestart") == true
+                            if (owner != null && owner == playbackOwner &&
+                                owner == continuityPreferences.getString("owner", null) &&
+                                !isChangingConfigurations &&
+                                !(preserve && !activityResumed)) {
+                                clearPlaybackSnapshot()
                             }
                             result.success(null)
                         }
                         "discardRestore" -> {
-                            if (playbackOwner == null) {
-                                playbackSnapshot = null
-                                continuityPreferences.edit().remove("snapshot").apply()
+                            if (playbackOwner == null &&
+                                continuityPreferences.getString("snapshot", null) == playbackSnapshot) {
+                                clearPlaybackSnapshot()
                             }
                             result.success(null)
                         }
@@ -236,9 +270,7 @@ class MainActivity : FlutterActivity() {
                             result.success(mapOf(
                                 "television" to isTelevisionDevice(), "version" to version,
                                 "flipDevice" to flipDevice,
-                                "pictureInPicture" to isInPictureInPictureMode,
-                                "innerWidth" to continuityPreferences.getInt("innerWidth", 393),
-                                "innerHeight" to continuityPreferences.getInt("innerHeight", 852)
+                                "pictureInPicture" to isInPictureInPictureMode
                             ))
                         }
                         "setTelevisionMode" -> {
@@ -388,7 +420,7 @@ class MainActivity : FlutterActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         if (!isInPictureInPictureMode) retainTaskInRecents()
-        playbackChannel?.invokeMethod("windowChanged", null)
+        notifyWindowChanged("pictureInPicture")
         deviceChannel?.invokeMethod(
             "pictureInPictureChanged",
             mapOf("active" to isInPictureInPictureMode)

@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
 import 'app_layout.dart';
+import 'cover_screen_viewport.dart';
 
-class AppOrientationController {
+class AppOrientationController extends ChangeNotifier {
   AppOrientationController({required bool television})
     : _television = television;
 
@@ -15,6 +17,8 @@ class AppOrientationController {
   bool _disposed = false;
   bool? _nativeTelevision;
   Object? _playbackOwner;
+  bool _playbackFullscreen = false;
+  double _playbackAspectRatio = 1;
   List<DeviceOrientation> _playbackOrientations = DeviceOrientation.values;
   List<DeviceOrientation>? _appliedOrientations;
   Future<void> _pending = Future<void>.value();
@@ -40,10 +44,13 @@ class AppOrientationController {
   }
 
   Future<void> setTelevision(bool television) {
+    if (_disposed) return Future<void>.value();
     if (_television != television) {
       _television = television;
       _playbackOwner = null;
+      _playbackFullscreen = false;
       _playbackOrientations = DeviceOrientation.values;
+      _notifyLayout();
     }
     return _apply();
   }
@@ -53,15 +60,21 @@ class AppOrientationController {
     required bool fullscreen,
     required double aspectRatio,
   }) async {
+    if (_disposed) return;
     final previousOwner = _playbackOwner;
     final previousOrientations = _playbackOrientations;
+    final previousFullscreen = _playbackFullscreen;
+    final previousAspectRatio = _playbackAspectRatio;
     if (!_television) {
       _playbackOwner = owner;
+      _playbackFullscreen = fullscreen;
+      _playbackAspectRatio = aspectRatio;
       _playbackOrientations = orientations(
         television: false,
         fullscreen: fullscreen,
         aspectRatio: aspectRatio,
       );
+      _notifyLayout();
     }
     final requested = _playbackOrientations;
     try {
@@ -73,24 +86,50 @@ class AppOrientationController {
           identical(_playbackOrientations, requested)) {
         _playbackOwner = previousOwner;
         _playbackOrientations = previousOrientations;
+        _playbackFullscreen = previousFullscreen;
+        _playbackAspectRatio = previousAspectRatio;
+        _notifyLayout();
       }
       rethrow;
     }
   }
 
   Future<void> releasePlayback(Object owner) {
+    if (_disposed) return Future<void>.value();
     if (_television) return refresh();
     if (!identical(_playbackOwner, owner)) return Future<void>.value();
     _playbackOwner = null;
+    _playbackFullscreen = false;
     _playbackOrientations = DeviceOrientation.values;
+    _notifyLayout();
     return _apply();
   }
 
   Future<void> refresh() => _apply(force: true);
 
   Future<void> setCoverWindow(bool value) {
+    if (_disposed) return Future<void>.value();
+    final changed = _coverWindow != value;
     _coverWindow = value;
-    return _apply();
+    if (changed) _notifyLayout();
+    return _apply(force: changed);
+  }
+
+  int coverQuarterTurns(Size size) {
+    if (_television || !_coverWindow || !_playbackFullscreen) return 0;
+    final landscape = _playbackAspectRatio >= 1;
+    return landscape == (size.width > size.height) ? 0 : 1;
+  }
+
+  void _notifyLayout() {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_disposed) notifyListeners();
+      });
+    } else if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   Future<void> _apply({bool force = false}) {
@@ -128,8 +167,10 @@ class AppOrientationController {
     return next;
   }
 
+  @override
   void dispose() {
     _disposed = true;
+    super.dispose();
   }
 }
 
@@ -205,8 +246,14 @@ class _AppOrientationScopeState extends State<AppOrientationScope>
   }
 
   @override
-  Widget build(BuildContext context) =>
-      _OrientationScope(controller: _controller, child: widget.child);
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    builder: (context, child) => CoverScreenViewport(
+      quarterTurns: _controller.coverQuarterTurns(MediaQuery.sizeOf(context)),
+      child: child!,
+    ),
+    child: _OrientationScope(controller: _controller, child: widget.child),
+  );
 }
 
 class _OrientationScope extends InheritedWidget {

@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 
 export 'app_build.dart';
 
-const appVersion = '0.2.77';
+const appVersion = '0.2.84';
 
 ThemeData televisionTheme(ThemeData theme) {
   final colors = theme.colorScheme;
@@ -49,13 +49,11 @@ class AppDevice {
     this.version = appVersion,
     this.flipDevice = false,
     this.pictureInPicture = false,
-    this.innerSize = const Size(393, 852),
   });
   final bool television;
   final String version;
   final bool flipDevice;
   final bool pictureInPicture;
-  final Size innerSize;
   static const channel = MethodChannel('duanju/device');
 
   static Future<AppDevice> detect({
@@ -75,11 +73,6 @@ class AppDevice {
         television: television,
         flipDevice: data?['flipDevice'] == true,
         pictureInPicture: data?['pictureInPicture'] == true,
-        innerSize: Size(
-          (data?['innerWidth'] as num?)?.toDouble() ?? fallback.innerSize.width,
-          (data?['innerHeight'] as num?)?.toDouble() ??
-              fallback.innerSize.height,
-        ),
         version: version is String && version.isNotEmpty
             ? version
             : fallback.version,
@@ -124,14 +117,19 @@ class AppLayout extends InheritedWidget {
   const AppLayout({
     super.key,
     required this.television,
+    this.coverWindow = false,
     this.version = appVersion,
     required super.child,
   });
   final bool television;
+  final bool coverWindow;
   final String version;
 
   static bool isTelevision(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.television ??
+      false;
+  static bool isCoverWindow(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppLayout>()?.coverWindow ??
       false;
   static String versionOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.version ??
@@ -139,5 +137,7 @@ class AppLayout extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppLayout oldWidget) =>
-      television != oldWidget.television || version != oldWidget.version;
+      television != oldWidget.television ||
+      coverWindow != oldWidget.coverWindow ||
+      version != oldWidget.version;
 }
