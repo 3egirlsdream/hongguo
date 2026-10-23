@@ -28,7 +28,7 @@ abi_args = [item for abi in options.abi or [] for item in ['--abi', abi]]
 with china_mirror_environment(environment, options.cn_mirrors) as env, mirrored_pub_lockfile(root, env):
     if options.cn_mirrors:
         print('本次构建启用国内依赖镜像，保留官方 Maven 仓库备用。', flush=True)
-    subprocess.run([sys.executable, str(root / 'scripts' / 'build_native.py'), '--platform', 'android', *abi_args, *variant.arguments],
+    subprocess.run([sys.executable, str(root / 'scripts' / 'build_native.py'), *abi_args, *variant.arguments],
                    cwd=root, env=env, check=True)
     subprocess.run([flutter, 'pub', 'get'], cwd=root, env=env, check=True)
     build_args = [flutter, 'build', 'apk', '--release', '--split-per-abi', '--no-pub', '--no-tree-shake-icons', *variant.flutter_arguments]
@@ -36,5 +36,5 @@ with china_mirror_environment(environment, options.cn_mirrors) as env, mirrored_
         targets = {'arm64-v8a': 'android-arm64', 'armeabi-v7a': 'android-arm', 'x86_64': 'android-x64'}
         build_args += ['--target-platform', ','.join(targets[abi] for abi in options.abi)]
     subprocess.run(build_args, cwd=root, env=env, check=True)
-    subprocess.run([sys.executable, str(root / 'scripts' / 'package_release.py'), '--platform', 'android', *abi_args, *variant.arguments],
+    subprocess.run([sys.executable, str(root / 'scripts' / 'package_release.py'), *abi_args, *variant.arguments],
                    cwd=root, env=env, check=True)

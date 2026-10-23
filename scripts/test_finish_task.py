@@ -24,10 +24,10 @@ class TaskSnapshotTests(unittest.TestCase):
         path.write_text(content, encoding='utf-8')
 
     def test_clean_source_snapshot_needs_no_git_and_excludes_build_dependencies(self):
-        self.write(self.source / 'lib/电视.dart', '电视界面')
+        self.write(self.source / 'lib/手机.dart', '手机界面')
         self.write(self.source / 'build/app.apk', 'compiled binary')
         self.write(self.source / 'android/key.properties', 'private settings')
-        result = finish_task(self.source, self.destination, '完成电视界面')
+        result = finish_task(self.source, self.destination, '完成手机界面')
         self.assertEqual(result.files, len(REQUIRED_FILES) + 1)
         self.assertEqual(result.total_bytes, sum(
             path.stat().st_size
@@ -41,7 +41,7 @@ class TaskSnapshotTests(unittest.TestCase):
         self.assertRegex(result.archive.name, r'^真果·鉴-\d{12}(?:-\d+)?\.zip$')
         with zipfile.ZipFile(result.archive) as archive:
             names = set(archive.namelist())
-        self.assertIn('guoapp/lib/电视.dart', names)
+        self.assertIn('guoapp/lib/手机.dart', names)
         self.assertNotIn('guoapp/build/app.apk', names)
 
     def test_existing_git_metadata_is_not_modified(self):

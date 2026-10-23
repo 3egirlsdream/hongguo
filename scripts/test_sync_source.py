@@ -22,7 +22,7 @@ class SourceSyncTests(unittest.TestCase):
     def test_only_source_is_copied_and_git_is_preserved(self):
         for name in [
             'lib/pages/首页.dart', 'assets/icon.svg', 'test/fixtures/synthetic.json',
-            'native/core/provider.go', 'windows/runner/main.cpp', 'scripts/build_android.py',
+            'native/core/provider.go', 'android/app/src/main/kotlin/example/MainActivity.kt', 'scripts/build_android.py',
         ]:
             self.write(self.source / name, 'source')
         excluded = [
@@ -30,10 +30,10 @@ class SourceSyncTests(unittest.TestCase):
             'android/local.properties', 'android/key.properties', 'android/signing.jks',
             'android/gradlew', 'android/gradle/wrapper/gradle-wrapper.jar',
             'android/app/src/main/jniLibs/arm64-v8a/libduanju_core.so',
-            'native/vendor/example/dependency.go', 'native/build/core.dll',
-            'windows/runner/duanju_core.dll', 'windows/runner/duanju_core.h',
-            'windows/flutter/ephemeral/config.cmake',
-            'windows/flutter/generated_plugins.cmake',
+            'native/vendor/example/dependency.go', 'native/build/libduanju_core.so',
+            'windows/runner/main.cpp', 'ios/Runner/AppDelegate.swift',
+            'macos/Runner/MainFlutterWindow.swift', 'linux/runner/main.cc',
+            'web/index.html', 'packages/media_kit_libs_windows_video/pubspec.yaml',
             'scripts/__pycache__/script.pyc', 'scripts/.env.local', '.DS_Store',
             '.git/config', 'sdk/flutter/lib/framework.dart', 'docs/old-note.md',
         ]

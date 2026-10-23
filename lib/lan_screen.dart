@@ -8,11 +8,7 @@ import 'lan_controller.dart';
 import 'local_store.dart';
 import 'widgets.dart';
 
-IconData lanDeviceIcon(String kind) => switch (kind) {
-  'tv' => Icons.tv_rounded,
-  'computer' => Icons.computer_rounded,
-  _ => Icons.smartphone_rounded,
-};
+IconData lanDeviceIcon(String kind) => Icons.smartphone_rounded;
 
 Future<T?> _lanPanel<T>(
   BuildContext context,
@@ -72,9 +68,8 @@ Future<LanConnection?> chooseLanDevice(
 void openLanSync(BuildContext context) {
   final controller = LanController.current;
   if (controller == null) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('设备互联尚未就绪')));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('设备互联尚未就绪')));
     return;
   }
   Navigator.push(
@@ -402,9 +397,7 @@ class _LanSyncScreenState extends State<LanSyncScreen> {
                     title: const Text('本机地址与连接帮助'),
                     childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     children: [
-                      const Text(
-                        '两台设备都需开启设备互联并保持前台。发现失败时，可在另一端输入下列地址；Windows 需允许本应用通过专用网络防火墙。',
-                      ),
+                      const Text('两台设备都需开启设备互联并保持前台。发现失败时，可在另一端输入下列地址。'),
                       for (final address in link.local!.addresses)
                         ListTile(
                           title: SelectableText(address),

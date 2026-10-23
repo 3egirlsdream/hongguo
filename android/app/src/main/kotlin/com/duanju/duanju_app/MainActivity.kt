@@ -1,17 +1,12 @@
 package com.duanju.duanju_app
 
 import io.flutter.embedding.android.FlutterActivity
-import android.app.UiModeManager
 import android.app.ActivityManager
 import android.app.PictureInPictureParams
 import android.os.Build
 import android.os.Bundle
-import android.os.BatteryManager
-import android.os.PowerManager
-import android.os.SystemClock
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -20,17 +15,13 @@ import android.net.ConnectivityManager
 import android.net.Uri
 import android.util.Rational
 import android.util.Log
-import android.view.InputDevice
 import android.view.WindowManager
 import android.provider.Settings
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private var headroomReadAt = 0L
-    private var thermalHeadroom: Double? = null
     private var deviceChannel: MethodChannel? = null
-    private var televisionMode = false
     private var playbackChannel: MethodChannel? = null
     private var playbackOwner: String? = null
     private var playbackSnapshot: String? = null
@@ -60,68 +51,10 @@ class MainActivity : FlutterActivity() {
         notifyWindowChanged("configuration")
     }
 
-    @Suppress("DEPRECATION")
-    private fun isTelevisionDevice(): Boolean {
-        val configuration = resources.configuration
-        val mode = (getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager)?.currentModeType
-            ?: (configuration.uiMode and Configuration.UI_MODE_TYPE_MASK)
-        if (mode == Configuration.UI_MODE_TYPE_TELEVISION ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK_ONLY) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION) ||
-            packageManager.hasSystemFeature("amazon.hardware.fire_tv")) {
-            return true
-        }
-        if (mode == Configuration.UI_MODE_TYPE_CAR ||
-            mode == Configuration.UI_MODE_TYPE_WATCH ||
-            mode == Configuration.UI_MODE_TYPE_VR_HEADSET ||
-            configuration.touchscreen != Configuration.TOUCHSCREEN_NOTOUCH ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_SENSOR_ACCELEROMETER) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_AUTOMOTIVE) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH) ||
-            packageManager.hasSystemFeature(PackageManager.FEATURE_PC)) {
-            return false
-        }
-        val remoteNavigation = configuration.navigation == Configuration.NAVIGATION_DPAD ||
-            InputDevice.getDeviceIds().any { id ->
-                val device = InputDevice.getDevice(id)
-                device != null && !device.isVirtual && device.supportsSource(InputDevice.SOURCE_DPAD)
-            }
-        return remoteNavigation || packageManager.hasSystemFeature(PackageManager.FEATURE_LIVE_TV)
-    }
-
     override fun setRequestedOrientation(requestedOrientation: Int) {
         super.setRequestedOrientation(
-            if (televisionMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            else if (coverWindow()) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            if (coverWindow()) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             else requestedOrientation
-        )
-    }
-
-    private fun playbackPower(): Map<String, Any?> {
-        val power = getSystemService(Context.POWER_SERVICE) as? PowerManager
-        val activity = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-        val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val now = SystemClock.elapsedRealtime()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            (headroomReadAt == 0L || now - headroomReadAt >= 10000L)) {
-            headroomReadAt = now
-            thermalHeadroom = runCatching {
-                power?.getThermalHeadroom(0)?.toDouble()?.takeIf { it.isFinite() }
-            }.getOrNull()
-        }
-        val thermalStatus = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            power?.currentThermalStatus ?: PowerManager.THERMAL_STATUS_NONE
-        } else 0
-        return mapOf(
-            "batterySaver" to (power?.isPowerSaveMode ?: false),
-            "onBattery" to ((battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1) <= 0),
-            "thermalStatus" to thermalStatus,
-            "headroom" to thermalHeadroom,
-            "lowMemory" to (activity?.isLowRamDevice ?: true),
-            "gles" to (activity?.deviceConfigurationInfo?.reqGlEsVersion ?: 0)
         )
     }
 
@@ -130,14 +63,10 @@ class MainActivity : FlutterActivity() {
             restoredPlayback = continuityPreferences.getString("snapshot", null)
             playbackSnapshot = restoredPlayback
         }
-        televisionMode = if (savedInstanceState?.containsKey("duanju.televisionMode") == true) {
-            savedInstanceState.getBoolean("duanju.televisionMode")
-        } else isTelevisionDevice()
         super.onCreate(savedInstanceState)
         if (restoredPlayback != null) {
             Log.i("PlaybackContinuity", "restore available: savedState=${savedInstanceState != null}")
         }
-        if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
             window.isStatusBarContrastEnforced = false
@@ -148,7 +77,6 @@ class MainActivity : FlutterActivity() {
         activityResumed = true
         super.onResume()
         retainTaskInRecents()
-        if (televisionMode) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         notifyWindowChanged("resume")
     }
 
@@ -209,7 +137,6 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putBoolean("duanju.televisionMode", televisionMode)
         outState.putBoolean("duanju.restorePlayback", playbackSnapshot != null)
         super.onSaveInstanceState(outState)
     }
@@ -268,27 +195,11 @@ class MainActivity : FlutterActivity() {
                         "deviceInfo" -> {
                             val version = packageManager.getPackageInfo(packageName, 0).versionName
                             result.success(mapOf(
-                                "television" to isTelevisionDevice(), "version" to version,
+                                "version" to version,
                                 "flipDevice" to flipDevice,
                                 "pictureInPicture" to isInPictureInPictureMode
                             ))
                         }
-                        "setTelevisionMode" -> {
-                            val enabled = call.argument<Boolean>("enabled")
-                            if (enabled == null) {
-                                result.error("invalid_display_mode", "缺少电视模式状态", null)
-                            } else {
-                                val changed = televisionMode != enabled
-                                televisionMode = enabled
-                                if (enabled || changed) {
-                                    requestedOrientation = if (enabled) {
-                                        ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                                    } else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                }
-                                result.success(null)
-                            }
-                        }
-                        "playbackPower" -> result.success(runCatching { playbackPower() }.getOrNull())
                         "systemProxy" -> {
                             val connection = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                             val proxy = connection.defaultProxy

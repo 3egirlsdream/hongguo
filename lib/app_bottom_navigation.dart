@@ -13,6 +13,7 @@ class AppBottomNavigation extends StatelessWidget {
     this.floating = false,
     this.blurred = false,
     this.liquidGlass = false,
+    this.showSelectionDot = false,
   });
 
   final int selectedIndex;
@@ -27,11 +28,13 @@ class AppBottomNavigation extends StatelessWidget {
 
   /// 液态玻璃：更强模糊 + 渐变高光边框。
   final bool liquidGlass;
+  final bool showSelectionDot;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    if (showSelectionDot) return _buildSelectionDotBar(context);
     final glass = blurred || liquidGlass;
     final radius = floating ? 30.0 : 0.0;
 
@@ -83,8 +86,7 @@ class AppBottomNavigation extends StatelessWidget {
                                     : colors.onSurface.withValues(alpha: 0.78),
                               ),
                               child: index == selectedIndex
-                                  ? destination.selectedIcon ??
-                                        destination.icon
+                                  ? destination.selectedIcon ?? destination.icon
                                   : destination.icon,
                             ),
                           ),
@@ -212,6 +214,87 @@ class AppBottomNavigation extends StatelessWidget {
             ),
           ),
           child: bar,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectionDotBar(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(color: colors.outlineVariant, width: .7),
+          ),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Row(
+            children: [
+              for (final (index, destination) in destinations.indexed)
+                Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: index == selectedIndex,
+                    child: InkWell(
+                      key: ValueKey('bottom-nav-$index'),
+                      onTap: () => onDestinationSelected(index),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 8,
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconTheme(
+                              data: IconThemeData(
+                                size: 22,
+                                color: index == selectedIndex
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
+                              ),
+                              child: index == selectedIndex
+                                  ? destination.selectedIcon ?? destination.icon
+                                  : destination.icon,
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              destination.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                height: 1.2,
+                                fontWeight: index == selectedIndex
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                                color: index == selectedIndex
+                                    ? colors.primary
+                                    : colors.onSurfaceVariant,
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Container(
+                              width: 7,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                color: index == selectedIndex
+                                    ? colors.primary
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );

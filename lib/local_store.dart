@@ -239,11 +239,6 @@ class LocalStore extends ChangeNotifier {
     return [current, ...rest];
   }
 
-  String get displayMode {
-    final value = _configurationError == null ? _string('displayMode') : null;
-    return {'auto', 'television', 'standard'}.contains(value) ? value! : 'auto';
-  }
-
   String get themeMode {
     final value = _configurationError == null ? _string('themeMode') : null;
     return {'light', 'dark', 'system'}.contains(value) ? value! : 'system';
@@ -412,10 +407,6 @@ class LocalStore extends ChangeNotifier {
     return _setting(_key('source'), value);
   }
 
-  Future<void> setDisplayMode(String value) =>
-      {'auto', 'television', 'standard'}.contains(value)
-      ? _setting('displayMode', value)
-      : Future.value();
   Future<void> setThemeMode(String value) =>
       {'light', 'dark', 'system'}.contains(value)
       ? _setting('themeMode', value)
@@ -897,7 +888,6 @@ class LocalStore extends ChangeNotifier {
       'schema': 1,
       'app': 'zhenguojian',
       'profiles': _profiles.map((profile) => profile.toJson()).toList(),
-      'displayMode': displayMode,
       'themeMode': themeMode,
       'autoExport': autoExport,
       'exportPosters': exportPosters,
@@ -922,9 +912,10 @@ class LocalStore extends ChangeNotifier {
             ),
             'source': _string(_key('source', profile.id)) ?? '',
             'hideVip': _bool(_key('hideVip', profile.id)) ?? true,
-            'playback': jsonDecode(
-              _string(_key('playback', profile.id)) ?? '{}',
-            ),
+            'playback': PlaybackPreferences.fromJson(
+              jsonDecode(_string(_key('playback', profile.id)) ?? '{}')
+                  as Map<String, dynamic>,
+            ).toJson(),
             'downloadPreferences': jsonDecode(
               _string(_key('downloadPreferences', profile.id)) ?? '{}',
             ),
@@ -1037,10 +1028,6 @@ class LocalStore extends ChangeNotifier {
         profiles.map((profile) => profile.toJson()).toList(),
       ),
       'activeProfile': profiles.firstWhere((profile) => profile.admin).id,
-      'displayMode':
-          {'auto', 'television', 'standard'}.contains(data['displayMode'])
-          ? data['displayMode'] as String
-          : 'auto',
       'themeMode': data['themeMode'] as String? ?? themeMode,
       'autoExport': data['autoExport'] == true,
       'exportPosters': data['exportPosters'] == true,
@@ -1073,7 +1060,11 @@ class LocalStore extends ChangeNotifier {
         ),
         _key('source', profile.id): library['source'] as String,
         _key('hideVip', profile.id): library['hideVip'] as bool,
-        _key('playback', profile.id): jsonEncode(library['playback'] ?? {}),
+        _key('playback', profile.id): jsonEncode(
+          PlaybackPreferences.fromJson(
+            Map<String, dynamic>.from(library['playback'] as Map? ?? {}),
+          ).toJson(),
+        ),
         _key('downloadPreferences', profile.id): jsonEncode(
           library['downloadPreferences'] ?? {},
         ),

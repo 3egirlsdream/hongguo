@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -51,7 +50,6 @@ class SystemProxyMonitor with WidgetsBindingObserver {
   bool _reading = false;
 
   static void start(Future<void> Function(Map<String, dynamic>) update) {
-    if (!Platform.isAndroid && !Platform.isIOS) return;
     _current?._timer?.cancel();
     if (_current != null) WidgetsBinding.instance.removeObserver(_current!);
     final monitor = SystemProxyMonitor._(update);
@@ -68,9 +66,8 @@ class SystemProxyMonitor with WidgetsBindingObserver {
     if (_reading) return;
     _reading = true;
     try {
-      final result = await const MethodChannel(
-        'duanju/device',
-      ).invokeMapMethod<String, dynamic>('systemProxy');
+      final result = await const MethodChannel('duanju/device')
+          .invokeMapMethod<String, dynamic>('systemProxy');
       if (result != null) await update(result);
     } catch (_) {
     } finally {

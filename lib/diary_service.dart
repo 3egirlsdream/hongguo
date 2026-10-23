@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// 应用内「日记」日志服务 — 实时记录播放与系统事件，方便在电视与手机端快速排查问题。
+/// 应用内「日记」日志服务 — 实时记录播放与系统事件，方便在手机端快速排查问题。
 class DiaryService {
   static final List<String> _entries = <String>[];
   static const int maxEntries = 500;
@@ -47,7 +47,7 @@ class DiaryService {
     }
   }
 
-  /// 在界面上弹出交互式日记弹窗（兼容 TV 遥控器与手机触屏）
+  /// 在界面上弹出交互式日记弹窗
   static Future<void> showDiaryDialog(BuildContext context) {
     return showDialog<void>(
       context: context,
@@ -79,7 +79,10 @@ class DiaryService {
                 onPressed: () => copyToClipboard(dialogContext),
               ),
               IconButton(
-                icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+                icon: const Icon(
+                  Icons.delete_outline_rounded,
+                  color: Colors.white70,
+                ),
                 tooltip: '清空日记',
                 onPressed: () => clear(),
               ),

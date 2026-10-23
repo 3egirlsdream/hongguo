@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -108,47 +107,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  static const _displayModes = {
-    'auto': '自动识别设备',
-    'television': '电视 / 遥控器',
-    'standard': '手机 / 电脑',
-  };
-
   Future<void> _page(Widget page) =>
       Navigator.of(context)
           .push<void>(MaterialPageRoute<void>(builder: (_) => page));
-
-  Future<void> _chooseDisplayMode() async {
-    final selection = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        title: const Text('界面模式'),
-        children: [
-          RadioGroup<String>(
-            groupValue: widget.store.displayMode,
-            onChanged: (value) => Navigator.pop(dialogContext, value),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (final mode in _displayModes.entries)
-                  RadioListTile<String>(
-                    value: mode.key,
-                    autofocus: mode.key == widget.store.displayMode,
-                    title: Text(mode.value),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (selection != null && mounted) {
-      await saveUserChange(
-        context,
-        () => widget.store.setDisplayMode(selection),
-      );
-    }
-  }
 
   Future<void> _chooseCatalogView() async {
     final selection = await chooseCatalogView(
@@ -319,15 +280,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       action: () =>
                           _page(ThemeSettingsScreen(store: widget.store)),
                     ),
-                    _tile(
-                      key: const ValueKey('display-settings'),
-                      icon: Icons.devices_other_outlined,
-                      title: '界面模式',
-                      subtitle:
-                          _displayModes[widget.store.displayMode] ??
-                          _displayModes['auto']!,
-                      action: _chooseDisplayMode,
-                    ),
                   ]),
                   if (widget.store.canDownload)
                     _section('下载与存储', [
@@ -467,11 +419,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       action: () => DiaryService.showDiaryDialog(context),
                     ),
                   ]),
-                  if (Platform.isIOS)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('iOS 下载和媒体处理需要保持应用在前台；切到后台会暂停，回到前台后可继续。'),
-                    ),
                   if (_busy) const LinearProgressIndicator(),
                   if (_message != null)
                     Padding(
@@ -525,38 +472,28 @@ class _StorageScreenState extends State<StorageScreen> {
   }
 
   Future<void> _move() async {
-    String? parent;
-    if (Platform.isAndroid || Platform.isIOS) {
-      final support = await getApplicationSupportDirectory();
-      final directories = <String, String>{support.path: '应用内部存储'};
-      if (Platform.isAndroid) {
-        final external = await getExternalStorageDirectories() ?? [];
-        for (var i = 0; i < external.length; i++) {
-          directories[external[i].path] = i == 0
-              ? '设备共享存储（应用目录）'
-              : 'SD 卡 ${i + 1}（应用目录）';
-        }
-      } else {
-        final documents = await getApplicationDocumentsDirectory();
-        directories[documents.path] = '文件 App 可见目录';
-      }
-      if (!mounted) return;
-      parent = await showDialog<String>(
-        context: context,
-        builder: (context) => SimpleDialog(
-          title: const Text('选择下载位置'),
-          children: [
-            for (final entry in directories.entries)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, entry.key),
-                child: Text(entry.value),
-              ),
-          ],
-        ),
-      );
-    } else {
-      parent = await FilePicker.getDirectoryPath(dialogTitle: '选择下载保存位置');
+    final support = await getApplicationSupportDirectory();
+    final directories = <String, String>{support.path: '应用内部存储'};
+    final external = await getExternalStorageDirectories() ?? [];
+    for (var i = 0; i < external.length; i++) {
+      directories[external[i].path] = i == 0
+          ? '设备共享存储（应用目录）'
+          : 'SD 卡 ${i + 1}（应用目录）';
     }
+    if (!mounted) return;
+    final parent = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('选择下载位置'),
+        children: [
+          for (final entry in directories.entries)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, entry.key),
+              child: Text(entry.value),
+            ),
+        ],
+      ),
+    );
     if (parent == null || !mounted) return;
     final yes = await showDialog<bool>(
       context: context,

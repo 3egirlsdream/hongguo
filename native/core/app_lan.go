@@ -195,7 +195,7 @@ func nativeLANValidateConfig(config nativeLANConfig) error {
 	if strings.TrimSpace(config.Name) == "" || len(config.Name) > 240 ||
 		len(config.User) > 240 || !nativeLANID.MatchString(config.Account) ||
 		len(config.Sources) > 32 ||
-		(config.Kind != "phone" && config.Kind != "computer" && config.Kind != "tv") {
+		config.Kind != "phone" {
 		return errors.New("设备互联配置无效")
 	}
 	seen := map[string]bool{}

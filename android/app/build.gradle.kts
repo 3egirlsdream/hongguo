@@ -29,7 +29,6 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["appLabel"] = "野果"
-        manifestPlaceholders["appBanner"] = "@drawable/tv_banner"
     }
 
     signingConfigs {

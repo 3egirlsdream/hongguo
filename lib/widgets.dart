@@ -1,12 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'core_bridge.dart';
-import 'app_layout.dart';
 import 'models.dart';
-import 'remote_widgets.dart';
 
 Future<void> saveUserChange(
   BuildContext context,
@@ -333,8 +330,6 @@ class DramaTile extends StatelessWidget {
     required this.repository,
     required this.onTap,
     this.subtitle,
-    this.focusNode,
-    this.onFocus,
     this.actions,
     this.badge,
     this.selected,
@@ -345,8 +340,6 @@ class DramaTile extends StatelessWidget {
   final AppRepository repository;
   final VoidCallback onTap;
   final String? subtitle;
-  final FocusNode? focusNode;
-  final VoidCallback? onFocus;
   final Widget? actions;
   final String? badge;
   final bool? selected;
@@ -354,14 +347,10 @@ class DramaTile extends StatelessWidget {
   final VoidCallback? onLongPress;
 
   static double titleHeight(BuildContext context) =>
-      MediaQuery.textScalerOf(context)
-          .scale(AppLayout.isTelevision(context) ? 17 : 14) *
-      2.6;
+      MediaQuery.textScalerOf(context).scale(14) * 2.6;
 
   static double subtitleHeight(BuildContext context) =>
-      MediaQuery.textScalerOf(context)
-          .scale(AppLayout.isTelevision(context) ? 14 : 12) *
-      1.3;
+      MediaQuery.textScalerOf(context).scale(12) * 1.3;
 
   static double extentFor(BuildContext context, double width) =>
       (width * 1.5 + 13 + titleHeight(context) + subtitleHeight(context))
@@ -369,7 +358,6 @@ class DramaTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final television = AppLayout.isTelevision(context);
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -441,7 +429,7 @@ class DramaTile extends StatelessWidget {
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 height: 1.3,
-                fontSize: television ? 17 : 14,
+                fontSize: 14,
               ),
             ),
           ),
@@ -456,7 +444,7 @@ class DramaTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: television ? 14 : 12,
+                fontSize: 12,
                 height: 1.3,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -465,22 +453,6 @@ class DramaTile extends StatelessWidget {
         ),
       ],
     );
-    if (television) {
-      return CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.contextMenu): ?onMore,
-        },
-        child: RemoteTarget(
-          focusNode: focusNode,
-          onFocus: onFocus,
-          onPressed: onTap,
-          selected: selected ?? false,
-          label:
-              '${drama.title}，${drama.episodes}集${badge == null ? '' : '，$badge'}',
-          child: content,
-        ),
-      );
-    }
     return Semantics(
       button: true,
       selected: selected,
@@ -488,7 +460,6 @@ class DramaTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress ?? onMore,
-        onSecondaryTap: onMore,
         borderRadius: BorderRadius.circular(14),
         child: content,
       ),
@@ -539,7 +510,6 @@ class StatusPanel extends StatelessWidget {
           if (onRetry != null) ...[
             const SizedBox(height: 24),
             FilledButton.icon(
-              autofocus: AppLayout.isTelevision(context),
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded),
               label: Text(action),

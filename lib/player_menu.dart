@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 import 'episode_browser.dart';
 import 'playback_preferences.dart';
-import 'video_enhancement.dart';
-import 'video_enhancement_settings.dart';
 import 'diary_service.dart';
 
 enum PlayerMenuSection { episodes, speed, quality, settings }
@@ -22,7 +20,6 @@ class PlayerMenu extends StatefulWidget {
     required this.actualQuality,
     required this.local,
     required this.favorite,
-    required this.mobile,
     required this.onEpisode,
     required this.onPreferences,
     required this.onFavorite,
@@ -31,8 +28,6 @@ class PlayerMenu extends StatefulWidget {
     this.danmakuStatus = '',
     this.onRetryDanmaku,
     this.preloadStatus = '',
-    this.enhancement,
-    this.onCompareEnhancement,
   });
 
   final PlayerMenuSection section;
@@ -43,14 +38,11 @@ class PlayerMenu extends StatefulWidget {
   final int actualQuality;
   final bool local;
   final bool favorite;
-  final bool mobile;
   final Set<int> playedNumbers;
   final bool showDanmaku;
   final String danmakuStatus;
   final VoidCallback? onRetryDanmaku;
   final String preloadStatus;
-  final VideoEnhancementController? enhancement;
-  final VoidCallback? onCompareEnhancement;
   final ValueChanged<int> onEpisode;
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
@@ -230,18 +222,6 @@ class _PlayerMenuState extends State<PlayerMenu> {
             ),
           const SizedBox(height: 20),
         ],
-        if ((all || widget.section == PlayerMenuSection.quality) &&
-            widget.enhancement != null)
-          VideoEnhancementSettings(
-            controller: widget.enhancement!,
-            busy: _busy,
-            onChanged: (enhancement) => _run(
-              () => widget.onPreferences(
-                preferences.copyWith(enhancement: enhancement),
-              ),
-            ),
-            onCompare: widget.onCompareEnhancement ?? () {},
-          ),
         if (all && widget.showDanmaku) ...[
           SwitchListTile.adaptive(
             key: const ValueKey('player-danmaku-enabled'),
@@ -316,7 +296,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           ),
           const SizedBox(height: 20),
           Text(
-            widget.mobile ? '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。' : '空格：播放 / 暂停\n左右键：后退 / 快进 5 秒\n长按右键或画面：临时 3 倍速\n上下键：音量 ±5%，M：静音\nF、F11、Ctrl+F：全屏\nEsc：先关闭菜单，再退出全屏',
+            '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。',
             style: helperStyle.copyWith(height: 1.6),
           ),
         ],

@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 
-import 'catalog_filters.dart';
 import 'core_bridge.dart';
 import 'detail_screen.dart';
 import 'local_store.dart';
-import 'models.dart';
 import 'ranking_models.dart';
 import 'widgets.dart';
 
@@ -20,6 +18,30 @@ class RankingsScreen extends StatefulWidget {
   final LocalStore store;
   final bool embedded;
   final bool active;
+
+  static ThemeData themeOf(BuildContext context) {
+    final theme = Theme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final colors = theme.colorScheme.copyWith(
+      primary: dark ? const Color(0xFFFF8875) : const Color(0xFFBD321F),
+      surface: dark ? theme.colorScheme.surface : const Color(0xFFFAFAF9),
+      onSurface: dark ? theme.colorScheme.onSurface : const Color(0xFF111116),
+      onSurfaceVariant: dark
+          ? theme.colorScheme.onSurfaceVariant
+          : const Color(0xFF666666),
+      outlineVariant: dark
+          ? theme.colorScheme.outlineVariant
+          : const Color(0xFFE4E4E4),
+    );
+    return theme.copyWith(
+      colorScheme: colors,
+      scaffoldBackgroundColor: colors.surface,
+      textTheme: theme.textTheme.apply(
+        bodyColor: colors.onSurface,
+        displayColor: colors.onSurface,
+      ),
+    );
+  }
 
   @override
   State<RankingsScreen> createState() => _RankingsScreenState();
@@ -172,143 +194,334 @@ class _RankingsScreenState extends State<RankingsScreen> {
         )
         .where((item) => widget.store.allowsSource(item.drama.source))
         .toList();
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: !widget.embedded,
-        title: const Text('排行榜'),
-        actions: [
-          RefreshAction(
-            loading: _loading || _more,
-            tooltip: '更新榜单',
-            onPressed: _board == null ? _initialize : () => _load(force: true),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            if (boards.isNotEmpty)
-              CatalogFilters(
-                key: ValueKey('ranking-boards-${_board!.groupId}'),
-                categories: [
-                  for (final board in boards)
-                    CatalogCategory(board.id, board.name),
-                ],
-                category: _board!.id,
-                onCategory: (id) =>
-                    _select(boards.firstWhere((board) => board.id == id)),
-                onRetry: () => _load(force: true),
-              ),
-            if (_board != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    [
-                      _board!.description,
-                      if (_updated.isNotEmpty) _updated,
-                    ].join(' '),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+    return Theme(
+      data: RankingsScreen.themeOf(context),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final colors = Theme.of(context).colorScheme;
+          final scale = (constraints.maxWidth / 393).clamp(.8, 1.25);
+          final inset = 19 * scale;
+          return Scaffold(
+            appBar: AppBar(
+              automaticallyImplyLeading: !widget.embedded,
+              toolbarHeight: 72 * scale,
+              titleSpacing: inset,
+              backgroundColor: colors.surface,
+              foregroundColor: colors.onSurface,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              title: Text(
+                '排行榜',
+                style: TextStyle(
+                  fontSize: 28 * scale,
+                  height: 1.25,
+                  fontWeight: FontWeight.w800,
+                  color: colors.onSurface,
                 ),
               ),
-            if (_loading && items.isNotEmpty)
-              const LinearProgressIndicator(minHeight: 2),
-            if (_error != null && items.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+              actions: [
+                Padding(
+                  padding: EdgeInsets.only(right: 12 * scale),
+                  child: IconTheme(
+                    data: IconThemeData(
+                      size: 24 * scale,
+                      color: colors.onSurface,
+                    ),
+                    child: RefreshAction(
+                      loading: _loading || _more,
+                      tooltip: '更新榜单',
+                      onPressed: _board == null
+                          ? _initialize
+                          : () => _load(force: true),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            body: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  if (boards.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: inset),
+                      child: _RankingTabs(
+                        boards: boards,
+                        selected: _board?.id,
+                        scale: scale,
+                        onSelected: _select,
+                      ),
+                    ),
+                  if (_board != null)
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(inset, 11 * scale, inset, 0),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _board!.description
+                                      .replaceAll('；', ' · ')
+                                      .replaceAll('。', '')
+                                      .trim(),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12 * scale,
+                                    height: 1.35,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              if (_updated.trim().isNotEmpty) ...[
+                                SizedBox(width: 10 * scale),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth: constraints.maxWidth * .32,
+                                  ),
+                                  child: Text(
+                                    _updated.trim(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.right,
+                                    style: TextStyle(
+                                      fontSize: 12 * scale,
+                                      height: 1.35,
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          SizedBox(height: 11 * scale),
+                          Divider(
+                            height: 1,
+                            thickness: .7,
+                            color: colors.outlineVariant,
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_loading && items.isNotEmpty)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (_error != null && items.isNotEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: inset),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _error!,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: colors.error),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _loading || _more
+                                ? null
+                                : () => _load(more: _failedMore, force: true),
+                            child: const Text('重试'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  Expanded(
+                    child: _loading && items.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(inset),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const CircularProgressIndicator(),
+                                  if (_board?.source == 'hongguo') ...[
+                                    const SizedBox(height: 16),
+                                    const Text(
+                                      '正在获取榜单，数据未完整返回时会自动重试',
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          )
+                        : items.isEmpty
+                        ? StatusPanel(
+                            title: _error == null ? '暂无榜单内容' : '榜单暂时无法加载',
+                            message: _error ?? '暂无可显示的榜单。',
+                            onRetry: _board == null
+                                ? _initialize
+                                : () => _load(force: true),
+                          )
+                        : RefreshIndicator(
+                            onRefresh: () => _load(force: true),
+                            child: ListView.separated(
+                              key: ValueKey('ranking-${_board!.id}'),
+                              controller: _scroll,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: EdgeInsets.fromLTRB(
+                                inset,
+                                0,
+                                inset,
+                                16 * scale,
+                              ),
+                              itemCount: items.length + 1,
+                              separatorBuilder: (_, _) => Divider(
+                                height: 1,
+                                thickness: .7,
+                                color: colors.outlineVariant,
+                              ),
+                              itemBuilder: (context, index) {
+                                if (index == items.length) {
+                                  return Center(
+                                    child: _more
+                                        ? const Padding(
+                                            padding: EdgeInsets.all(16),
+                                            child: CircularProgressIndicator(),
+                                          )
+                                        : _hasMore
+                                        ? TextButton(
+                                            onPressed: () => _load(more: true),
+                                            child: const Text('加载更多'),
+                                          )
+                                        : Padding(
+                                            padding: const EdgeInsets.all(16),
+                                            child: Text(
+                                              '已显示全部榜单',
+                                              style: TextStyle(
+                                                color: colors.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ),
+                                  );
+                                }
+                                final item = items[index];
+                                return _RankingCard(
+                                  key: ValueKey(item.drama.id),
+                                  item: item,
+                                  repository: widget.repository,
+                                  scale: scale,
+                                  onTap: () => Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => DetailScreen(
+                                        drama: item.drama,
+                                        repository: widget.repository,
+                                        store: widget.store,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _RankingTabs extends StatelessWidget {
+  const _RankingTabs({
+    required this.boards,
+    required this.selected,
+    required this.scale,
+    required this.onSelected,
+  });
+
+  final List<RankingBoard> boards;
+  final String? selected;
+  final double scale;
+  final ValueChanged<RankingBoard> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return SizedBox(
+      height: 35 * scale,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tabWidth =
+              (constraints.maxWidth - (boards.length - 1) * 8 * scale) /
+              boards.length;
+          return Row(
+            children: [
+              for (final (index, board) in boards.indexed) ...[
+                if (index > 0)
+                  Expanded(
+                    child: Center(
+                      child: SizedBox(
+                        height: 15 * scale,
+                        child: VerticalDivider(
+                          width: 1,
+                          thickness: .7,
+                          color: colors.outlineVariant,
                         ),
                       ),
                     ),
-                    TextButton(
-                      onPressed: _loading || _more
-                          ? null
-                          : () => _load(more: _failedMore, force: true),
-                      child: const Text('重试'),
-                    ),
-                  ],
-                ),
-              ),
-            Expanded(
-              child: _loading && items.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const CircularProgressIndicator(),
-                          if (_board?.source == 'hongguo') ...[
-                            const SizedBox(height: 16),
-                            const Text('正在获取榜单，数据未完整返回时会自动重试'),
-                          ],
-                        ],
-                      ),
-                    )
-                  : items.isEmpty
-                  ? StatusPanel(
-                      title: _error == null ? '暂无榜单内容' : '榜单暂时无法加载',
-                      message: _error ?? '暂无可显示的榜单。',
-                      onRetry: _board == null
-                          ? _initialize
-                          : () => _load(force: true),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: () => _load(force: true),
-                      child: ListView.builder(
-                        key: ValueKey('ranking-${_board!.id}'),
-                        controller: _scroll,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
-                        itemCount: items.length + 1,
-                        itemBuilder: (context, index) {
-                          if (index == items.length) {
-                            return Center(
-                              child: _more
-                                  ? const Padding(
-                                      padding: EdgeInsets.all(16),
-                                      child: CircularProgressIndicator(),
-                                    )
-                                  : _hasMore
-                                  ? OutlinedButton(
-                                      onPressed: () => _load(more: true),
-                                      child: const Text('加载更多'),
-                                    )
-                                  : const Padding(
-                                      padding: EdgeInsets.all(16),
-                                      child: Text('已显示全部榜单'),
+                  ),
+                Semantics(
+                  button: true,
+                  selected: board.id == selected,
+                  child: InkWell(
+                    key: ValueKey('category-${board.id}'),
+                    onTap: () => onSelected(board),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxWidth: tabWidth),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 8 * scale),
+                        child: IntrinsicWidth(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: Center(
+                                  child: Text(
+                                    board.name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 15 * scale,
+                                      height: 1.3,
+                                      fontWeight: board.id == selected
+                                          ? FontWeight.w700
+                                          : FontWeight.w500,
+                                      color: board.id == selected
+                                          ? colors.primary
+                                          : colors.onSurfaceVariant,
                                     ),
-                            );
-                          }
-                          final item = items[index];
-                          return _RankingCard(
-                            key: ValueKey(item.drama.id),
-                            item: item,
-                            repository: widget.repository,
-                            onTap: () => Navigator.push<void>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => DetailScreen(
-                                  drama: item.drama,
-                                  repository: widget.repository,
-                                  store: widget.store,
+                                  ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
+                              Container(
+                                height: 2 * scale,
+                                decoration: BoxDecoration(
+                                  color: board.id == selected
+                                      ? colors.primary
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-            ),
-          ],
-        ),
+                  ),
+                ),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -319,53 +532,51 @@ class _RankingCard extends StatelessWidget {
     super.key,
     required this.item,
     required this.repository,
+    required this.scale,
     required this.onTap,
   });
 
   final RankingItem item;
   final AppRepository repository;
+  final double scale;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
+    final colors = Theme.of(context).colorScheme;
     final drama = item.drama;
     final metadata = [
       if (drama.episodes > 0) '共 ${drama.episodes} 集',
-      if (drama.releaseStatus.isNotEmpty && drama.releaseStatus != 'unknown')
-        drama.releaseLabel,
+      if (drama.releaseLabel != '状态未知') drama.releaseLabel,
       if (drama.vip) 'VIP',
     ].join(' · ');
-    const borderRadius = BorderRadius.all(Radius.circular(8));
+    final metric = item.metric.trim();
+    final hasHeatLabel = metric.endsWith('热度');
+    final metricValue = hasHeatLabel
+        ? metric.substring(0, metric.length - 2).trim()
+        : metric;
+    final secondaryStyle = TextStyle(
+      color: colors.onSurfaceVariant,
+      fontSize: 14 * scale,
+      height: 1.3,
+    );
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      elevation: 0,
-      color: colors.surface,
-      surfaceTintColor: Colors.transparent,
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: borderRadius,
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: .5)),
-      ),
+    return Material(
+      color: Colors.transparent,
+      clipBehavior: Clip.hardEdge,
       child: InkWell(
         key: ValueKey('rank-${item.rank}-${drama.id}'),
-        borderRadius: borderRadius,
         onFocusChange: (focused) {
-          if (focused) {
-            Scrollable.ensureVisible(context, alignment: .4);
-          }
+          if (focused) Scrollable.ensureVisible(context, alignment: .4);
         },
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: EdgeInsets.symmetric(vertical: 12 * scale),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final coverWidth = (constraints.maxWidth * .36).clamp(0.0, 132.0);
-              final spacing = constraints.maxWidth < 280 ? 10.0 : 14.0;
+              final coverWidth = (constraints.maxWidth * .35).clamp(0.0, 176.0);
               return SizedBox(
-                height: coverWidth * 1.5,
+                height: coverWidth / .72,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -374,79 +585,113 @@ class _RankingCard extends StatelessWidget {
                       child: DramaCover(
                         drama: drama,
                         repository: repository,
-                        radius: 4,
+                        radius: 3 * scale,
                         showOverlay: false,
-                        fit: BoxFit.contain,
+                        fit: BoxFit.cover,
                       ),
                     ),
-                    SizedBox(width: spacing),
+                    SizedBox(width: 14 * scale),
                     Expanded(
                       child: ClipRect(
-                        child: OverflowBox(
-                          alignment: Alignment.topLeft,
-                          minHeight: 0,
-                          maxHeight: double.infinity,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '第 ${item.rank} 名',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelLarge?.copyWith(
-                                  color: item.rank <= 3
-                                      ? colors.primary
-                                      : colors.onSurfaceVariant,
-                                  fontWeight: FontWeight.w700,
+                        child: Stack(
+                          children: [
+                            Positioned(
+                              top: 3 * scale,
+                              left: 0,
+                              right: 0,
+                              bottom: (metric.isEmpty ? 0 : 43) * scale,
+                              child: ClipRect(
+                                child: OverflowBox(
+                                  alignment: Alignment.topLeft,
+                                  minHeight: 0,
+                                  maxHeight: double.infinity,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        '第 ${item.rank} 名',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: colors.primary,
+                                          fontSize: 15 * scale,
+                                          height: 1.3,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      SizedBox(height: 8 * scale),
+                                      Text(
+                                        drama.title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: colors.onSurface,
+                                          fontSize: 18 * scale,
+                                          height: 1.25,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      if (drama.category.trim().isNotEmpty) ...[
+                                        SizedBox(height: 10 * scale),
+                                        Text(
+                                          drama.category.trim(),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: secondaryStyle,
+                                        ),
+                                      ],
+                                      if (metadata.isNotEmpty) ...[
+                                        SizedBox(height: 5 * scale),
+                                        Text(
+                                          metadata,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: secondaryStyle,
+                                        ),
+                                      ],
+                                    ],
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                drama.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600,
+                            ),
+                            if (metric.isNotEmpty)
+                              Positioned(
+                                left: 0,
+                                right: 0,
+                                bottom: 5 * scale,
+                                height: 32 * scale,
+                                child: ClipRect(
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text.rich(
+                                      TextSpan(
+                                        text: metricValue,
+                                        children: [
+                                          if (hasHeatLabel)
+                                            TextSpan(
+                                              text: ' 热度',
+                                              style: TextStyle(
+                                                fontSize: 14 * scale,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: colors.primary,
+                                        fontSize: 24 * scale,
+                                        height: 1.2,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
-                              if (drama.category.trim().isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                Text(
-                                  drama.category,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                              if (metadata.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  metadata,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
-                              if (item.metric.trim().isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  item.metric,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: theme.textTheme.labelLarge?.copyWith(
-                                    color: colors.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                          ],
                         ),
                       ),
                     ),

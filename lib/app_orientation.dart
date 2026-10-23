@@ -5,17 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 
-import 'app_layout.dart';
 import 'cover_screen_viewport.dart';
 
 class AppOrientationController extends ChangeNotifier {
-  AppOrientationController({required bool television})
-    : _television = television;
-
-  bool _television;
   bool _coverWindow = false;
   bool _disposed = false;
-  bool? _nativeTelevision;
   Object? _playbackOwner;
   bool _playbackFullscreen = false;
   double _playbackAspectRatio = 1;
@@ -24,11 +18,10 @@ class AppOrientationController extends ChangeNotifier {
   Future<void> _pending = Future<void>.value();
 
   static List<DeviceOrientation> orientations({
-    required bool television,
     bool fullscreen = false,
     double aspectRatio = 1,
   }) {
-    if (television || fullscreen && aspectRatio >= 1) {
+    if (fullscreen && aspectRatio >= 1) {
       return const [
         DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
@@ -43,18 +36,6 @@ class AppOrientationController extends ChangeNotifier {
     return DeviceOrientation.values;
   }
 
-  Future<void> setTelevision(bool television) {
-    if (_disposed) return Future<void>.value();
-    if (_television != television) {
-      _television = television;
-      _playbackOwner = null;
-      _playbackFullscreen = false;
-      _playbackOrientations = DeviceOrientation.values;
-      _notifyLayout();
-    }
-    return _apply();
-  }
-
   Future<void> setPlayback(
     Object owner, {
     required bool fullscreen,
@@ -65,23 +46,19 @@ class AppOrientationController extends ChangeNotifier {
     final previousOrientations = _playbackOrientations;
     final previousFullscreen = _playbackFullscreen;
     final previousAspectRatio = _playbackAspectRatio;
-    if (!_television) {
-      _playbackOwner = owner;
-      _playbackFullscreen = fullscreen;
-      _playbackAspectRatio = aspectRatio;
-      _playbackOrientations = orientations(
-        television: false,
-        fullscreen: fullscreen,
-        aspectRatio: aspectRatio,
-      );
-      _notifyLayout();
-    }
+    _playbackOwner = owner;
+    _playbackFullscreen = fullscreen;
+    _playbackAspectRatio = aspectRatio;
+    _playbackOrientations = orientations(
+      fullscreen: fullscreen,
+      aspectRatio: aspectRatio,
+    );
+    _notifyLayout();
     final requested = _playbackOrientations;
     try {
       await _apply();
     } catch (_) {
       if (!_disposed &&
-          !_television &&
           identical(_playbackOwner, owner) &&
           identical(_playbackOrientations, requested)) {
         _playbackOwner = previousOwner;
@@ -96,7 +73,6 @@ class AppOrientationController extends ChangeNotifier {
 
   Future<void> releasePlayback(Object owner) {
     if (_disposed) return Future<void>.value();
-    if (_television) return refresh();
     if (!identical(_playbackOwner, owner)) return Future<void>.value();
     _playbackOwner = null;
     _playbackFullscreen = false;
@@ -116,7 +92,7 @@ class AppOrientationController extends ChangeNotifier {
   }
 
   int coverQuarterTurns(Size size) {
-    if (_television || !_coverWindow || !_playbackFullscreen) return 0;
+    if (!_coverWindow || !_playbackFullscreen) return 0;
     final landscape = _playbackAspectRatio >= 1;
     return landscape == (size.width > size.height) ? 0 : 1;
   }
@@ -134,28 +110,8 @@ class AppOrientationController extends ChangeNotifier {
 
   Future<void> _apply({bool force = false}) {
     final next = _pending.catchError((Object _) {}).then((_) async {
-      if (_disposed ||
-          kIsWeb ||
-          (defaultTargetPlatform != TargetPlatform.android &&
-              defaultTargetPlatform != TargetPlatform.iOS)) {
-        return;
-      }
-      final television = _television;
-      if (defaultTargetPlatform == TargetPlatform.android &&
-          (force || _nativeTelevision != television)) {
-        try {
-          await AppDevice.channel.invokeMethod<void>('setTelevisionMode', {
-            'enabled': television,
-          });
-          _nativeTelevision = television;
-        } on MissingPluginException {
-          _nativeTelevision = null;
-        }
-      }
-      if (_disposed || television != _television) return;
-      final preferred = television
-          ? orientations(television: true)
-          : _coverWindow
+      if (_disposed) return;
+      final preferred = _coverWindow
           ? DeviceOrientation.values
           : _playbackOrientations;
       if (force || !listEquals(preferred, _appliedOrientations)) {
@@ -177,12 +133,10 @@ class AppOrientationController extends ChangeNotifier {
 class AppOrientationScope extends StatefulWidget {
   const AppOrientationScope({
     super.key,
-    required this.television,
     this.coverWindow = false,
     required this.child,
   });
 
-  final bool television;
   final bool coverWindow;
   final Widget child;
 
@@ -196,9 +150,7 @@ class AppOrientationScope extends StatefulWidget {
 
 class _AppOrientationScopeState extends State<AppOrientationScope>
     with WidgetsBindingObserver {
-  late final _controller = AppOrientationController(
-    television: widget.television,
-  );
+  final _controller = AppOrientationController();
 
   @override
   void initState() {
@@ -213,9 +165,6 @@ class _AppOrientationScopeState extends State<AppOrientationScope>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.coverWindow != widget.coverWindow) {
       _apply(_controller.setCoverWindow(widget.coverWindow));
-    }
-    if (oldWidget.television != widget.television) {
-      _apply(_controller.setTelevision(widget.television));
     }
   }
 

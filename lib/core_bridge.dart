@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:io';
 import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
@@ -27,18 +26,7 @@ typedef _NativeFree = Void Function(Pointer<Utf8>);
 typedef _DartFree = void Function(Pointer<Utf8>);
 
 String _nativeRequest(String body) {
-  final DynamicLibrary library;
-  if (Platform.isAndroid) {
-    library = DynamicLibrary.open('libduanju_core.so');
-  } else if (Platform.isWindows) {
-    library = DynamicLibrary.open(
-      path.join(path.dirname(Platform.resolvedExecutable), 'duanju_core.dll'),
-    );
-  } else if (Platform.isIOS) {
-    library = DynamicLibrary.process();
-  } else {
-    throw UnsupportedError('当前首版支持 Android 手机和 Windows 电脑');
-  }
+  final library = DynamicLibrary.open('libduanju_core.so');
   final request = library.lookupFunction<_NativeRequest, _DartRequest>(
     'DuanjuRequest',
   );

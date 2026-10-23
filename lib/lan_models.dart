@@ -26,7 +26,8 @@ class LanPeer {
         port is! int ||
         port < 1 ||
         port > 65535 ||
-        !{'phone', 'computer', 'tv'}.contains(kind) ||
+        kind is! String ||
+        !RegExp(r'^[a-z][a-z0-9_-]{0,31}$').hasMatch(kind) ||
         row['protocol'] != 1) {
       throw const FormatException('设备信息或协议版本无效');
     }
@@ -34,7 +35,7 @@ class LanPeer {
       id: id,
       name: lanText(row['name'], 80),
       pin: pin,
-      kind: kind as String,
+      kind: kind,
       port: port,
       addresses: [
         for (final address in (row['addresses'] as List? ?? []))

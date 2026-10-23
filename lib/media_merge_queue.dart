@@ -359,7 +359,6 @@ class MergeQueue {
         !_loaded ||
         _pumping ||
         library.busy ||
-        library.suspended ||
         !library.store.canDownload) {
       return;
     }
@@ -374,7 +373,6 @@ class MergeQueue {
   bool _allowed(MergeQueueJob job, int epoch) =>
       !_disposed &&
       library.store.canDownload &&
-      !library.suspended &&
       epoch == library.store.profileEpoch &&
       job.owner == library.store.profile.id &&
       library.store.allowsSource(job.drama.source) &&
@@ -383,10 +381,7 @@ class MergeQueue {
   Future<void> _pump() async {
     _pumping = true;
     try {
-      while (!_disposed &&
-          !library.busy &&
-          !library.suspended &&
-          library.store.canDownload) {
+      while (!_disposed && !library.busy && library.store.canDownload) {
         final job = items.where((job) => job.state == 'queued').firstOrNull;
         if (job == null) break;
         final epoch = library.store.profileEpoch;

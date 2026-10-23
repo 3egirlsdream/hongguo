@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'app_layout.dart';
 import 'catalog_sort.dart';
 import 'core_bridge.dart';
 import 'drama_actions.dart';
 import 'follow_state.dart';
 import 'local_store.dart';
 import 'models.dart';
-import 'remote_widgets.dart';
 import 'widgets.dart';
 
 class SavedLibrary extends StatefulWidget {
@@ -218,7 +216,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
     );
   }
 
-  Widget _tile(Drama drama, {FocusNode? focusNode, VoidCallback? onFocus}) {
+  Widget _tile(Drama drama) {
     final watched = _watched(drama.id);
     final state = widget.store.following(drama.id);
     final badge = state == null
@@ -228,8 +226,6 @@ class _SavedLibraryState extends State<SavedLibrary> {
       key: ValueKey('saved-${drama.id}'),
       drama: drama,
       repository: widget.repository,
-      focusNode: focusNode,
-      onFocus: onFocus,
       onTap: () => widget.history ? _continue(drama) : widget.onOpen(drama),
       onMore: () => _actions(drama),
       actions: DramaActionButton(
@@ -264,7 +260,6 @@ class _SavedLibraryState extends State<SavedLibrary> {
             ? _continue(drama)
             : widget.onOpen(drama),
         onLongPress: () => _actions(drama),
-        onSecondaryTap: () => _actions(drama),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -614,42 +609,6 @@ class _SavedLibraryState extends State<SavedLibrary> {
       );
       return LayoutBuilder(
         builder: (context, constraints) {
-          if (AppLayout.isTelevision(context)) {
-            final columns = ((constraints.maxWidth - 36) / 150).floor().clamp(
-              1,
-              8,
-            );
-            final tileWidth =
-                (constraints.maxWidth - 36 - (columns - 1) * 14) / columns;
-            return Column(
-              children: [
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: constraints.maxHeight * .5,
-                  ),
-                  child: SingleChildScrollView(child: Column(children: header)),
-                ),
-                Expanded(
-                  child: items.isEmpty
-                      ? empty
-                      : RemoteGrid(
-                          key: ValueKey(
-                            'saved-tv-${widget.history}-$_filter-${_search.text}',
-                          ),
-                          itemKeys: items.map((item) => item.id).toList(),
-                          columns: columns,
-                          itemExtent:
-                              DramaTile.extentFor(context, tileWidth - 14) + 14,
-                          itemBuilder: (_, index, node, onFocus) => _tile(
-                            items[index],
-                            focusNode: node,
-                            onFocus: onFocus,
-                          ),
-                        ),
-                ),
-              ],
-            );
-          }
           final padding = constraints.maxWidth < 600 ? 16.0 : 24.0;
           final columns = constraints.maxWidth < 340
               ? 2

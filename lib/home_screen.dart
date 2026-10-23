@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'app_layout.dart';
 import 'app_bottom_navigation.dart';
 import 'core_bridge.dart';
 import 'local_store.dart';
@@ -65,11 +64,11 @@ class _HomeScreenState extends State<HomeScreen> {
       final child = LayoutBuilder(
         builder: (context, constraints) {
           final selecting = _selection.value;
-          final television = AppLayout.isTelevision(context);
-          final desktop = constraints.maxWidth >= 840;
+          final wide = constraints.maxWidth >= 840;
+          final rankingActive = _tab == _rankingsTab;
           final appearance = widget.store.themeAppearance;
-          final blurredBars = appearance.blurBars && !desktop && !television;
-          final floatingBar = appearance.floatingBar && !desktop && !television;
+          final blurredBars = appearance.blurBars && !wide && !rankingActive;
+          final floatingBar = appearance.floatingBar && !wide && !rankingActive;
           final pages = <Widget>[
             RecommendationsScreen(
               key: ValueKey('recommendations-${widget.store.profileEpoch}'),
@@ -126,7 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
               bottom: false,
               child: Row(
                 children: [
-                  if (desktop || television) ...[
+                  if (wide) ...[
                     NavigationRail(
                       selectedIndex: _tab,
                       onDestinationSelected: _changeTab,
@@ -159,35 +158,49 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            bottomNavigationBar: desktop || television || selecting
+            bottomNavigationBar: wide || selecting
                 ? null
-                : AppBottomNavigation(
-                    selectedIndex: _tab,
-                    onDestinationSelected: _changeTab,
-                    floating: floatingBar,
-                    blurred: blurredBars,
-                    liquidGlass: floatingBar && appearance.liquidGlass,
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.explore_outlined),
-                        selectedIcon: Icon(Icons.explore),
-                        label: '首页',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.leaderboard_outlined),
-                        selectedIcon: Icon(Icons.leaderboard_rounded),
-                        label: '排行榜',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.search_rounded),
-                        label: '搜索',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.person_outline_rounded),
-                        selectedIcon: Icon(Icons.person_rounded),
-                        label: '我的',
-                      ),
-                    ],
+                : Theme(
+                    data: rankingActive
+                        ? RankingsScreen.themeOf(context)
+                        : Theme.of(context),
+                    child: AppBottomNavigation(
+                      selectedIndex: _tab,
+                      onDestinationSelected: _changeTab,
+                      showSelectionDot: rankingActive,
+                      floating: floatingBar,
+                      blurred: blurredBars,
+                      liquidGlass: floatingBar && appearance.liquidGlass,
+                      destinations: [
+                        NavigationDestination(
+                          icon: Icon(
+                            rankingActive
+                                ? Icons.home_outlined
+                                : Icons.explore_outlined,
+                          ),
+                          selectedIcon: const Icon(Icons.explore),
+                          label: '首页',
+                        ),
+                        NavigationDestination(
+                          icon: const Icon(Icons.leaderboard_outlined),
+                          selectedIcon: Icon(
+                            rankingActive
+                                ? Icons.bar_chart_rounded
+                                : Icons.leaderboard_rounded,
+                          ),
+                          label: '排行榜',
+                        ),
+                        const NavigationDestination(
+                          icon: Icon(Icons.search_rounded),
+                          label: '搜索',
+                        ),
+                        const NavigationDestination(
+                          icon: Icon(Icons.person_outline_rounded),
+                          selectedIcon: Icon(Icons.person_rounded),
+                          label: '我的',
+                        ),
+                      ],
+                    ),
                   ),
           );
           return PopScope<void>(

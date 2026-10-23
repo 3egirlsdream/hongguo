@@ -158,20 +158,10 @@ class MediaLibrary extends ChangeNotifier {
     if (!_disposed) super.notifyListeners();
   }
 
-  Timer? _timer;
-  MediaLibrary? _automatic;
   String? root;
   List<LocalMediaItem> _items = [];
   final _skipped = <String>{};
-  bool busy = false, _checking = false, _cancelled = false, _suspended = false;
-  bool get suspended => _suspended;
-  set suspended(bool value) {
-    _suspended = value;
-    _automatic?.suspended = value;
-    if (value) {
-      unawaited(_merges?.pauseUnavailable(all: true) ?? Future<void>.value());
-    }
-  }
+  bool busy = false, _checking = false, _cancelled = false;
 
   String status = '', error = '';
   double progress = 0;
@@ -181,25 +171,11 @@ class MediaLibrary extends ChangeNotifier {
     current?.dispose();
     final library = MediaLibrary(repository, store);
     current = library;
-    if (Platform.isAndroid && store.autoExport) {
+    if (store.autoExport) {
       unawaited(
         BackgroundDownloads.ensureStarted().catchError((Object error) {
           library.error = error.toString();
         }),
-      );
-    }
-    if (!Platform.isAndroid) {
-      final automatic = MediaLibrary(
-        repository is NativeRepository
-            ? NativeRepository(background: true)
-            : repository,
-        store,
-        automaticWorker: true,
-      );
-      library._automatic = automatic;
-      library._timer = Timer.periodic(
-        const Duration(seconds: 8),
-        (_) => unawaited(automatic.maybeExport()),
       );
     }
   }
@@ -320,7 +296,6 @@ class MediaLibrary extends ChangeNotifier {
   void _check() {
     if (_disposed ||
         _cancelled ||
-        suspended ||
         !store.canDownload ||
         _taskEpoch != null && _taskEpoch != store.profileEpoch ||
         _taskSources.any((source) => !store.allowsSource(source))) {
@@ -398,10 +373,7 @@ class MediaLibrary extends ChangeNotifier {
 
   Future<void> cancel() async {
     _cancelled = true;
-    await Future.wait([
-      executor.cancel(),
-      if (_automatic != null) _automatic!.cancel(),
-    ]);
+    await executor.cancel();
   }
 
   Future<MediaProbe> _prepare(
@@ -529,10 +501,7 @@ class MediaLibrary extends ChangeNotifier {
   }
 
   Future<void> maybeExport() async {
-    if (_checking ||
-        busy ||
-        suspended ||
-        DateTime.now().isBefore(_retryAfter)) {
+    if (_checking || busy || DateTime.now().isBefore(_retryAfter)) {
       return;
     }
     _checking = true;
@@ -588,10 +557,8 @@ class MediaLibrary extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _cancelled = true;
-    _timer?.cancel();
     _merges?.dispose();
     store.removeListener(_accessChanged);
-    _automatic?.dispose();
     unawaited(executor.cancel());
     super.dispose();
   }

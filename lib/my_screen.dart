@@ -217,225 +217,138 @@ class _MyScreenState extends State<MyScreen> {
             color: dark
                 ? colors.surfaceContainerLowest
                 : const Color(0xFFF6F6F6),
-            child: Column(
-              children: [
-                Expanded(
-                  child: NestedScrollView(
-                    headerSliverBuilder: (context, innerScrolled) => [
-                      SliverToBoxAdapter(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: dark
-                                ? null
-                                : const LinearGradient(
-                                    begin: Alignment.topRight,
-                                    end: Alignment.bottomLeft,
-                                    colors: [
-                                      Color(0xFFE8F6F2),
-                                      Color(0xFFF8F7F3),
-                                      Color(0xFFF6F6F6),
-                                    ],
-                                    stops: [0, .35, .7],
-                                  ),
-                          ),
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+            child: NestedScrollView(
+              headerSliverBuilder: (context, innerScrolled) => [
+                SliverToBoxAdapter(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: dark
+                          ? null
+                          : const LinearGradient(
+                              begin: Alignment.topRight,
+                              end: Alignment.bottomLeft,
+                              colors: [
+                                Color(0xFFE8F6F2),
+                                Color(0xFFF8F7F3),
+                                Color(0xFFF6F6F6),
+                              ],
+                              stops: [0, .35, .7],
+                            ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            height: 44,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
                               children: [
-                                SizedBox(
-                                  height: 44,
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      IconButton(
-                                        tooltip: '切换深浅色',
-                                        onPressed: () => saveUserChange(
-                                          context,
-                                          () => widget.store.setThemeMode(
-                                            dark ? 'light' : 'dark',
-                                          ),
-                                        ),
-                                        icon: Icon(
-                                          dark
-                                              ? Icons.light_mode_outlined
-                                              : Icons.dark_mode_outlined,
-                                          size: 25,
-                                        ),
-                                        color: colors.onSurface,
-                                      ),
-                                    ],
+                                IconButton(
+                                  tooltip: '切换深浅色',
+                                  onPressed: () => saveUserChange(
+                                    context,
+                                    () => widget.store.setThemeMode(
+                                      dark ? 'light' : 'dark',
+                                    ),
+                                  ),
+                                  icon: Icon(
+                                    dark
+                                        ? Icons.light_mode_outlined
+                                        : Icons.dark_mode_outlined,
+                                    size: 25,
+                                  ),
+                                  color: colors.onSurface,
+                                ),
+                                const SizedBox(width: 4),
+                                IconButton(
+                                  key: const ValueKey('my-settings'),
+                                  tooltip: '设置',
+                                  onPressed: _settings,
+                                  color: colors.onSurface,
+                                  icon: const Icon(
+                                    Icons.settings_outlined,
+                                    size: 25,
                                   ),
                                 ),
-                                const SizedBox(height: 12),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: _accountError != null
-                                      ? _refreshAccount
-                                      : _accountPage,
-                                  child: Row(
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: _accountError != null
+                                ? _refreshAccount
+                                : _accountPage,
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 31,
+                                  backgroundColor: dark
+                                      ? colors.surfaceContainerHigh
+                                      : const Color(0xFFE7E8E8),
+                                  foregroundColor: colors.onSurfaceVariant,
+                                  child: const Icon(
+                                    Icons.person_rounded,
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      CircleAvatar(
-                                        radius: 31,
-                                        backgroundColor: dark
-                                            ? colors.surfaceContainerHigh
-                                            : const Color(0xFFE7E8E8),
-                                        foregroundColor:
-                                            colors.onSurfaceVariant,
-                                        child: const Icon(
-                                          Icons.person_rounded,
-                                          size: 32,
+                                      Text(
+                                        logged
+                                            ? '${profile?['name'] ?? '红果用户'}'
+                                            : '登录账号',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 20,
+                                          height: 1.25,
+                                          fontWeight: FontWeight.w500,
+                                          color: colors.onSurface,
                                         ),
                                       ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              logged
-                                                  ? '${profile?['name'] ?? '红果用户'}'
-                                                  : '登录账号',
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              _accountError ??
+                                                  (logged
+                                                      ? '红果号：$uid'
+                                                      : '登录同步追剧、历史与预约'),
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
-                                                fontSize: 20,
-                                                height: 1.25,
-                                                fontWeight: FontWeight.w500,
-                                                color: colors.onSurface,
+                                                fontSize: 12,
+                                                height: 1.2,
+                                                color: colors.onSurfaceVariant,
                                               ),
                                             ),
-                                            const SizedBox(height: 4),
-                                            Row(
-                                              children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    _accountError ??
-                                                        (logged
-                                                            ? '红果号：$uid'
-                                                            : '登录同步追剧、历史与预约'),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: TextStyle(
-                                                      fontSize: 12,
-                                                      height: 1.2,
-                                                      color: colors
-                                                          .onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                                ),
-                                                if (logged && uid.isNotEmpty)
-                                                  IconButton(
-                                                    tooltip: '复制红果号',
-                                                    onPressed: () =>
-                                                        _copyUID(uid),
-                                                    visualDensity:
-                                                        VisualDensity.compact,
-                                                    constraints:
-                                                        const BoxConstraints(
-                                                          minWidth: 28,
-                                                          minHeight: 28,
-                                                        ),
-                                                    padding:
-                                                        const EdgeInsets.all(4),
-                                                    color:
-                                                        colors.onSurfaceVariant,
-                                                    icon: const Icon(
-                                                      Icons.copy_outlined,
-                                                      size: 13,
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  children: [
-                                    _stat(
-                                      '${{...widget.store.favorites.map((d) => d.id), ...widget.repository.accountFavorites.value}.length}',
-                                      '追剧',
-                                      () => _library(0),
-                                    ),
-                                    _stat(
-                                      '${widget.store.history.length}',
-                                      '历史',
-                                      () => _library(1),
-                                    ),
-                                    _stat(
-                                      '${widget.store.history.where((e) => e.finished && e.drama.episodes > 0 && e.episode >= e.drama.episodes).length}',
-                                      '已看完',
-                                      () => _library(1),
-                                    ),
-                                    const Spacer(),
-                                    TextButton(
-                                      onPressed: _accountPage,
-                                      style: TextButton.styleFrom(
-                                        backgroundColor: dark
-                                            ? colors.surfaceContainer
-                                            : const Color(0xFFEFEFEF),
-                                        foregroundColor: colors.onSurface,
-                                        minimumSize: const Size(0, 30),
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        textStyle: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            9,
                                           ),
-                                        ),
-                                      ),
-                                      child: Text(logged ? '账号管理' : '立即登录'),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 16),
-                                SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: Row(
-                                    spacing: 8,
-                                    children: [
-                                      if (widget.store.canDownload)
-                                        _shortcut(
-                                          '下载',
-                                          '离线观看',
-                                          () => _page(
-                                            DownloadsScreen(
-                                              repository: widget.repository,
-                                              store: widget.store,
+                                          if (logged && uid.isNotEmpty)
+                                            IconButton(
+                                              tooltip: '复制红果号',
+                                              onPressed: () => _copyUID(uid),
+                                              visualDensity:
+                                                  VisualDensity.compact,
+                                              constraints: const BoxConstraints(
+                                                minWidth: 28,
+                                                minHeight: 28,
+                                              ),
+                                              padding: const EdgeInsets.all(4),
+                                              color: colors.onSurfaceVariant,
+                                              icon: const Icon(
+                                                Icons.copy_outlined,
+                                                size: 13,
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                      _shortcut(
-                                        '追更',
-                                        '${widget.store.favorites.where((d) => widget.store.following(d.id)?.hasUpdates == true).length}部更新',
-                                        () => _library(0),
-                                      ),
-                                      _shortcut(
-                                        '预约',
-                                        '待看新剧',
-                                        () => _library(2),
-                                      ),
-                                      _shortcut(
-                                        '上新',
-                                        '即将上线',
-                                        () => _library(3),
-                                      ),
-                                      _shortcut(
-                                        '榜单',
-                                        '热门好剧',
-                                        widget.onRankings,
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -443,46 +356,100 @@ class _MyScreenState extends State<MyScreen> {
                               ],
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              _stat(
+                                '${{...widget.store.favorites.map((d) => d.id), ...widget.repository.accountFavorites.value}.length}',
+                                '追剧',
+                                () => _library(0),
+                              ),
+                              _stat(
+                                '${widget.store.history.length}',
+                                '历史',
+                                () => _library(1),
+                              ),
+                              _stat(
+                                '${widget.store.history.where((e) => e.finished && e.drama.episodes > 0 && e.episode >= e.drama.episodes).length}',
+                                '已看完',
+                                () => _library(1),
+                              ),
+                              const Spacer(),
+                              TextButton(
+                                onPressed: _accountPage,
+                                style: TextButton.styleFrom(
+                                  backgroundColor: dark
+                                      ? colors.surfaceContainer
+                                      : const Color(0xFFEFEFEF),
+                                  foregroundColor: colors.onSurface,
+                                  minimumSize: const Size(0, 30),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
+                                  ),
+                                  textStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(9),
+                                  ),
+                                ),
+                                child: Text(logged ? '账号管理' : '立即登录'),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              spacing: 8,
+                              children: [
+                                if (widget.store.canDownload)
+                                  _shortcut(
+                                    '下载',
+                                    '离线观看',
+                                    () => _page(
+                                      DownloadsScreen(
+                                        repository: widget.repository,
+                                        store: widget.store,
+                                      ),
+                                    ),
+                                  ),
+                                _shortcut(
+                                  '追更',
+                                  '${widget.store.favorites.where((d) => widget.store.following(d.id)?.hasUpdates == true).length}部更新',
+                                  () => _library(0),
+                                ),
+                                _shortcut('预约', '待看新剧', () => _library(2)),
+                                _shortcut('上新', '即将上线', () => _library(3)),
+                                _shortcut('榜单', '热门好剧', widget.onRankings),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                    body: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(28),
-                      ),
-                      child: Material(
-                        color: colors.surface,
-                        child: HongguoAccountScreen(
-                          key: ValueKey('my-library-$_librarySelection'),
-                          repository: widget.repository,
-                          store: widget.store,
-                          collections: true,
-                          embedded: true,
-                          refreshToken: _accountRevision,
-                          initialTab: _libraryTab,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  top: false,
-                  minimum: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-                  child: Material(
-                    color: colors.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    clipBehavior: Clip.antiAlias,
-                    child: ListTile(
-                      key: const ValueKey('my-settings'),
-                      leading: const Icon(Icons.settings_outlined),
-                      title: const Text('设置'),
-                      subtitle: const Text('账号、外观、下载与更多功能'),
-                      trailing: const Icon(Icons.chevron_right_rounded),
-                      onTap: _settings,
                     ),
                   ),
                 ),
               ],
+              body: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(28),
+                ),
+                child: Material(
+                  color: colors.surface,
+                  child: HongguoAccountScreen(
+                    key: ValueKey('my-library-$_librarySelection'),
+                    repository: widget.repository,
+                    store: widget.store,
+                    collections: true,
+                    embedded: true,
+                    refreshToken: _accountRevision,
+                    initialTab: _libraryTab,
+                  ),
+                ),
+              ),
             ),
           ),
         ),

@@ -6,7 +6,6 @@ import 'package:media_kit/media_kit.dart';
 import 'lan_controller.dart';
 import 'player_interactions.dart';
 import 'widgets.dart';
-import 'video_enhancement.dart';
 
 class PlayerControls extends StatefulWidget {
   const PlayerControls({
@@ -31,7 +30,6 @@ class PlayerControls extends StatefulWidget {
     this.showDanmaku = false,
     this.danmakuEnabled = false,
     this.danmakuStatus = '',
-    this.swipeEnabled = false,
     this.panelOpen = false,
     this.compact = false,
     this.onSeek,
@@ -39,7 +37,6 @@ class PlayerControls extends StatefulWidget {
     this.onRetryDanmaku,
     this.onPush,
     this.onPictureInPicture,
-    this.enhancement,
   });
 
   final Player player;
@@ -62,7 +59,6 @@ class PlayerControls extends StatefulWidget {
   final bool showDanmaku;
   final bool danmakuEnabled;
   final String danmakuStatus;
-  final bool swipeEnabled;
   final bool panelOpen;
   final bool compact;
   final Future<void> Function(Duration)? onSeek;
@@ -70,7 +66,6 @@ class PlayerControls extends StatefulWidget {
   final Future<void> Function()? onRetryDanmaku;
   final Future<void> Function()? onPush;
   final Future<void> Function()? onPictureInPicture;
-  final VideoEnhancementController? enhancement;
 
   @override
   State<PlayerControls> createState() => _PlayerControlsState();
@@ -239,7 +234,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   widget.onFocusSurface();
                   widget.interactions.pointerDown(
                     event,
-                    swipeEnabled: widget.swipeEnabled,
+                    swipeEnabled: true,
                     width: constraints.maxWidth,
                     height: constraints.maxHeight,
                   );
@@ -288,21 +283,14 @@ class _PlayerControlsState extends State<PlayerControls> {
                           ),
                           child: Stack(
                             children: [
-                              if (widget.fullscreen || widget.swipeEnabled)
-                                _topBar(),
+                              _topBar(),
                               if (!state.buffering &&
                                   widget.enabled &&
                                   constraints.maxHeight >=
-                                      (widget.compact
-                                          ? 260
-                                          : widget.swipeEnabled
-                                          ? 168
-                                          : 220))
+                                      (widget.compact ? 260 : 168))
                                 _centerPlayback(state.playing, showSkip: true),
                               _sideDanmakuControl(),
                               _bottomControls(
-                                constraints: constraints,
-                                volume: state.volume,
                                 duration: duration,
                                 position: position,
                                 buffered: buffered,
@@ -324,7 +312,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   Widget _topBar() {
-    final compact = widget.swipeEnabled && !widget.fullscreen;
+    final compact = !widget.fullscreen;
     return Align(
       alignment: Alignment.topCenter,
       child: Padding(
@@ -334,9 +322,7 @@ class _PlayerControlsState extends State<PlayerControls> {
             _overlayIconButton(
               tooltip: '返回',
               onPressed: widget.onBack,
-              icon: widget.fullscreen
-                  ? Icons.arrow_back_rounded
-                  : Icons.arrow_back_ios_new_rounded,
+              icon: Icons.arrow_back_rounded,
             ),
             if (!compact)
               Expanded(
@@ -410,50 +396,20 @@ class _PlayerControlsState extends State<PlayerControls> {
 
   Widget _sideDanmakuControl() {
     if (!widget.showDanmaku || widget.compact) return const SizedBox.shrink();
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Padding(
-        padding: EdgeInsets.only(right: widget.swipeEnabled ? 0 : 4),
-        child: _danmakuTool(),
-      ),
-    );
+    return Align(alignment: Alignment.centerRight, child: _danmakuTool());
   }
 
   Widget _bottomControls({
-    required BoxConstraints constraints,
-    required double volume,
     required double duration,
     required double position,
     required double buffered,
   }) {
-    final width = constraints.maxWidth;
-    final fullscreen = widget.fullscreen;
-    final mobile = widget.swipeEnabled;
-    final showEpisodes = fullscreen;
-    final showSpeedQuality =
-        mobile || fullscreen && width >= 720 || !fullscreen && width >= 560;
-    final showPush =
-        widget.onPush != null &&
-        (mobile || fullscreen && width >= 860 || !fullscreen && width >= 680);
-    final showCompare = fullscreen && width >= 820;
-    final showVolume = !widget.swipeEnabled && width >= 360;
     return Align(
       alignment: Alignment.bottomCenter,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (mobile)
-            _mobileControlRow(fullscreen: fullscreen)
-          else
-            _desktopControlRow(
-              fullscreen: fullscreen,
-              showEpisodes: showEpisodes,
-              showSpeedQuality: showSpeedQuality,
-              showPush: showPush,
-              showCompare: showCompare,
-              showVolume: showVolume,
-              volume: volume,
-            ),
+          _mobileControlRow(fullscreen: widget.fullscreen),
           _progressRow(
             duration: duration,
             position: position,
@@ -471,10 +427,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       if (top <= 0) return 16;
       return (top + 16).clamp(40.0, 80.0);
     }
-    if (widget.swipeEnabled) {
-      return 10;
-    }
-    return 0;
+    return 10;
   }
 
   double _bottomChromeInset() {
@@ -721,76 +674,6 @@ class _PlayerControlsState extends State<PlayerControls> {
           ),
   );
 
-  Widget _desktopControlRow({
-    required bool fullscreen,
-    required bool showEpisodes,
-    required bool showSpeedQuality,
-    required bool showPush,
-    required bool showCompare,
-    required bool showVolume,
-    required double volume,
-  }) {
-    final tools = [
-      if (showSpeedQuality) ...[
-        _toolText(
-          key: const ValueKey('player-speed'),
-          tooltip: '倍速',
-          label: '${widget.speed}x',
-          onPressed: widget.enabled ? () => _panel(widget.onSpeed) : null,
-          width: 50,
-        ),
-        _toolText(
-          key: const ValueKey('player-quality'),
-          tooltip: '清晰度',
-          label: widget.qualityLabel,
-          onPressed: widget.enabled ? () => _panel(widget.onQuality) : null,
-          width: 52,
-        ),
-      ],
-      if (showPush) _lanPushTool(const ValueKey('fullscreen-lan-push')),
-      if (showEpisodes)
-        _toolIcon(
-          key: const ValueKey('player-episodes'),
-          tooltip: '选集',
-          icon: Icons.grid_view_rounded,
-          onPressed: widget.enabled ? () => _panel(widget.onEpisodes) : null,
-        ),
-      if (showCompare) _enhancementCompareButton(),
-      if (showVolume)
-        _toolIcon(
-          key: const ValueKey('player-volume'),
-          tooltip: '音量',
-          icon: volume == 0
-              ? Icons.volume_off_rounded
-              : Icons.volume_up_rounded,
-          onPressed: widget.enabled
-              ? () => _panel(() => _openVolume(volume))
-              : null,
-        ),
-      if (widget.onPictureInPicture != null)
-        _toolIcon(
-          key: const ValueKey('player-picture-in-picture'),
-          tooltip: '画中画',
-          icon: Icons.picture_in_picture_alt_rounded,
-          onPressed: widget.enabled
-              ? () => _panel(widget.onPictureInPicture!)
-              : null,
-        ),
-      _toolIcon(
-        key: const ValueKey('player-fullscreen'),
-        tooltip: fullscreen ? '退出全屏' : '旋转与全屏',
-        icon: fullscreen
-            ? Icons.fullscreen_exit_rounded
-            : Icons.fullscreen_rounded,
-        onPressed: widget.onFullscreen,
-      ),
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
-      child: _clusteredToolRow(tools),
-    );
-  }
-
   Widget _mobileControlRow({required bool fullscreen}) {
     final tools = [
       if (widget.compact && widget.showDanmaku) _danmakuTool(),
@@ -873,142 +756,6 @@ class _PlayerControlsState extends State<PlayerControls> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 0),
       child: _clusteredToolRow(tools),
-    );
-  }
-
-  Future<void> _openVolume(double initialVolume) async {
-    var volume = initialVolume.clamp(0.0, 100.0);
-    await showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-      barrierColor: Colors.transparent,
-      transitionDuration: const Duration(milliseconds: 140),
-      pageBuilder: (dialogContext, animation, secondaryAnimation) =>
-          StatefulBuilder(
-            builder: (context, setState) => SafeArea(
-              child: Align(
-                alignment: Alignment.bottomRight,
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    right: widget.swipeEnabled ? 12 : 20,
-                    bottom: widget.fullscreen ? 88 : 74,
-                  ),
-                  child: Material(
-                    color: Colors.black.withValues(alpha: .88),
-                    borderRadius: BorderRadius.circular(18),
-                    child: SizedBox(
-                      width: 62,
-                      height: 192,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                            tooltip: volume == 0 ? '恢复音量' : '静音',
-                            constraints: const BoxConstraints.tightFor(
-                              width: 44,
-                              height: 40,
-                            ),
-                            padding: EdgeInsets.zero,
-                            onPressed: () {
-                              final next = volume == 0 ? 100.0 : 0.0;
-                              setState(() => volume = next);
-                              unawaited(widget.player.setVolume(next));
-                            },
-                            icon: Icon(
-                              volume == 0
-                                  ? Icons.volume_off_rounded
-                                  : Icons.volume_up_rounded,
-                              size: 22,
-                              color: Colors.white,
-                            ),
-                          ),
-                          SizedBox(
-                            width: 44,
-                            height: 112,
-                            child: RotatedBox(
-                              quarterTurns: -1,
-                              child: SliderTheme(
-                                data: SliderTheme.of(context).copyWith(
-                                  trackHeight: 3,
-                                  thumbShape: const RoundSliderThumbShape(
-                                    enabledThumbRadius: 6,
-                                  ),
-                                  overlayShape: const RoundSliderOverlayShape(
-                                    overlayRadius: 14,
-                                  ),
-                                ),
-                                child: Slider(
-                                  value: volume,
-                                  max: 100,
-                                  divisions: 20,
-                                  onChanged: (value) {
-                                    setState(() => volume = value);
-                                    unawaited(widget.player.setVolume(value));
-                                  },
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            height: 28,
-                            child: Center(
-                              child: Text(
-                                '${volume.round()}%',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontFeatures: [FontFeature.tabularFigures()],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      transitionBuilder: (context, animation, secondaryAnimation, child) =>
-          FadeTransition(
-            opacity: animation,
-            child: SlideTransition(
-              position:
-                  Tween<Offset>(
-                    begin: const Offset(.04, .08),
-                    end: Offset.zero,
-                  ).animate(
-                    CurvedAnimation(parent: animation, curve: Curves.easeOut),
-                  ),
-              child: child,
-            ),
-          ),
-    );
-  }
-
-  Widget _enhancementCompareButton() {
-    final enhancement = widget.enhancement;
-    if (enhancement == null) return const SizedBox.shrink();
-    return AnimatedBuilder(
-      animation: enhancement,
-      builder: (_, _) {
-        if (!enhancement.canCompare) return const SizedBox.shrink();
-        return _toolIcon(
-          key: const ValueKey('player-enhancement-compare'),
-          tooltip: enhancement.comparing ? '原画对比中，点击恢复增强' : '原画对比',
-          icon: Icons.compare_rounded,
-          onPressed: widget.enabled
-              ? () {
-                  widget.interactions.cancel();
-                  unawaited(enhancement.toggleCompare());
-                  _show();
-                }
-              : null,
-          selected: enhancement.comparing,
-        );
-      },
     );
   }
 

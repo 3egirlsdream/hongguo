@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
-import 'app_layout.dart';
 import 'core_bridge.dart';
 import 'download_picker.dart';
 import 'downloads_screen.dart';
@@ -14,11 +13,11 @@ import 'library_account_actions.dart';
 import 'models.dart';
 import 'player_screen.dart';
 import 'playback_trace.dart';
-import 'remote_widgets.dart';
 import 'widgets.dart';
 import 'catalog_management_screen.dart';
 import 'hongguo_account_screen.dart';
 import 'episode_browser.dart';
+import 'episode_button.dart';
 import 'follow_state.dart';
 import 'hongguo_series.dart';
 
@@ -265,7 +264,6 @@ class _DetailScreenState extends State<DetailScreen> {
             content: const Text('部分内容可能仅提供试看或限制播放。'),
             actions: [
               TextButton(
-                autofocus: AppLayout.isTelevision(context),
                 onPressed: () => Navigator.pop(context, false),
                 child: const Text('取消'),
               ),
@@ -341,7 +339,6 @@ class _DetailScreenState extends State<DetailScreen> {
     final watched = widget.store.watched(drama.id);
     final episodes = _detail?.episodes ?? <Episode>[];
     final resumeIndex = resumeEpisodeIndex(episodes, watched);
-    final television = AppLayout.isTelevision(context);
     final allowed =
         widget.store.profileEpoch == _profileEpoch &&
         widget.store.allowsSource(drama.source);
@@ -354,7 +351,6 @@ class _DetailScreenState extends State<DetailScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          toolbarHeight: television ? 64 : null,
           title: Text(drama.title, overflow: TextOverflow.ellipsis),
           actions: [
             RefreshAction(
@@ -378,7 +374,7 @@ class _DetailScreenState extends State<DetailScreen> {
                       message: '请返回剧库后重新选择。',
                     );
                   }
-                  if (television || constraints.maxWidth >= 960) {
+                  if (constraints.maxWidth >= 960) {
                     return Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -475,7 +471,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                 index,
                               ) {
                                 final episode = visible[index];
-                                return RemoteEpisodeButton(
+                                return EpisodeButton(
                                   key: ValueKey('episode-${episode.number}'),
                                   number: episode.number,
                                   vip: episode.vip,
@@ -523,7 +519,6 @@ class _DetailScreenState extends State<DetailScreen> {
                       Expanded(
                         child: FilledButton.icon(
                           key: const ValueKey('start-play'),
-                          autofocus: television,
                           style: FilledButton.styleFrom(
                             minimumSize: const Size(0, 52),
                             padding: const EdgeInsets.symmetric(

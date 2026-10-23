@@ -98,7 +98,6 @@ class AppUpdateService extends ChangeNotifier {
   bool get busy => checking || downloading || installing;
   bool get downloaded => _downloaded != null;
   double? get progress => package == null ? null : received / package!.size;
-  bool get supported => Platform.isAndroid;
 
   Future<void> loadInstalledVersion() async {
     try {
@@ -106,7 +105,7 @@ class AppUpdateService extends ChangeNotifier {
       if (info == null) throw const FormatException('无法读取当前版本');
       installedVersion = '${info['version']}+${info['build']}';
       AppVersion(installedVersion);
-      canInstall = supported && info['canInstall'] == true;
+      canInstall = info['canInstall'] == true;
     } catch (error) {
       installedVersion = '';
       message = '无法读取当前版本：$error';
@@ -185,14 +184,13 @@ class AppUpdateService extends ChangeNotifier {
         Abi.androidArm64 => 'arm64-v8a',
         _ => '',
       };
-      final platform = Platform.isAndroid ? 'android' : 'windows';
       final packages = manifest['packages'] as List;
       final candidates = packages.whereType<Map<String, dynamic>>().where(
         (item) =>
-            item['platform'] == platform &&
+            item['platform'] == 'android' &&
             item['architecture'] == architecture,
       );
-      if (supported && canInstall && candidates.length == 1) {
+      if (canInstall && candidates.length == 1) {
         package = AppUpdatePackage(candidates.single, version);
         message = '发现新版本 ${version.text}';
       } else {
@@ -296,15 +294,13 @@ class AppUpdateService extends ChangeNotifier {
         _downloaded = null;
         throw const FormatException('更新包校验失败，请重新下载');
       }
-      if (Platform.isAndroid) {
-        final status = await _channel.invokeMethod<String>('install', {
-          'path': file.path,
-        });
-        installPermissionRequired = status == 'permissionRequired';
-        message = installPermissionRequired
-            ? '请允许安装此来源的应用，返回后点击「继续安装」'
-            : '已打开系统安装界面，请完成安装';
-      }
+      final status = await _channel.invokeMethod<String>('install', {
+        'path': file.path,
+      });
+      installPermissionRequired = status == 'permissionRequired';
+      message = installPermissionRequired
+          ? '请允许安装此来源的应用，返回后点击「继续安装」'
+          : '已打开系统安装界面，请完成安装';
     } catch (error) {
       message = '启动安装失败：$error';
     } finally {
@@ -318,17 +314,7 @@ class AppUpdateService extends ChangeNotifier {
     if (uri.scheme != 'https' || uri.host != 'github.com') {
       throw const FormatException('链接地址无效');
     }
-    if (Platform.isAndroid || Platform.isIOS) {
-      await _channel.invokeMethod<void>('openLink', {'url': url});
-    } else if (Platform.isWindows) {
-      await _channel.invokeMethod<void>('openLink', {'url': url});
-    } else if (Platform.isMacOS) {
-      final result = await Process.run('open', [url]);
-      if (result.exitCode != 0) throw const FileSystemException('无法打开浏览器');
-    } else if (Platform.isLinux) {
-      final result = await Process.run('xdg-open', [url]);
-      if (result.exitCode != 0) throw const FileSystemException('无法打开浏览器');
-    }
+    await _channel.invokeMethod<void>('openLink', {'url': url});
   }
 
   static HttpClient _client() => HttpClient()

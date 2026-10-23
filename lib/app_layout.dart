@@ -6,51 +6,14 @@ import 'package:flutter/services.dart';
 
 export 'app_build.dart';
 
-const appVersion = '0.2.84';
-
-ThemeData televisionTheme(ThemeData theme) {
-  final colors = theme.colorScheme;
-  final focusSide = WidgetStateProperty.resolveWith<BorderSide?>(
-    (states) => states.contains(WidgetState.focused)
-        ? BorderSide(color: colors.primary, width: 3)
-        : null,
-  );
-  final focusBackground = WidgetStateProperty.resolveWith<Color?>(
-    (states) =>
-        states.contains(WidgetState.focused) ? colors.primaryContainer : null,
-  );
-  final button = ButtonStyle(
-    side: focusSide,
-    minimumSize: const WidgetStatePropertyAll(Size(52, 48)),
-    textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 17)),
-  );
-  return theme.copyWith(
-    focusColor: colors.primaryContainer,
-    iconButtonTheme: IconButtonThemeData(
-      style: button.copyWith(backgroundColor: focusBackground),
-    ),
-    filledButtonTheme: FilledButtonThemeData(style: button),
-    outlinedButtonTheme: OutlinedButtonThemeData(style: button),
-    textButtonTheme: TextButtonThemeData(
-      style: button.copyWith(backgroundColor: focusBackground),
-    ),
-    inputDecorationTheme: theme.inputDecorationTheme.copyWith(
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide(color: colors.primary, width: 3),
-      ),
-    ),
-  );
-}
+const appVersion = '0.2.87';
 
 class AppDevice {
   const AppDevice({
-    this.television = false,
     this.version = appVersion,
     this.flipDevice = false,
     this.pictureInPicture = false,
   });
-  final bool television;
   final String version;
   final bool flipDevice;
   final bool pictureInPicture;
@@ -66,13 +29,11 @@ class AppDevice {
       final data = await channel
           .invokeMapMethod<String, dynamic>('deviceInfo')
           .timeout(const Duration(seconds: 2));
-      final television = data?['television'];
-      if (television is! bool) return fallback;
-      final version = data?['version'];
+      if (data == null) return fallback;
+      final version = data['version'];
       return AppDevice(
-        television: television,
-        flipDevice: data?['flipDevice'] == true,
-        pictureInPicture: data?['pictureInPicture'] == true,
+        flipDevice: data['flipDevice'] == true,
+        pictureInPicture: data['pictureInPicture'] == true,
         version: version is String && version.isNotEmpty
             ? version
             : fallback.version,
@@ -116,18 +77,13 @@ class AppDevice {
 class AppLayout extends InheritedWidget {
   const AppLayout({
     super.key,
-    required this.television,
     this.coverWindow = false,
     this.version = appVersion,
     required super.child,
   });
-  final bool television;
   final bool coverWindow;
   final String version;
 
-  static bool isTelevision(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AppLayout>()?.television ??
-      false;
   static bool isCoverWindow(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<AppLayout>()?.coverWindow ??
       false;
@@ -137,7 +93,5 @@ class AppLayout extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppLayout oldWidget) =>
-      television != oldWidget.television ||
-      coverWindow != oldWidget.coverWindow ||
-      version != oldWidget.version;
+      coverWindow != oldWidget.coverWindow || version != oldWidget.version;
 }

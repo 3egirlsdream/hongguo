@@ -8,7 +8,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 )
 
 type nativeSystemProxy struct {
@@ -43,12 +42,8 @@ func (proxy nativeSystemProxy) resolve(request *http.Request) (*url.URL, error) 
 }
 
 func (router *proxyRouter) systemSettings() nativeSystemProxy {
-	router.mu.Lock()
-	defer router.mu.Unlock()
-	if !router.systemOverride && time.Since(router.systemRead) > 30*time.Second {
-		router.system = platformSystemProxy()
-		router.systemRead = time.Now()
-	}
+	router.mu.RLock()
+	defer router.mu.RUnlock()
 	return router.system
 }
 
@@ -68,12 +63,12 @@ func (engine *nativeEngine) updateSystemProxy(proxy nativeSystemProxy) error {
 	}
 	router := engine.downloader.proxyRouter
 	router.mu.Lock()
-	if router.systemOverride && router.system.HTTP == proxy.HTTP && router.system.HTTPS == proxy.HTTPS &&
+	if router.system.HTTP == proxy.HTTP && router.system.HTTPS == proxy.HTTPS &&
 		router.system.PAC == proxy.PAC && slices.Equal(router.system.Bypass, proxy.Bypass) {
 		router.mu.Unlock()
 		return nil
 	}
-	router.system, router.systemOverride = proxy, true
+	router.system = proxy
 	router.mu.Unlock()
 	engine.downloader.client.CloseIdleConnections()
 	return nil

@@ -1,1 +1,0 @@
-set(APP_DISPLAY_NAME "野果")

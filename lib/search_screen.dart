@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'app_layout.dart';
 import 'core_bridge.dart';
 import 'catalog_browser.dart';
 import 'catalog_sort_sheet.dart';
@@ -11,7 +10,6 @@ import 'detail_screen.dart';
 import 'playback_launch_screen.dart';
 import 'local_store.dart';
 import 'models.dart';
-import 'remote_widgets.dart';
 import 'widgets.dart';
 import 'search_input.dart';
 import 'catalog_management_screen.dart';
@@ -147,22 +145,6 @@ class _SearchScreenState extends State<SearchScreen> {
     if (!mounted) return;
     if (mounted && (!_onlineSearch || _submittedQuery.isEmpty)) {
       await _load(useCache: true);
-    }
-  }
-
-  Future<void> _televisionSearch() async {
-    final query = await showDialog<String>(
-      context: context,
-      builder: (_) => TelevisionSearchDialog(
-        initialValue: _search.text,
-        title: '搜索短剧',
-        recentSearches: widget.store.recentSearches,
-        onCancel: () => unawaited(widget.repository.cancelSuggestions()),
-        suggestions: _searchSuggestions ? widget.repository.suggestions : null,
-      ),
-    );
-    if (query != null && mounted) {
-      _submitSearch(query);
     }
   }
 
@@ -444,11 +426,7 @@ class _SearchScreenState extends State<SearchScreen> {
         : null,
   );
 
-  Widget _catalogTile(
-    Drama drama, {
-    FocusNode? focusNode,
-    VoidCallback? onFocus,
-  }) {
+  Widget _catalogTile(Drama drama) {
     final following = widget.store.following(drama.id);
     final canSelect =
         widget.store.canDownload && widget.repository.supportsDownloads;
@@ -456,8 +434,6 @@ class _SearchScreenState extends State<SearchScreen> {
       key: ValueKey(drama.id),
       drama: drama,
       repository: widget.repository,
-      focusNode: focusNode,
-      onFocus: onFocus,
       onTap: () => _selectionMode ? _selectDrama(drama) : _openDrama(drama),
       onLongPress: canSelect ? () => _selectDrama(drama) : null,
       onMore: () => _dramaActions(drama),
@@ -530,15 +506,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _catalog({required bool selectionInBody}) {
     final items = _visible;
-    final television = AppLayout.isTelevision(context);
     return Column(
       children: [
-        if (television)
-          RemoteButton(
-            label: '搜索短剧',
-            icon: Icons.search_rounded,
-            onPressed: _televisionSearch,
-          ),
         if (_updater.busy('hongguo'))
           const LinearProgressIndicator(minHeight: 2),
         if (_selectionMode)
@@ -553,34 +522,33 @@ class _SearchScreenState extends State<SearchScreen> {
               TextButton(onPressed: _cancelSelection, child: const Text('取消')),
             ],
           ),
-        if (!television)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SearchInput(
-                    key: ValueKey('search-catalog'),
-                    controller: _search,
-                    autofocus: false,
-                    hint: _searchHint,
-                    suggestions: _searchSuggestions
-                        ? widget.repository.suggestions
-                        : null,
-                    onChanged: _searchChanged,
-                    onCancel: () =>
-                        unawaited(widget.repository.cancelSuggestions()),
-                    onSearch: _submitSearch,
-                  ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: SearchInput(
+                  key: ValueKey('search-catalog'),
+                  controller: _search,
+                  autofocus: false,
+                  hint: _searchHint,
+                  suggestions: _searchSuggestions
+                      ? widget.repository.suggestions
+                      : null,
+                  onChanged: _searchChanged,
+                  onCancel: () =>
+                      unawaited(widget.repository.cancelSuggestions()),
+                  onSearch: _submitSearch,
                 ),
-                IconButton(
-                  tooltip: '排序与筛选',
-                  onPressed: _chooseCatalogView,
-                  icon: const Icon(Icons.tune_rounded),
-                ),
-              ],
-            ),
+              ),
+              IconButton(
+                tooltip: '排序与筛选',
+                onPressed: _chooseCatalogView,
+                icon: const Icon(Icons.tune_rounded),
+              ),
+            ],
           ),
+        ),
         if (_search.text.trim().isEmpty &&
             widget.store.recentSearches.isNotEmpty)
           Padding(
@@ -660,28 +628,6 @@ class _SearchScreenState extends State<SearchScreen> {
                     )
                   : LayoutBuilder(
                       builder: (context, constraints) {
-                        if (television) {
-                          return _televisionGrid(
-                            items,
-                            constraints.maxWidth,
-                            key: 'catalog-catalog-$_submittedQuery',
-                            controller: _scroll,
-                            footer: Padding(
-                              padding: const EdgeInsets.fromLTRB(18, 0, 18, 24),
-                              child: Center(
-                                child: _loadingMore
-                                    ? const CircularProgressIndicator()
-                                    : _hasMore
-                                    ? RemoteButton(
-                                        label: '加载更多',
-                                        icon: Icons.expand_more,
-                                        onPressed: () => _load(more: true),
-                                      )
-                                    : const Text('已经看到这里的全部剧集'),
-                              ),
-                            ),
-                          );
-                        }
                         final padding = constraints.maxWidth < 600
                             ? 16.0
                             : 24.0;
@@ -825,28 +771,6 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _televisionGrid(
-    List<Drama> items,
-    double width, {
-    required String key,
-    ScrollController? controller,
-    Widget? footer,
-  }) {
-    final columns = ((width - 36) / 150).floor().clamp(1, 8);
-    final tileWidth = (width - 36 - (columns - 1) * 14) / columns;
-    return RemoteGrid(
-      key: ValueKey('tv-grid-$key'),
-      itemKeys: items.map((item) => item.id).toList(),
-      columns: columns,
-      itemExtent: DramaTile.extentFor(context, tileWidth - 14) + 14,
-      controller: controller,
-      footer: footer,
-      padding: const EdgeInsets.fromLTRB(18, 2, 18, 18),
-      itemBuilder: (_, index, node, onFocus) =>
-          _catalogTile(items[index], focusNode: node, onFocus: onFocus),
     );
   }
 }

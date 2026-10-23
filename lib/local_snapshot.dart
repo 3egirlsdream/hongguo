@@ -29,7 +29,6 @@ class LocalSnapshot {
   static const globalKeys = {
     'profiles',
     'activeProfile',
-    'displayMode',
     'themeMode',
     'themeAppearance',
     'autoExport',
@@ -68,7 +67,8 @@ class LocalSnapshot {
     if (decoded['version'] != 1 || decoded['values'] is! Map) {
       throw const FormatException('本地配置快照无效');
     }
-    final values = Map<String, Object>.from(decoded['values'] as Map);
+    final values = Map<String, Object>.from(decoded['values'] as Map)
+      ..remove('displayMode');
     if (!values.containsKey('profiles')) {
       throw const FormatException('本地配置快照无效');
     }

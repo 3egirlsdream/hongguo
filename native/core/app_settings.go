@@ -58,12 +58,10 @@ func (settings nativeResourceSettings) validate() error {
 }
 
 type proxyRouter struct {
-	mu             sync.RWMutex
-	mode           string
-	manual         *url.URL
-	system         nativeSystemProxy
-	systemRead     time.Time
-	systemOverride bool
+	mu     sync.RWMutex
+	mode   string
+	manual *url.URL
+	system nativeSystemProxy
 }
 
 func (router *proxyRouter) proxy(request *http.Request) (*url.URL, error) {
