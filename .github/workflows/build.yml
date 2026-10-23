@@ -70,7 +70,11 @@ jobs:
         with:
           packages: 'platforms;android-36 build-tools;36.0.0'
           accept-android-sdk-licenses: true
-      - run: sdkmanager 'ndk;28.2.13676358'
+      - name: Select consistent Android NDK
+        run: |
+          sdkmanager 'ndk;28.2.13676358'
+          echo "ANDROID_NDK_VERSION=28.2.13676358" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - name: Configure required release signing
         run: |
           python3 scripts/configure_signing.py

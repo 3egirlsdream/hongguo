@@ -26,7 +26,7 @@ android {
         applicationId = "com.duanju.duanju_app"
         minSdk = 26
         targetSdk = flutter.targetSdkVersion
-        versionCode = 2000 + flutter.versionCode
+        versionCode = flutter.versionCode
         versionName = flutter.versionName
         manifestPlaceholders["appLabel"] = "野果"
         manifestPlaceholders["appBanner"] = "@drawable/tv_banner"

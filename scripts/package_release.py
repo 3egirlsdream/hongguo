@@ -1,8 +1,10 @@
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -23,10 +25,23 @@ output.mkdir(parents=True, exist_ok=True)
 artifacts = []
 
 if options.platform == 'android':
+    sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
+    tools = sorted((Path(sdk) / 'build-tools').glob('*/aapt*')) if sdk else []
+    aapt = next((tool for tool in reversed(tools) if tool.name in {'aapt', 'aapt.exe'}), None)
+    if aapt is None:
+        raise SystemExit('请通过 ANDROID_HOME 指定包含 aapt 的 Android SDK。')
+    version_name, build_number = version.split('+')
+    version_code = 2000 + int(build_number)
     for abi in options.abi or ['arm64-v8a', 'armeabi-v7a', 'x86_64']:
         source = root / 'build' / 'app' / 'outputs' / 'flutter-apk' / f'app-{abi}-release.apk'
         if not source.is_file():
             raise SystemExit('缺少 APK：' + str(source))
+        badging = subprocess.check_output([str(aapt), 'dump', 'badging', str(source)], text=True)
+        if (f"versionName='{version_name}'" not in badging or
+                f"versionCode='{version_code}'" not in badging or
+                "name='com.duanju.duanju_app'" not in badging or
+                f"native-code: '{abi}'" not in badging):
+            raise SystemExit('APK 的应用标识、内部版本或架构与当前源码不符，拒绝打包：' + str(source))
         with zipfile.ZipFile(source) as archive:
             names = set(archive.namelist())
             required = [f'lib/{abi}/{library}' for library in

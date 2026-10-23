@@ -11,7 +11,7 @@ Flutter 多端独立红果短剧应用，现名「野果」，原名「红果鉴
 本轮 `0.2.79+86` 接入自动发布和应用内更新，仍为开发快照：
 
 - GitHub Actions 在 `main` / `master` 的 `pubspec.yaml` 变化时检测版本；功能版本和构建号同时高于已公开 Release 才构建。只生成 Android `arm64-v8a` APK，不构建其他架构、Windows 或 iOS；同版本跳过，不覆盖已公开附件。
-- 使用本机 `Watermark.Release.keystore` 的 `temp` 发布证书，四项 Android 签名 Secrets 已配置到 `3egirlsdream/hongguo`。Actions 缺少签名或 APK 证书与指定 SHA-256 不符时直接失败。Android versionCode 保持 `2000 + pubspec 构建号`，避免旧包 `2084` 等构建号阻止覆盖升级；本版预期为 `2086`。
+- 使用本机 `Watermark.Release.keystore` 的 `temp` 发布证书，四项 Android 签名 Secrets 已配置到 `3egirlsdream/hongguo`。Actions 缺少签名或 APK 证书与指定 SHA-256 不符时直接失败。Flutter arm64 分包自动将 Android versionCode 设为 `2000 + pubspec 构建号`，Gradle 不再额外重复加偏移，避免旧包 `2084` 等构建号阻止覆盖升级；本版预期为 `2086`。打包脚本额外检查 APK 内部应用标识、版本和架构，避免旧构建产物被重命名为新版本；Actions 显式统一原生核心与 Flutter 插件的 NDK 版本和路径。
 - 打包与证书核对成功后，先上传完整附件到草稿 Release，确认文件齐全后再公开为 latest。附件包含 APK、`update.json` 和 `SHA256SUMS.txt`；成功后按 Mac Explorer 同一后台协议写入独立 `Client=Yeguo`，保存完整版本、清单地址和更新说明，并独立回读确认。
 - 「设置与备份 → 关于野果」增加开发者主页、当前源码仓库、始终指向最新 Release 的下载地址与检查更新。Android arm64 可点击「下载并安装更新」，显示进度、取消和失败重试；完整下载并核对大小 / SHA-256 后自动打开系统安装流程。首次需在系统设置允许安装此来源的应用，返回后继续安装。安装前还核对应用标识、正式证书与更高的构建号。下载任务在关于页退出后仍可继续，进程退出后需重新下载。
 - 其他平台与架构本轮不发布更新包；iOS / Windows 关于页支持查看当前版本及打开仓库链接，不提供本轮自动安装包。Android TV 仅 arm64 设备有对应包，安装权限及遥控交互待实机确认。
