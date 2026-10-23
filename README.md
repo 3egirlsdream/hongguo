@@ -11,12 +11,21 @@ Flutter 多端独立红果短剧应用，现名「野果」，原名「红果鉴
 本轮 `0.2.80+87` 接入自动发布和应用内更新，仍为开发快照：
 
 - GitHub Actions 在 `main` / `master` 的 `pubspec.yaml` 变化时检测版本；功能版本和构建号同时高于已公开 Release 才构建。只生成 Android `arm64-v8a` APK，不构建其他架构、Windows 或 iOS；同版本跳过，不覆盖已公开附件。
-- 使用本机 `Watermark.Release.keystore` 的 `temp` 发布证书，四项 Android 签名 Secrets 已配置到 `3egirlsdream/hongguo`。Actions 缺少签名或 APK 证书与指定 SHA-256 不符时直接失败。Flutter arm64 分包自动将 Android versionCode 设为 `2000 + pubspec 构建号`，Gradle 不再额外重复加偏移，避免旧包 `2084` 等构建号阻止覆盖升级；本版预期为 `2087`。打包脚本额外检查 APK 内部应用标识、版本和架构，避免旧构建产物被重命名为新版本；Actions 显式统一原生核心与 Flutter 插件的 NDK 版本和路径。
+- 使用本机 `Watermark.Release.keystore` 的 `temp` 发布证书，四项 Android 签名 Secrets 已配置到 `3egirlsdream/hongguo`。Actions 缺少签名或 APK 证书与指定 SHA-256 不符时直接失败。Flutter arm64 分包自动将 Android versionCode 设为 `2000 + pubspec 构建号`，Gradle 不再额外重复加偏移，避免旧包 `2084` 等构建号阻止覆盖升级；已从本地与云端 APK 核实本版为 `2087`。打包脚本额外检查 APK 内部应用标识、版本和架构，避免旧构建产物被重命名为新版本；Actions 显式统一原生核心与 Flutter 插件的 NDK 版本和路径。
 - 打包与证书核对成功后，先上传完整附件到草稿 Release，确认文件齐全后再公开为 latest。附件包含 APK、`update.json` 和 `SHA256SUMS.txt`；成功后按 Mac Explorer 同一后台协议写入独立 `Client=Yeguo`，保存数字功能版本、清单地址和更新说明，完整版本与构建号保留在清单中，并独立回读确认。
 - 「设置与备份 → 关于野果」增加开发者主页、当前源码仓库、始终指向最新 Release 的下载地址与检查更新。Android arm64 可点击「下载并安装更新」，显示进度、取消和失败重试；完整下载并核对大小 / SHA-256 后自动打开系统安装流程。首次需在系统设置允许安装此来源的应用，返回后继续安装。安装前还核对应用标识、正式证书与更高的构建号。下载任务在关于页退出后仍可继续，进程退出后需重新下载。
-- 首次 `0.2.79+86` 云端 Release 已公开成功，但后台明确拒绝 `+构建号` 格式。按后台数字版本协议修正发布脚本和应用端读取后，提升为 `0.2.80+87`，保留既有公开附件；本轮最终结果以新版 Release 与后台独立回读为准。
+- 首次 `0.2.79+86` 云端 Release 已公开成功，但后台明确拒绝 `+构建号` 格式。按后台数字版本协议修正发布脚本和应用端读取后，提升为 `0.2.80+87`，保留既有公开附件；后续 `0.2.80+87` 的云端构建、公开发布和后台同步均已成功，后台回读确认数字版本为 `0.2.80`。
 - 其他平台与架构本轮不发布更新包；iOS / Windows 关于页支持查看当前版本及打开仓库链接，不提供本轮自动安装包。Android TV 仅 arm64 设备有对应包，安装权限及遥控交互待实机确认。
-- 本轮完成 3 个相关 Dart 文件的格式整理与定向静态分析（无问题）、Python / XML / 工作流 YAML 语法检查和源码差异空白检查，并执行收尾同步；自动化测试与设备回归继续暂停。2026-10-23 按用户要求提交当前源码到主分支，执行 Android arm64 的本地构建及 Actions 发布，并独立确认 Release 附件和后台版本；最终结果待本轮发布完成后补录。后台 `Yeguo` 在首个成功的 Release 后自动创建，安装升级仍待真机验收。
+- 本轮完成 3 个相关 Dart 文件的格式整理与定向静态分析（无问题）、Python / XML / 工作流 YAML 语法检查和源码差异空白检查，并执行收尾同步；自动化测试与设备回归继续暂停。2026-10-23 已按用户要求将当前源码提交并推送到主分支，完成本地 Android arm64 构建；[Actions 39912933738](https://github.com/3egirlsdream/hongguo/actions/runs/39912933738) 的版本检测、Android 构建、Release 发布、后台同步四个任务全部成功，发布源码提交为 `91c791e`。[Release app-v0.2.80-87](https://github.com/3egirlsdream/hongguo/releases/tag/app-v0.2.80-87) 已公开且为 latest，仅含 arm64 APK、更新清单与 SHA256。独立从公开地址下载后确认 APK 内部版本、正式签名、CRC 及全部发布校验和一致；后台独立回读的 `CLIENT=Yeguo`、`VERSION=0.2.80`、`PATH` 和完整 `MEMO` 与该 Release 清单一致。安装升级仍待真机验收。
+
+本轮安装包记录（同一 `temp` 证书，versionName `0.2.80` / versionCode `2087`）：
+
+| 构建 | APK 大小 | SHA-256 |
+| --- | --- | --- |
+| 本机 NDK 26.1.10909125 | 30,397,430 字节 | `fdcaec3b9a20651d5e5535edee20dc9e66665a775977530a2bf3f0816bc9a680` |
+| Actions NDK 28.2.13676358 | 30,358,274 字节 | `9be96ea265ba9f8b7b233a8befd545674e006e0c481d7d8ce59b05de5b254eac` |
+
+本机包位于 `dist/android/yeguo-0.2.80+87-arm64-v8a.apk`，云端包在 Release 下载。本机包额外核对 ZIP 16KB 对齐、17 个原生库的 16KB ELF 对齐、完整 Material 字体及 Go 核心与当前构建输出一致。构建环境不同，包哈希不同；签名与应用标识保持一致。
 
 此前 `0.2.78+85` 优化点击后的取流等待并增加耗时日志，仍为待真机确认的开发快照：
 
@@ -162,7 +171,7 @@ Flutter 多端独立红果短剧应用，现名「野果」，原名「红果鉴
 
 | 平台 | 包与状态 |
 | --- | --- |
-| Android 8.0+ | 已生成 `yeguo-0.2.77+84-arm64-v8a.apk`（28.87 MiB，versionCode 2084），名称与图标更为「野果」，沿用同一签名可覆盖安装；完整性、签名、图标资源和对齐检查通过，推荐首批 10 条、新排行页签及 MIX Flip 2 外屏连续播放仍待真机验证；armeabi-v7a / x86_64 本轮未构建 |
+| Android 8.0+ | 已生成本机和 Actions 的 `yeguo-0.2.80+87-arm64-v8a.apk`，versionCode 2087；Release 及 `Yeguo` 后台同步成功，沿用 `temp` 签名；包完整性与签名已核实，应用内实际下载安装及既有播放行为待真机验收；本轮仅 arm64 |
 | Windows 10/11 x64 | 后续新包完整 ZIP 解压后运行 `yeguo.exe`（历史安装包仍为原文件名），保留所有 DLL 与 `data`；局域网原生发现依赖 Windows 10 1903+ |
 | Android TV | 与手机共用源码，自动识别电视模式并保持横屏；待电视 / 盒子实机验收 |
 | iOS 15.1+ | 已加入工程、Go 核心链接、媒体依赖、文件管理与构建脚本；iOS 播放页禁用 media_kit_video 硬件纹理加速以规避 libmpv 渲染崩溃；待 Xcode 构建与真机验收，无已签名 IPA |
