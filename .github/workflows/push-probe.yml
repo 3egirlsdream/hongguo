@@ -1,0 +1,12 @@
+name: Push event probe
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  event:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Event=$GITHUB_EVENT_NAME Ref=$GITHUB_REF Commit=$GITHUB_SHA"
