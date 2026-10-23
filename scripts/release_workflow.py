@@ -180,6 +180,7 @@ def matches_fields(data, fields):
 
 def sync_backend():
     version = current_version()
+    backend_version = version.split('+')[0]
     release = json.loads(gh('release', 'view', tag_for(version), '--json', 'assets,isDraft,isPrerelease,body'))
     if release['isDraft'] or release['isPrerelease']:
         raise ValueError('后台仅接受已公开发布的正式 Release')
@@ -207,22 +208,22 @@ def sync_backend():
     if current.get('success') is not True:
         raise ValueError('后台查询失败')
     data = current.get('data')
-    payload = {'Client': CLIENT, 'Version': version, 'Path': expected, 'Memo': manifest['notes']}
-    fields = {'CLIENT': CLIENT, 'VERSION': version, 'PATH': expected, 'MEMO': manifest['notes']}
+    payload = {'Client': CLIENT, 'Version': backend_version, 'Path': expected, 'Memo': manifest['notes']}
+    fields = {'CLIENT': CLIENT, 'VERSION': backend_version, 'PATH': expected, 'MEMO': manifest['notes']}
     if not matches_fields(data, fields):
         if data:
             if data.get('CLIENT') != CLIENT:
                 raise ValueError('后台软件类型不匹配')
-            previous = version_key(data['VERSION'])
-            if previous > version_key(version):
+            previous = version_key(data['VERSION'] + '+0')[:3]
+            if previous > version_key(version)[:3]:
                 raise ValueError('后台已有更高版本，拒绝回退')
-            if previous == version_key(version) and data.get('PATH') != expected:
+            if previous == version_key(version)[:3] and data.get('PATH') != expected:
                 raise ValueError('同版本下载地址不匹配，拒绝覆盖')
         elif current.get('code') != 404:
             raise ValueError('后台缺失记录但未明确返回 404')
         saved = request_json(base + '/api/CloudSync/SaveVersion', payload)
         if saved.get('success') is not True or not matches_fields(saved.get('data'), fields):
-            raise ValueError('后台写入未确认成功')
+            raise ValueError('后台写入未确认成功：' + str(saved.get('message', '响应内容不匹配')))
     verified = request_json(query)
     if verified.get('success') is not True or not matches_fields(verified.get('data'), fields):
         raise ValueError('后台独立回读校验失败')

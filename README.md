@@ -2,18 +2,19 @@
 
 > ⚠️ **免责声明**：本项目源码来自网上大名鼎鼎的**鱼佬**（原作者）。我只是把它拿来打包、测试着玩，方便自己用，**不保证任何可用性，随时可能删库**。
 
-Flutter 多端独立红果短剧应用，现名「野果」，原名「红果鉴 / 短剧库 APP」。请求、解析、下载和播放均在设备上完成；版本检查单独查询更新后台。当前源码版本：**0.2.79+86**（开发快照，尚未集中验收）。
+Flutter 多端独立红果短剧应用，现名「野果」，原名「红果鉴 / 短剧库 APP」。请求、解析、下载和播放均在设备上完成；版本检查单独查询更新后台。当前源码版本：**0.2.80+87**（开发快照，尚未集中验收）。
 
 已在上游 `main`（`0e60928`）基础上合入 [PR #12](https://github.com/zhoufuweigg/guoapp/pull/12)（`4955f16`），修复其中残留的源码合并冲突，保留红果签名、播放模型兼容、流媒体识别和界面调整。
 
 底部导航为「首页 / 排行榜 / 搜索 / 我的」。排行榜提升为一级页签，切换保留榜单分类、数据与滚动位置；手机底栏、电脑与电视导航同步提供入口。首页移除顶部分类栏，直接展示官方推荐流，支持下拉刷新、接近底部自动续页和失败重试；搜索独立成页，保留官方联想、最近搜索、排序筛选与批量下载。「我的」参照提供的官方 App 截图组织为账号头部、快捷卡片、内嵌片单标签与三列海报，提供历史全部 / 已看完 / 未看完筛选、片单搜索与编辑入口；设置、设备互联、内容管理等移入右上角菜单。账号资料、封面和片单使用实际数据，未接入的商城、游戏、关注和粉丝模块不展示。
 
-本轮 `0.2.79+86` 接入自动发布和应用内更新，仍为开发快照：
+本轮 `0.2.80+87` 接入自动发布和应用内更新，仍为开发快照：
 
 - GitHub Actions 在 `main` / `master` 的 `pubspec.yaml` 变化时检测版本；功能版本和构建号同时高于已公开 Release 才构建。只生成 Android `arm64-v8a` APK，不构建其他架构、Windows 或 iOS；同版本跳过，不覆盖已公开附件。
-- 使用本机 `Watermark.Release.keystore` 的 `temp` 发布证书，四项 Android 签名 Secrets 已配置到 `3egirlsdream/hongguo`。Actions 缺少签名或 APK 证书与指定 SHA-256 不符时直接失败。Flutter arm64 分包自动将 Android versionCode 设为 `2000 + pubspec 构建号`，Gradle 不再额外重复加偏移，避免旧包 `2084` 等构建号阻止覆盖升级；本版预期为 `2086`。打包脚本额外检查 APK 内部应用标识、版本和架构，避免旧构建产物被重命名为新版本；Actions 显式统一原生核心与 Flutter 插件的 NDK 版本和路径。
-- 打包与证书核对成功后，先上传完整附件到草稿 Release，确认文件齐全后再公开为 latest。附件包含 APK、`update.json` 和 `SHA256SUMS.txt`；成功后按 Mac Explorer 同一后台协议写入独立 `Client=Yeguo`，保存完整版本、清单地址和更新说明，并独立回读确认。
+- 使用本机 `Watermark.Release.keystore` 的 `temp` 发布证书，四项 Android 签名 Secrets 已配置到 `3egirlsdream/hongguo`。Actions 缺少签名或 APK 证书与指定 SHA-256 不符时直接失败。Flutter arm64 分包自动将 Android versionCode 设为 `2000 + pubspec 构建号`，Gradle 不再额外重复加偏移，避免旧包 `2084` 等构建号阻止覆盖升级；本版预期为 `2087`。打包脚本额外检查 APK 内部应用标识、版本和架构，避免旧构建产物被重命名为新版本；Actions 显式统一原生核心与 Flutter 插件的 NDK 版本和路径。
+- 打包与证书核对成功后，先上传完整附件到草稿 Release，确认文件齐全后再公开为 latest。附件包含 APK、`update.json` 和 `SHA256SUMS.txt`；成功后按 Mac Explorer 同一后台协议写入独立 `Client=Yeguo`，保存数字功能版本、清单地址和更新说明，完整版本与构建号保留在清单中，并独立回读确认。
 - 「设置与备份 → 关于野果」增加开发者主页、当前源码仓库、始终指向最新 Release 的下载地址与检查更新。Android arm64 可点击「下载并安装更新」，显示进度、取消和失败重试；完整下载并核对大小 / SHA-256 后自动打开系统安装流程。首次需在系统设置允许安装此来源的应用，返回后继续安装。安装前还核对应用标识、正式证书与更高的构建号。下载任务在关于页退出后仍可继续，进程退出后需重新下载。
+- 首次 `0.2.79+86` 云端 Release 已公开成功，但后台明确拒绝 `+构建号` 格式。按后台数字版本协议修正发布脚本和应用端读取后，提升为 `0.2.80+87`，保留既有公开附件；本轮最终结果以新版 Release 与后台独立回读为准。
 - 其他平台与架构本轮不发布更新包；iOS / Windows 关于页支持查看当前版本及打开仓库链接，不提供本轮自动安装包。Android TV 仅 arm64 设备有对应包，安装权限及遥控交互待实机确认。
 - 本轮完成 3 个相关 Dart 文件的格式整理与定向静态分析（无问题）、Python / XML / 工作流 YAML 语法检查和源码差异空白检查，并执行收尾同步；自动化测试与设备回归继续暂停。2026-10-23 按用户要求提交当前源码到主分支，执行 Android arm64 的本地构建及 Actions 发布，并独立确认 Release 附件和后台版本；最终结果待本轮发布完成后补录。后台 `Yeguo` 在首个成功的 Release 后自动创建，安装升级仍待真机验收。
 
@@ -176,7 +177,7 @@ Flutter 多端独立红果短剧应用，现名「野果」，原名「红果鉴
 
 仓库 Secrets：`ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`（`temp`）、`ANDROID_KEY_PASSWORD`。密钥与口令从本机指定签名资料读取后通过 Secrets 配置，不进入代码、日志或源码压缩包。证书 SHA-256 固定为 `2B:1F:9D:EC:18:0E:97:2D:6C:37:36:C5:EF:D5:2E:E7:95:2E:DE:41:55:EE:EC:DB:BC:23:EA:33:1F:FA:07:6E`。
 
-后台沿用 [Mac Explorer 发布工作流](https://github.com/3egirlsdream/Mac-Explorer/blob/main/.github/workflows/release.yml) 的 `http://thankful.top:4396`，使用独立 `Client=Yeguo`，不写入 `MacExplorer`。`GET /api/CloudSync/GetVersion?Client=Yeguo` 查询；Release 成功后 `POST /api/CloudSync/SaveVersion` 写入 `{Client, Version, Path, Memo}`。`Version` 为完整 `X.Y.Z+build`，`Path` 为该 Release 的 HTTPS `update.json`。清单记录软件类型、版本、说明及 arm64 APK 的固定版本地址、大小和 SHA-256。应用只接受本仓库 HTTPS Release 清单和附件，再按设备架构匹配。
+后台沿用 [Mac Explorer 发布工作流](https://github.com/3egirlsdream/Mac-Explorer/blob/main/.github/workflows/release.yml) 的 `http://thankful.top:4396`，使用独立 `Client=Yeguo`，不写入 `MacExplorer`。`GET /api/CloudSync/GetVersion?Client=Yeguo` 查询；Release 成功后 `POST /api/CloudSync/SaveVersion` 写入 `{Client, Version, Path, Memo}`。`Version` 为后台要求的数字版本 `X.Y.Z`，完整 `X.Y.Z+build` 保留在更新清单和附件名称中，`Path` 为该 Release 的 HTTPS `update.json`。清单记录软件类型、版本、说明及 arm64 APK 的固定版本地址、大小和 SHA-256。应用只接受本仓库 HTTPS Release 清单和附件，再按设备架构匹配。
 
 构建 / 上传失败不会上报后台；公开 Release 后后台同步失败，可重跑失败任务，或主分支手动运行并勾选 `sync_backend_only`，仅同步当前最高已发布版本，不重复构建。相同版本信息已一致时跳过写入；后台已有更高版本则拒绝回退。草稿失败重跑仅允许相同提交恢复上传，其他提交需提升版本。新类型记录只在实际 Release 公开后创建。
 

@@ -146,16 +146,32 @@ class AppUpdateService extends ChangeNotifier {
       if (data is! Map || data['CLIENT'] != updateClient) {
         throw const FormatException('后台软件类型不匹配');
       }
-      final version = AppVersion(data['VERSION'] as String);
+      final backendVersion = data['VERSION'] as String;
+      final manifestUrl = Uri.parse(data['PATH'] as String);
+      final segments = manifestUrl.pathSegments;
+      final tag = segments.length == 6
+          ? RegExp(r'^app-v(\d+\.\d+\.\d+)-(\d+)$').firstMatch(segments[4])
+          : null;
+      if (manifestUrl.scheme != 'https' ||
+          manifestUrl.host != 'github.com' ||
+          manifestUrl.userInfo.isNotEmpty ||
+          manifestUrl.hasQuery ||
+          manifestUrl.hasFragment ||
+          tag == null ||
+          tag.group(1) != backendVersion ||
+          !listEquals(segments.take(4).toList(), [
+            '3egirlsdream',
+            'hongguo',
+            'releases',
+            'download',
+          ]) ||
+          segments.last != 'update.json') {
+        throw const FormatException('后台更新清单地址无效');
+      }
+      final version = AppVersion('${tag.group(1)}+${tag.group(2)}');
       if (version.compareTo(current) <= 0) {
         message = '当前已是最新版本';
         return;
-      }
-      final manifestUrl = Uri.parse(
-        '$appRepositoryUrl/releases/download/${version.tag}/update.json',
-      );
-      if (Uri.tryParse(data['PATH'] as String) != manifestUrl) {
-        throw const FormatException('后台更新清单地址无效');
       }
       final manifest = await _json(client, manifestUrl);
       if (manifest['schema'] != 1 ||
