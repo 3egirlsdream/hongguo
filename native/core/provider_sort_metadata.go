@@ -44,3 +44,25 @@ func hongguoOnlineDate(row map[string]any, now time.Time) string {
 	}
 	return ""
 }
+
+func hongguoPublishText(now time.Time, rows ...map[string]any) string {
+	for _, field := range []string{"schedule_publish_time", "expected_publish_time"} {
+		for _, row := range rows {
+			stamp := hgEpoch(row[field]).In(providerChinaTime)
+			if stamp.Year() >= 2000 && stamp.Year() <= 2100 {
+				return stamp.Format("2006-01-02 15:04")
+			}
+		}
+	}
+	for _, row := range rows {
+		if text := mapString(row, "expected_rec_text", "publish_text", "sub_info"); text != "" {
+			return text
+		}
+	}
+	for _, row := range rows {
+		if date := hongguoOnlineDate(row, now); date != "" {
+			return date
+		}
+	}
+	return ""
+}

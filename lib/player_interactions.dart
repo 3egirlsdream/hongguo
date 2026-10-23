@@ -9,7 +9,7 @@ import 'package:media_kit/media_kit.dart';
 import 'app_layout.dart';
 import 'widgets.dart';
 
-enum SwipeAction { none, brightness, episode }
+enum SwipeAction { none, volume, brightness, episode }
 
 class GestureHudState {
   const GestureHudState({this.type = SwipeAction.none, this.value = 0.0});
@@ -71,7 +71,7 @@ class PlayerInteractions extends ChangeNotifier {
   GestureHudState _hudState = const GestureHudState();
   double _brightness = 0.5;
   double _initialBrightness = 0.5;
-  double _viewWidth = 0.0;
+  double _initialVolume = 100;
   double _viewHeight = 0.0;
   Timer? _hudTimer;
 
@@ -166,6 +166,7 @@ class PlayerInteractions extends ChangeNotifier {
     _origin = null;
     _lastPosition = null;
     _endHold(silent: true);
+    if (_hudState.type != SwipeAction.none) _scheduleDismissHud();
     hint('');
   }
 
@@ -186,16 +187,27 @@ class PlayerInteractions extends ChangeNotifier {
     _started = event.timeStamp;
     _swipeEnabled = swipeEnabled && event.kind == PointerDeviceKind.touch;
     _swipeThreshold = math.max(30, math.min(80, height * .08));
-    _viewWidth = width;
     _viewHeight = height;
     _moved = _held = false;
     _swipeAction = SwipeAction.none;
 
     _initialBrightness = _brightness;
-    if (_swipeEnabled && width > 0) {
-      _swipeAction = event.localPosition.dx < width * 0.35
-          ? SwipeAction.brightness
-          : SwipeAction.episode;
+    _initialVolume = player.state.volume.clamp(0.0, 100.0);
+    if (_swipeEnabled && width > 0 && height > 0) {
+      final position = event.localPosition;
+      final episodeArea = Rect.fromLTWH(
+        width * .3,
+        height * .2,
+        width * .4,
+        height * .6,
+      );
+      if (position.dx < episodeArea.left) {
+        _swipeAction = SwipeAction.volume;
+      } else if (position.dx >= episodeArea.right) {
+        _swipeAction = SwipeAction.brightness;
+      } else if (episodeArea.contains(position)) {
+        _swipeAction = SwipeAction.episode;
+      }
       if (_swipeAction == SwipeAction.brightness) {
         AppDevice.getBrightness()
             .then((value) {
@@ -222,13 +234,21 @@ class PlayerInteractions extends ChangeNotifier {
     final dy = _origin!.dy - event.localPosition.dy; // 向上滑动为增加，向下滑动为减少
     final deltaRatio = dy / (_viewHeight * 0.6);
 
-    if (_swipeAction == SwipeAction.brightness &&
-        !_held &&
-        diff.dy.abs() > 12 &&
-        diff.dy.abs() > diff.dx.abs() * 1.5) {
-      _brightness = (_initialBrightness + deltaRatio).clamp(0.01, 1.0);
-      AppDevice.setBrightness(_brightness);
-      _showHud(SwipeAction.brightness, _brightness);
+    if (!_held && diff.dy.abs() > 12 && diff.dy.abs() > diff.dx.abs() * 1.5) {
+      if (_swipeAction == SwipeAction.volume) {
+        final volume = (_initialVolume + deltaRatio * 100).clamp(0.0, 100.0);
+        unawaited(
+          player.setVolume(volume).catchError((Object _) {
+            hint('音量调整失败，请重试');
+          }),
+        );
+        if (volume > 0) _unmutedVolume = volume;
+        _showHud(SwipeAction.volume, volume / 100);
+      } else if (_swipeAction == SwipeAction.brightness) {
+        _brightness = (_initialBrightness + deltaRatio).clamp(0.01, 1.0);
+        AppDevice.setBrightness(_brightness);
+        _showHud(SwipeAction.brightness, _brightness);
+      }
     }
   }
 
@@ -252,7 +272,8 @@ class PlayerInteractions extends ChangeNotifier {
         isVertical &&
         event.timeStamp - _started < const Duration(milliseconds: 1500)) {
       if (available()) hint(onEpisode(delta.dy < 0 ? 1 : -1));
-    } else if (_swipeAction == SwipeAction.brightness) {
+    } else if (_swipeAction == SwipeAction.volume ||
+        _swipeAction == SwipeAction.brightness) {
       _scheduleDismissHud();
     }
 

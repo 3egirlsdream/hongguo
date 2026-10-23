@@ -1544,6 +1544,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _interactions.cancel();
     setState(() => _panelOpen = true);
     final menuTheme = _showFullscreen ? AppTheme.dark : Theme.of(context);
+    var enterPictureInPicture = false;
     try {
       final index = await showDialog<int>(
         context: context,
@@ -1572,6 +1573,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                   (widget.store.isFavorite(widget.detail.drama.id) ||
                   widget.repository.isAccountFavorite(widget.detail.drama.id)),
               onEpisode: (index) => Navigator.pop(menuContext, index),
+              onPictureInPicture: _canUsePictureInPicture
+                  ? () => Navigator.pop(menuContext, -1)
+                  : null,
               onPreferences: _setPreferences,
               showDanmaku: widget.detail.drama.source == 'hongguo',
               danmakuStatus: _danmaku.status,
@@ -1587,7 +1591,9 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         ),
       );
-      if (mounted && !_closed && index != null && index != _index) {
+      if (index == -1) {
+        enterPictureInPicture = true;
+      } else if (mounted && !_closed && index != null && index != _index) {
         await _play(index);
       }
     } finally {
@@ -1596,6 +1602,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         _applyLifecycleVisibility();
         _playerFocus.requestFocus();
       }
+    }
+    if (enterPictureInPicture && mounted && !_closed) {
+      await _enterPictureInPicture();
     }
   }
 
@@ -2004,6 +2013,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             compact: _coverWindow,
             showOnPlaybackReady: _showControlsOnPlaybackReady,
             title: title,
+            episodeLabel: '第 ${widget.detail.episodes[_index].number} 集',
             onTogglePlayback: _togglePlayback,
             onFullscreen: _rotate,
             onBack: _back,
@@ -2024,13 +2034,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 ? _retryDanmakuFromControls
                 : null,
             onPush: widget.mediaId == null ? _pushToDevice : null,
-            onPictureInPicture: _canUsePictureInPicture
-                ? _enterPictureInPicture
-                : null,
-            onPrevious: _index > 0 ? () => _play(_index - 1) : null,
-            onNext: _index + 1 < widget.detail.episodes.length
-                ? () => _play(_index + 1)
-                : null,
           );
     final layeredControls = Stack(
       fit: StackFit.expand,
@@ -2118,15 +2121,33 @@ class _PlayerScreenState extends State<PlayerScreen>
                   alignment: Alignment.topCenter,
                   child: Row(
                     children: [
-                      IconButton(
-                        tooltip: '退出全屏',
-                        onPressed: _rotate,
-                        icon: const Icon(Icons.arrow_back_rounded),
+                      TextButton.icon(
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: _back,
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                        label: const Text('后退'),
                       ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => _openPanel(PlayerMenuSection.episodes),
-                        child: const Text('选集'),
+                      Container(
+                        height: 18,
+                        width: 1,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        color: Colors.white.withValues(alpha: .5),
+                      ),
+                      Flexible(
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () =>
+                              _openPanel(PlayerMenuSection.episodes),
+                          child: Text(
+                            '第 ${widget.detail.episodes[_index].number} 集',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
                     ],
                   ),

@@ -86,7 +86,7 @@ func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, cur
 			if tag != nil && drama.ID == current.ID {
 				response.CurrentSeason = number
 			}
-			publish := firstNonEmpty(mapString(row, "expected_rec_text", "publish_text"), hongguoOnlineDate(row, time.Now()))
+			publish := hongguoPublishText(time.Now(), row)
 			work := hongguoOfficialSeason{Drama: drama, Number: number, Playable: playable, Reservable: reservable, PublishText: publish, Label: label}
 			response.RelatedWorks = append(response.RelatedWorks, work)
 			if tag != nil {

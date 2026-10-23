@@ -345,7 +345,7 @@ func (c *hgAccountHTTP) reservationPage(ctx context.Context, mode string, offset
 		if drama.Cover == "" {
 			drama.Cover = mapString(r, "cover")
 		}
-		publishText := firstNonEmpty(mapString(r, "sub_info", "expected_rec_text"), mapString(sub, "expected_rec_text"), drama.OnlineDate)
+		publishText := hongguoPublishText(time.Now(), r, sub)
 		items = append(items, hgReservation{ID: sid, Drama: drama, Reserved: !calendar || hgBool(r["has_subscribed"]), Upcoming: !hgBool(r["is_online"]), PublishText: publishText})
 	}
 	more, flagError := hgPageFlag(d["has_more"])

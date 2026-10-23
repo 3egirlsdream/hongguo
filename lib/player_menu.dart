@@ -28,6 +28,7 @@ class PlayerMenu extends StatefulWidget {
     this.danmakuStatus = '',
     this.onRetryDanmaku,
     this.preloadStatus = '',
+    this.onPictureInPicture,
   });
 
   final PlayerMenuSection section;
@@ -46,6 +47,7 @@ class PlayerMenu extends StatefulWidget {
   final ValueChanged<int> onEpisode;
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
+  final VoidCallback? onPictureInPicture;
 
   @override
   State<PlayerMenu> createState() => _PlayerMenuState();
@@ -157,6 +159,15 @@ class _PlayerMenuState extends State<PlayerMenu> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (widget.onPictureInPicture != null) ...[
+          OutlinedButton.icon(
+            key: const ValueKey('player-picture-in-picture'),
+            onPressed: _busy ? null : widget.onPictureInPicture,
+            icon: const Icon(Icons.picture_in_picture_alt_rounded),
+            label: const Text('画中画'),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (all || widget.section == PlayerMenuSection.speed) ...[
           const Text('倍速'),
           const SizedBox(height: 8),
@@ -296,7 +307,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           ),
           const SizedBox(height: 20),
           Text(
-            '上下滑切集；长按画面临时 3 倍速，松开恢复。竖屏轻点暂停，横屏轻点显示控制；双击播放或暂停。',
+            '画面中央上下滑切集，左侧调音量、右侧调亮度；长按临时 3 倍速，松开恢复。轻点显示或隐藏控件，双击播放或暂停；全屏时后退退出全屏。',
             style: helperStyle.copyWith(height: 1.6),
           ),
         ],

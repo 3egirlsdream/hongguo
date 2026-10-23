@@ -17,9 +17,8 @@ class PlayerControls extends StatefulWidget {
     required this.showOnPlaybackReady,
     required this.onFullscreen,
     required this.onBack,
-    required this.onPrevious,
-    required this.onNext,
     required this.title,
+    required this.episodeLabel,
     required this.onTogglePlayback,
     required this.onEpisodes,
     required this.onSpeed,
@@ -36,7 +35,6 @@ class PlayerControls extends StatefulWidget {
     this.onDanmaku,
     this.onRetryDanmaku,
     this.onPush,
-    this.onPictureInPicture,
   });
 
   final Player player;
@@ -46,9 +44,8 @@ class PlayerControls extends StatefulWidget {
   final bool showOnPlaybackReady;
   final VoidCallback onFullscreen;
   final VoidCallback onBack;
-  final VoidCallback? onPrevious;
-  final VoidCallback? onNext;
   final String title;
+  final String episodeLabel;
   final VoidCallback onTogglePlayback;
   final Future<void> Function() onEpisodes;
   final Future<void> Function() onSpeed;
@@ -65,7 +62,6 @@ class PlayerControls extends StatefulWidget {
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
   final Future<void> Function()? onPush;
-  final Future<void> Function()? onPictureInPicture;
 
   @override
   State<PlayerControls> createState() => _PlayerControlsState();
@@ -274,29 +270,13 @@ class _PlayerControlsState extends State<PlayerControls> {
                             ),
                           ),
                         ),
-                        Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            8,
-                            _topChromeInset(),
-                            8,
-                            _bottomChromeInset(),
-                          ),
-                          child: Stack(
-                            children: [
-                              _topBar(),
-                              if (!state.buffering &&
-                                  widget.enabled &&
-                                  constraints.maxHeight >=
-                                      (widget.compact ? 260 : 168))
-                                _centerPlayback(state.playing, showSkip: true),
-                              _sideDanmakuControl(),
-                              _bottomControls(
-                                duration: duration,
-                                position: position,
-                                buffered: buffered,
-                              ),
-                            ],
-                          ),
+                        _controlsChrome(
+                          constraints.biggest,
+                          playing: state.playing,
+                          buffering: state.buffering,
+                          duration: duration,
+                          position: position,
+                          buffered: buffered,
                         ),
                       ],
                     ),
@@ -311,463 +291,386 @@ class _PlayerControlsState extends State<PlayerControls> {
     );
   }
 
-  Widget _topBar() {
-    final compact = !widget.fullscreen;
-    return Align(
-      alignment: Alignment.topCenter,
-      child: Padding(
-        padding: EdgeInsets.only(top: compact ? 8 : 0),
-        child: Row(
+  Widget _controlsChrome(
+    Size viewport, {
+    required bool playing,
+    required bool buffering,
+    required double duration,
+    required double position,
+    required double buffered,
+  }) {
+    final compact = widget.compact || viewport.height < 240;
+    final horizontal = (viewport.width * .028).clamp(8.0, 28.0);
+    final top = (viewport.height * .035).clamp(6.0, 20.0);
+    final bottom = (viewport.height * .045).clamp(4.0, 24.0);
+    final centerSize = (viewport.shortestSide * .18).clamp(40.0, 84.0);
+    return IconTheme(
+      data: const IconThemeData(color: Colors.white),
+      child: DefaultTextStyle(
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: compact ? 14 : 16,
+          fontWeight: FontWeight.w400,
+        ),
+        child: Stack(
           children: [
-            _overlayIconButton(
-              tooltip: '返回',
-              onPressed: widget.onBack,
-              icon: Icons.arrow_back_rounded,
+            if (widget.enabled && !buffering)
+              Align(
+                alignment: const Alignment(0, -.05),
+                child: _centerPlayback(playing, centerSize),
+              ),
+            Padding(
+              padding: EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom),
+              child: Stack(
+                children: [
+                  _topBar(compact: compact),
+                  _bottomControls(
+                    compact: compact,
+                    duration: duration,
+                    position: position,
+                    buffered: buffered,
+                  ),
+                ],
+              ),
             ),
-            if (!compact)
-              Expanded(
-                child: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )
-            else
-              const Spacer(),
           ],
         ),
       ),
     );
   }
 
-  Widget _overlayIconButton({
-    required String tooltip,
-    required VoidCallback? onPressed,
-    required IconData icon,
-  }) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 2),
-    child: DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: .36),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: IconButton(
-        tooltip: tooltip,
-        constraints: const BoxConstraints.tightFor(width: 42, height: 42),
-        padding: EdgeInsets.zero,
-        onPressed: onPressed,
-        icon: Icon(icon),
-      ),
-    ),
-  );
-
-  Widget _centerPlayback(bool playing, {required bool showSkip}) => Center(
+  Widget _topBar({required bool compact}) => Align(
+    alignment: Alignment.topCenter,
     child: Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        if (showSkip) ...[
-          IconButton(
-            tooltip: '上一集',
-            onPressed: widget.onPrevious,
-            icon: const Icon(Icons.skip_previous_rounded),
+        _chromeButton(
+          key: const ValueKey('player-back'),
+          tooltip: widget.fullscreen ? '返回（退出全屏）' : '返回',
+          onPressed: widget.onBack,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+              const SizedBox(width: 6),
+              const Text('后退'),
+            ],
           ),
-          const SizedBox(width: 12),
-        ],
-        IconButton.filledTonal(
-          tooltip: playing ? '暂停播放' : '开始播放',
-          iconSize: 38,
-          onPressed: () {
-            widget.onTogglePlayback();
-            _show();
-          },
-          icon: Icon(playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
         ),
-        if (showSkip) ...[
-          const SizedBox(width: 12),
-          IconButton(
-            tooltip: '下一集',
-            onPressed: widget.onNext,
-            icon: const Icon(Icons.skip_next_rounded),
+        Container(
+          height: 18,
+          width: 1,
+          margin: EdgeInsets.symmetric(horizontal: compact ? 6 : 12),
+          color: Colors.white.withValues(alpha: .5),
+        ),
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _chromeButton(
+              key: const ValueKey('player-episodes'),
+              tooltip: '${widget.title}，点击选集',
+              onPressed: widget.enabled
+                  ? () => _panel(widget.onEpisodes)
+                  : null,
+              child: Text(
+                widget.episodeLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ),
-        ],
+        ),
+        if (widget.onPush != null)
+          _lanPushTool(const ValueKey('fullscreen-lan-push')),
       ],
     ),
   );
 
-  Widget _sideDanmakuControl() {
-    if (!widget.showDanmaku || widget.compact) return const SizedBox.shrink();
-    return Align(alignment: Alignment.centerRight, child: _danmakuTool());
-  }
+  Widget _centerPlayback(bool playing, double size) => Tooltip(
+    message: playing ? '暂停播放' : '开始播放',
+    child: Semantics(
+      button: true,
+      label: playing ? '暂停播放' : '开始播放',
+      child: Material(
+        color: Colors.black.withValues(alpha: .55),
+        shape: CircleBorder(
+          side: BorderSide(color: Colors.white.withValues(alpha: .2)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          key: const ValueKey('player-playback-toggle'),
+          customBorder: const CircleBorder(),
+          onTap: () {
+            widget.onTogglePlayback();
+            _show();
+          },
+          child: SizedBox.square(
+            dimension: size,
+            child: Icon(
+              playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              size: size * .64,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
   Widget _bottomControls({
+    required bool compact,
     required double duration,
     required double position,
     required double buffered,
-  }) {
-    return Align(
-      alignment: Alignment.bottomCenter,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _mobileControlRow(fullscreen: widget.fullscreen),
-          _progressRow(
-            duration: duration,
-            position: position,
-            buffered: buffered,
-          ),
-        ],
-      ),
-    );
-  }
-
-  double _topChromeInset() {
-    if (widget.compact) return 4;
-    if (widget.fullscreen) {
-      final top = MediaQuery.paddingOf(context).top;
-      if (top <= 0) return 16;
-      return (top + 16).clamp(40.0, 80.0);
-    }
-    return 10;
-  }
-
-  double _bottomChromeInset() {
-    if (widget.compact) return 4;
-    if (widget.fullscreen) {
-      return (MediaQuery.viewPaddingOf(context).bottom + 24).clamp(64.0, 104.0);
-    }
-    return 0;
-  }
+  }) => Align(
+    alignment: Alignment.bottomCenter,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _progressRow(
+          compact: compact,
+          duration: duration,
+          position: position,
+          buffered: buffered,
+        ),
+        _playbackTools(compact: compact),
+      ],
+    ),
+  );
 
   Widget _progressRow({
+    required bool compact,
     required double duration,
     required double position,
     required double buffered,
   }) {
     final timeStyle = TextStyle(
-      fontSize: 12,
-      color: Colors.white.withValues(alpha: .82),
+      fontSize: compact ? 11 : 13,
+      color: Colors.white,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 2),
-      child: SizedBox(
-        height: 28,
-        child: Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            SizedBox(
-              width: 43,
-              child: Text(
-                formatPosition(_seekValue ?? position),
-                style: timeStyle,
-                textAlign: TextAlign.end,
-              ),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 3,
-                  secondaryActiveTrackColor: Colors.white38,
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 6,
-                  ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 14,
-                  ),
-                ),
-                child: Slider(
-                  key: const ValueKey('player-progress'),
-                  value: (_seekValue ?? position).clamp(
-                    0,
-                    duration > 0 ? duration : 1,
-                  ),
-                  max: duration > 0 ? duration : 1,
-                  secondaryTrackValue: buffered.clamp(
-                    0,
-                    duration > 0 ? duration : 1,
-                  ),
-                  semanticFormatterCallback: formatPosition,
-                  onChangeStart: widget.enabled && duration > 0
-                      ? (_) {
-                          widget.interactions.cancel();
-                          _hideTimer?.cancel();
-                        }
-                      : null,
-                  onChanged: !widget.enabled || duration <= 0
-                      ? null
-                      : (value) {
-                          _hideTimer?.cancel();
-                          setState(() => _seekValue = value);
-                        },
-                  onChangeEnd: (value) {
-                    if (widget.enabled && duration > 0) {
-                      (widget.onSeek ?? widget.player.seek)(
-                        Duration(milliseconds: (value * 1000).round()),
-                      );
-                    }
-                    setState(() => _seekValue = null);
-                    _show();
-                  },
-                ),
-              ),
-            ),
-            SizedBox(
-              width: 43,
-              child: Text(formatPosition(duration), style: timeStyle),
-            ),
+            Text(formatPosition(_seekValue ?? position), style: timeStyle),
+            Text(formatPosition(duration), style: timeStyle),
           ],
         ),
-      ),
+        SizedBox(
+          height: compact ? 16 : 20,
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              padding: EdgeInsets.zero,
+              trackHeight: 4,
+              activeTrackColor: const Color(0xFF35DED8),
+              thumbColor: const Color(0xFF35DED8),
+              inactiveTrackColor: Colors.white.withValues(alpha: .3),
+              secondaryActiveTrackColor: Colors.white.withValues(alpha: .5),
+              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+              overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              trackShape: const RoundedRectSliderTrackShape(),
+            ),
+            child: Slider(
+              key: const ValueKey('player-progress'),
+              padding: EdgeInsets.zero,
+              value: (_seekValue ?? position).clamp(
+                0,
+                duration > 0 ? duration : 1,
+              ),
+              max: duration > 0 ? duration : 1,
+              secondaryTrackValue: buffered.clamp(
+                0,
+                duration > 0 ? duration : 1,
+              ),
+              semanticFormatterCallback: formatPosition,
+              onChangeStart: widget.enabled && duration > 0
+                  ? (_) {
+                      widget.interactions.cancel();
+                      _hideTimer?.cancel();
+                    }
+                  : null,
+              onChanged: !widget.enabled || duration <= 0
+                  ? null
+                  : (value) {
+                      _hideTimer?.cancel();
+                      setState(() => _seekValue = value);
+                    },
+              onChangeEnd: (value) {
+                if (widget.enabled && duration > 0) {
+                  (widget.onSeek ?? widget.player.seek)(
+                    Duration(milliseconds: (value * 1000).round()),
+                  );
+                }
+                setState(() => _seekValue = null);
+                _show();
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _toolIcon({
-    required Key key,
-    required String tooltip,
-    required IconData icon,
-    required VoidCallback? onPressed,
-    bool selected = false,
-  }) => _toolButton(
-    key: key,
-    tooltip: tooltip,
-    onPressed: onPressed,
-    selected: selected,
-    child: Icon(icon, size: 22),
-  );
-
-  Widget _toolText({
-    required Key key,
-    required String tooltip,
-    required String label,
-    required VoidCallback? onPressed,
-    double width = 52,
-  }) => _toolButton(
-    key: key,
-    tooltip: tooltip,
-    onPressed: onPressed,
-    visualWidth: width,
-    child: Text(
-      label,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.center,
-    ),
-  );
-
-  Widget _toolButton({
+  Widget _chromeButton({
     required Key key,
     required String tooltip,
     required Widget child,
     required VoidCallback? onPressed,
     bool selected = false,
-    double visualWidth = 36,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    final enabled = onPressed != null;
-    final foreground = selected
-        ? scheme.primary
-        : Colors.white.withValues(alpha: enabled ? .92 : .36);
-    final background = selected
-        ? scheme.primary.withValues(alpha: .20)
-        : Colors.black.withValues(alpha: .22);
-    final border = selected
-        ? scheme.primary.withValues(alpha: .62)
-        : Colors.white.withValues(alpha: .08);
-    final targetWidth = visualWidth < 40 ? 48.0 : visualWidth + 8;
-    return Tooltip(
+  }) => Builder(
+    builder: (context) => Tooltip(
       message: tooltip,
-      child: Semantics(
-        button: true,
-        enabled: enabled,
-        label: tooltip,
-        child: GestureDetector(
-          key: key,
-          behavior: HitTestBehavior.opaque,
-          onTap: onPressed,
-          child: SizedBox(
-            width: targetWidth,
-            height: 48,
-            child: Center(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                width: visualWidth,
-                height: 36,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: background,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: border),
-                ),
-                child: IconTheme.merge(
-                  data: IconThemeData(color: foreground, size: 22),
-                  child: DefaultTextStyle.merge(
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 13.5,
-                      height: 1,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    child: child,
-                  ),
-                ),
-              ),
-            ),
-          ),
+      child: TextButton(
+        key: key,
+        style: TextButton.styleFrom(
+          foregroundColor: selected ? const Color(0xFF35DED8) : Colors.white,
+          disabledForegroundColor: Colors.white.withValues(alpha: .38),
+          backgroundColor: Colors.transparent,
+          minimumSize: const Size(44, 44),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          textStyle: DefaultTextStyle.of(context).style,
+          shape: const RoundedRectangleBorder(),
         ),
+        onPressed: onPressed,
+        child: child,
       ),
-    );
-  }
+    ),
+  );
+
+  Widget _dropdownTool({
+    required Key key,
+    required String tooltip,
+    required String label,
+    required VoidCallback? onPressed,
+    required bool compact,
+  }) => _chromeButton(
+    key: key,
+    tooltip: tooltip,
+    onPressed: onPressed,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label),
+        SizedBox(width: compact ? 2 : 6),
+        Icon(Icons.keyboard_arrow_down_rounded, size: compact ? 18 : 22),
+      ],
+    ),
+  );
 
   Widget _lanPushTool(Key key) {
     final link = LanController.current;
-    if (link == null) return const SizedBox.shrink();
-    return AnimatedBuilder(
-      animation: link,
-      builder: (context, _) => _toolButton(
-        key: key,
-        tooltip: link.connection == null
-            ? '推送'
-            : '推送到 ${link.connection!.peer.name}',
-        onPressed: widget.enabled ? () => _panel(widget.onPush!) : null,
-        child: link.pushing
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(
-                link.connection == null
-                    ? Icons.cast_rounded
-                    : Icons.cast_connected_rounded,
-                size: 22,
+    Widget button() => _chromeButton(
+      key: key,
+      tooltip: link?.connection == null
+          ? '广播到其他设备'
+          : '广播到 ${link!.connection!.peer.name}',
+      onPressed: widget.enabled && link != null
+          ? () => _panel(widget.onPush!)
+          : null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (link?.pushing == true)
+            const SizedBox.square(
+              dimension: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
               ),
+            )
+          else
+            Icon(
+              link?.connection == null
+                  ? Icons.cast_rounded
+                  : Icons.cast_connected_rounded,
+              size: 26,
+            ),
+          const SizedBox(width: 6),
+          const Text('广播'),
+        ],
       ),
     );
+    if (link == null) return button();
+    return AnimatedBuilder(animation: link, builder: (context, _) => button());
   }
 
-  Widget _clusteredToolRow(List<Widget> tools) {
-    if (tools.isEmpty) return const SizedBox.shrink();
-    return Wrap(alignment: WrapAlignment.end, children: tools);
-  }
-
-  Widget _danmakuTool() => _toolButton(
+  Widget _danmakuTool() => _chromeButton(
     key: const ValueKey('player-danmaku-toggle'),
     tooltip: widget.danmakuStatus.isEmpty
         ? (widget.danmakuEnabled ? '关闭弹幕' : '打开弹幕')
         : widget.danmakuStatus,
-    visualWidth: 36,
     selected: widget.danmakuEnabled,
-    onPressed: widget.enabled
+    onPressed:
+        widget.enabled &&
+            (widget.onRetryDanmaku != null || widget.onDanmaku != null)
         ? () => _panel(widget.onRetryDanmaku ?? widget.onDanmaku!)
         : null,
     child: widget.onRetryDanmaku != null
-        ? const Icon(Icons.refresh_rounded, size: 21)
-        : Text(
-            '弹',
-            style: TextStyle(
-              fontSize: 14,
-              height: 1,
-              fontWeight: FontWeight.w800,
-              color: widget.danmakuEnabled
-                  ? Theme.of(context).colorScheme.primary
-                  : Colors.white.withValues(alpha: .86),
-            ),
-          ),
+        ? const Icon(Icons.refresh_rounded, size: 22)
+        : const Text('弹'),
   );
 
-  Widget _mobileControlRow({required bool fullscreen}) {
-    final tools = [
-      if (widget.compact && widget.showDanmaku) _danmakuTool(),
-      _toolText(
-        key: const ValueKey('player-speed'),
-        tooltip: '倍速',
-        label: '${widget.speed}x',
-        onPressed: widget.enabled ? () => _panel(widget.onSpeed) : null,
-        width: 50,
-      ),
-      _toolText(
-        key: const ValueKey('player-quality'),
-        tooltip: '清晰度',
-        label: widget.qualityLabel,
-        onPressed: widget.enabled ? () => _panel(widget.onQuality) : null,
-        width: 52,
-      ),
-      if (widget.onPush != null)
-        _lanPushTool(const ValueKey('fullscreen-lan-push')),
-      if (fullscreen)
-        _toolIcon(
-          key: const ValueKey('player-episodes'),
-          tooltip: '选集',
-          icon: Icons.grid_view_rounded,
-          onPressed: widget.enabled ? () => _panel(widget.onEpisodes) : null,
-        ),
-      if (widget.onPictureInPicture != null)
-        _toolIcon(
-          key: const ValueKey('player-picture-in-picture'),
-          tooltip: '画中画',
-          icon: Icons.picture_in_picture_alt_rounded,
-          onPressed: widget.enabled
-              ? () => _panel(widget.onPictureInPicture!)
-              : null,
-        ),
-      _toolButton(
-        key: const ValueKey('player-fullscreen'),
-        tooltip: fullscreen ? '退出全屏' : '进入全屏',
-        onPressed: widget.onFullscreen,
-        visualWidth: 64,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              fullscreen
-                  ? Icons.fullscreen_exit_rounded
-                  : Icons.fullscreen_rounded,
-              size: 20,
-            ),
-            const SizedBox(width: 2),
-            Text(
-              fullscreen ? '退出' : '全屏',
-              style: const TextStyle(fontSize: 12),
+  Widget _playbackTools({required bool compact}) => Align(
+    alignment: Alignment.centerRight,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      reverse: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.showDanmaku) ...[
+            _danmakuTool(),
+            SizedBox(width: compact ? 2 : 10),
+          ],
+          _dropdownTool(
+            key: const ValueKey('player-speed'),
+            tooltip: '倍速',
+            label: '${widget.speed}×',
+            onPressed: widget.enabled ? () => _panel(widget.onSpeed) : null,
+            compact: compact,
+          ),
+          SizedBox(width: compact ? 2 : 10),
+          _dropdownTool(
+            key: const ValueKey('player-quality'),
+            tooltip: '清晰度',
+            label: widget.qualityLabel,
+            onPressed: widget.enabled ? () => _panel(widget.onQuality) : null,
+            compact: compact,
+          ),
+          if (!widget.fullscreen) ...[
+            SizedBox(width: compact ? 2 : 10),
+            _chromeButton(
+              key: const ValueKey('player-fullscreen'),
+              tooltip: '进入全屏',
+              onPressed: widget.onFullscreen,
+              child: const Icon(Icons.fullscreen_rounded, size: 26),
             ),
           ],
-        ),
-      ),
-    ];
-    if (widget.compact) {
-      return Row(
-        children: [
-          _toolIcon(
-            key: const ValueKey('cover-playback-toggle'),
-            tooltip: widget.player.state.playing ? '暂停播放' : '开始播放',
-            icon: widget.player.state.playing
-                ? Icons.pause_rounded
-                : Icons.play_arrow_rounded,
-            onPressed: widget.enabled ? widget.onTogglePlayback : null,
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(children: tools.take(tools.length - 1).toList()),
-            ),
-          ),
-          tools.last,
         ],
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 0, 2, 0),
-      child: _clusteredToolRow(tools),
-    );
-  }
+      ),
+    ),
+  );
 
   Widget _gestureFeedback() => AnimatedBuilder(
     animation: widget.interactions,
     builder: (context, _) {
       final hud = widget.interactions.hudState;
       final feedback = widget.interactions.feedback;
-      if (hud.type == SwipeAction.brightness) {
+      if (hud.type == SwipeAction.brightness ||
+          hud.type == SwipeAction.volume) {
+        final volume = hud.type == SwipeAction.volume;
         final value = hud.value.clamp(0.0, 1.0);
         final percent = (value * 100).round();
-        final icon = value < 0.33
+        final icon = volume
+            ? value == 0
+                  ? Icons.volume_off_rounded
+                  : value < 0.5
+                  ? Icons.volume_down_rounded
+                  : Icons.volume_up_rounded
+            : value < 0.33
             ? Icons.brightness_low_rounded
             : value < 0.66
             ? Icons.brightness_medium_rounded
@@ -813,7 +716,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    '亮度 $percent%',
+                    '${volume ? '音量' : '亮度'} $percent%',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 14,
