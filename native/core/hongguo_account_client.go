@@ -95,14 +95,26 @@ func (e *hgAccountHTTPError) Error() string {
 func (c *hgAccountHTTP) query() url.Values {
 	return url.Values{"aid": {"8662"}, "app_name": {"novelread"}, "version_code": {"73532"}, "version_name": {"7.3.5.32"}, "manifest_version_code": {"73532"}, "update_version_code": {"73532"}, "channel": {"update_64"}, "device_platform": {"android"}, "os": {"android"}, "ssmix": {"a"}, "device_type": {"25053RT47C"}, "device_brand": {"Redmi"}, "language": {"zh"}, "os_api": {"36"}, "os_version": {"16"}, "resolution": {"1280*2772"}, "dpi": {"520"}, "ac": {"wifi"}, "device_id": {c.session.DeviceID}, "iid": {c.session.InstallID}, "cdid": {c.session.Device.CDID}, "openudid": {c.session.Device.OpenUDID}}
 }
+
+type hgAccountAPIError struct {
+	Code    string
+	Message string
+}
+
+func (e *hgAccountAPIError) Error() string {
+	label := truncate(e.Code, 12)
+	if e.Message == "PARAM_INVALID" || e.Message == "TOKEN_EXPIRED" || e.Message == "SESSION_EXPIRED" || e.Message == "USER_NOT_LOGIN" {
+		label += " / " + e.Message
+	}
+	return fmt.Sprintf("红果未确认请求成功（%s），请重试或重新登录", label)
+}
 func hgAPIError(o map[string]any) error {
-	data := nestedMap(o, "data")
-	for _, row := range []map[string]any{o, data} {
+	for _, row := range []map[string]any{o, nestedMap(o, "data")} {
 		for _, key := range []string{"error_code", "code"} {
-			if v, ok := row[key]; ok {
-				code := fmt.Sprint(v)
+			if value, ok := row[key]; ok {
+				code := fmt.Sprint(value)
 				if code != "0" && code != "" {
-					return fmt.Errorf("红果未确认请求成功（%s），请重试或重新登录", truncate(code, 12))
+					return &hgAccountAPIError{Code: code, Message: mapString(row, "message")}
 				}
 			}
 		}
@@ -161,7 +173,8 @@ func (c *hgAccountHTTP) request(ctx context.Context, path, method string, params
 		r.Header.Set("X-Tt-Store-Region", region)
 	}
 	if c.session.Token != "" {
-		r.Header.Set("X-Tt-Token", c.session.Token)
+		token := []rune(c.session.Token)
+		r.Header.Set("X-Tt-Token", string(token[:min(56, len(token))]))
 	}
 	response, e := c.http.Do(r)
 	if e != nil {
@@ -220,7 +233,7 @@ func (c *hgAccountHTTP) json(ctx context.Context, path, method string, q url.Val
 		return nil, errors.New("红果未返回账号操作状态")
 	}
 	if e = hgAPIError(o); e != nil {
-		return nil, e
+		return nil, fmt.Errorf("%s：%w", path, e)
 	}
 	return o, nil
 }

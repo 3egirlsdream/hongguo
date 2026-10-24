@@ -143,6 +143,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
       rows[entry.drama.id] = WatchEntry(
         drama: old?.drama.merge(entry.drama) ?? entry.drama,
         episode: chosen.episode,
+        videoId: chosen.videoId,
         position: chosen.position,
         duration: chosen.duration,
         updatedAt: chosen.updatedAt,

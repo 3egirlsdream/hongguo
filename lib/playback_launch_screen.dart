@@ -83,7 +83,7 @@ Future<void> openPlaybackDirectly(
       if (accepted != true || !context.mounted) return;
     }
     final position =
-        watched?.episode == episode.number && watched?.finished == false
+        watched?.matchesEpisode(episode) == true && watched?.finished == false
         ? watched!.position
         : 0.0;
     if (!context.mounted || profileEpoch != store.profileEpoch) return;

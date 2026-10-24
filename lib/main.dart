@@ -78,6 +78,7 @@ class _AppBootstrapState extends State<AppBootstrap>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      repository.requestOfficialSync();
       unawaited(_refreshDevice());
       unawaited(_showUpdateNotice());
     }

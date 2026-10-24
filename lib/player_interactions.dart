@@ -25,6 +25,7 @@ class PlayerInteractions extends ChangeNotifier {
     required this.onTogglePlayback,
     required this.onFullscreen,
     required this.onEpisode,
+    this.canEpisode,
     this.onSeek,
   }) {
     _playing = player.stream.playing.listen((playing) {
@@ -46,6 +47,7 @@ class PlayerInteractions extends ChangeNotifier {
   final VoidCallback onTogglePlayback;
   final VoidCallback onFullscreen;
   final String Function(int direction) onEpisode;
+  final bool Function(int direction)? canEpisode;
   final Future<void> Function(Duration)? onSeek;
   late final StreamSubscription<bool> _playing;
   Timer? _holdTimer;
@@ -55,7 +57,9 @@ class PlayerInteractions extends ChangeNotifier {
   int? _pointer;
   Offset? _origin;
   Offset? _lastPosition;
-  Duration _started = Duration.zero;
+  VelocityTracker? _episodeVelocity;
+  double _episodeDragOffset = 0;
+  bool _episodeDragging = false;
   double _swipeThreshold = 70;
   bool _swipeEnabled = false;
   bool _moved = false;
@@ -74,6 +78,17 @@ class PlayerInteractions extends ChangeNotifier {
   double _initialVolume = 100;
   double _viewHeight = 0.0;
   Timer? _hudTimer;
+
+  double get episodeDragOffset => _episodeDragOffset;
+  bool get episodeDragging => _episodeDragging;
+
+  void _resetEpisodeDrag() {
+    _episodeVelocity = null;
+    final changed = _episodeDragging || _episodeDragOffset != 0;
+    _episodeDragging = false;
+    _episodeDragOffset = 0;
+    if (changed) notifyListeners();
+  }
 
   GestureHudState get hudState => _hudState;
   double get brightness => _brightness;
@@ -167,6 +182,7 @@ class PlayerInteractions extends ChangeNotifier {
     _pointer = null;
     _origin = null;
     _lastPosition = null;
+    _resetEpisodeDrag();
     _endHold(silent: true);
     if (_hudState.type != SwipeAction.none) _scheduleDismissHud();
     hint('');
@@ -186,7 +202,7 @@ class PlayerInteractions extends ChangeNotifier {
     if (!available() || event.buttons != kPrimaryButton) return;
     _pointer = event.pointer;
     _origin = _lastPosition = event.localPosition;
-    _started = event.timeStamp;
+    _resetEpisodeDrag();
     _swipeEnabled = swipeEnabled && event.kind == PointerDeviceKind.touch;
     _swipeThreshold = math.max(30, math.min(80, height * .08));
     _viewHeight = height;
@@ -209,6 +225,8 @@ class PlayerInteractions extends ChangeNotifier {
         _swipeAction = SwipeAction.brightness;
       } else if (episodeArea.contains(position)) {
         _swipeAction = SwipeAction.episode;
+        _episodeVelocity = VelocityTracker.withKind(event.kind)
+          ..addPosition(event.timeStamp, event.localPosition);
       }
       if (_swipeAction == SwipeAction.brightness) {
         AppDevice.getBrightness()
@@ -226,6 +244,7 @@ class PlayerInteractions extends ChangeNotifier {
   void pointerMove(PointerMoveEvent event) {
     if (_pointer != event.pointer || _origin == null) return;
     _lastPosition = event.localPosition;
+    _episodeVelocity?.addPosition(event.timeStamp, event.localPosition);
     final diff = event.localPosition - _origin!;
     if (diff.distance > 12) {
       _moved = true;
@@ -235,6 +254,22 @@ class PlayerInteractions extends ChangeNotifier {
 
     final dy = _origin!.dy - event.localPosition.dy; // 向上滑动为增加，向下滑动为减少
     final deltaRatio = dy / (_viewHeight * 0.6);
+    if (_swipeAction == SwipeAction.episode &&
+        !_held &&
+        (_episodeDragging ||
+            diff.dy.abs() > 12 && diff.dy.abs() > diff.dx.abs() * 1.5)) {
+      final direction = diff.dy < 0 ? 1 : -1;
+      final canMove = canEpisode?.call(direction) ?? true;
+      final offset = (diff.dy * (canMove ? 1 : .22)).clamp(
+        -_viewHeight * .85,
+        _viewHeight * .85,
+      );
+      if (!_episodeDragging || _episodeDragOffset != offset) {
+        _episodeDragging = true;
+        _episodeDragOffset = offset;
+        notifyListeners();
+      }
+    }
 
     if (!_held && diff.dy.abs() > 12 && diff.dy.abs() > diff.dx.abs() * 1.5) {
       if (_swipeAction == SwipeAction.volume) {
@@ -263,16 +298,26 @@ class PlayerInteractions extends ChangeNotifier {
     }
     if (_pointer != event.pointer || _origin == null) return;
     final delta = (_lastPosition ?? event.localPosition) - _origin!;
-    final isVertical =
-        delta.dy.abs() >= _swipeThreshold &&
-        delta.dy.abs() > delta.dx.abs() * 1.5;
+    _episodeVelocity?.addPosition(event.timeStamp, event.localPosition);
+    final velocity =
+        _episodeVelocity?.getVelocity().pixelsPerSecond ?? Offset.zero;
+    final isVertical = delta.dy.abs() > delta.dx.abs() * 1.5;
+    final isFling =
+        delta.dy.abs() >= 24 &&
+        velocity.dy.abs() >= 650 &&
+        velocity.dy.abs() > velocity.dx.abs() * 1.5 &&
+        velocity.dy.sign == delta.dy.sign;
+    final switchEpisode =
+        _episodeDragging &&
+        isVertical &&
+        (delta.dy.abs() >= _swipeThreshold || isFling);
+    _resetEpisodeDrag();
 
     if (_swipeAction == SwipeAction.episode &&
         _swipeEnabled &&
         !_held &&
         _moved &&
-        isVertical &&
-        event.timeStamp - _started < const Duration(milliseconds: 1500)) {
+        switchEpisode) {
       if (available()) hint(onEpisode(delta.dy < 0 ? 1 : -1));
     } else if (_swipeAction == SwipeAction.volume ||
         _swipeAction == SwipeAction.brightness) {

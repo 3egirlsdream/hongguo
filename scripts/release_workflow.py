@@ -115,7 +115,7 @@ def prepare():
             'url': base + urllib.parse.quote(name, safe=''),
             'size': target.stat().st_size, 'sha256': file_hash(target),
         })
-    notes = f'野果 {version}\n\nAndroid arm64：APK 使用固定 temp 发布证书，可覆盖安装。\n本次包含播放页重构、系列剧与预约规则、观看历史上传及片尾预加载优化。\n已完成静态分析、Flutter 自动化、Go 并发测试、Python 脚本检查与签名构建；真机连续播放、登录上传与折叠屏体验仍待设备验收。\n'
+    notes = f'野果 {version}\n\nAndroid arm64：APK 使用固定 temp 发布证书，可覆盖安装。\n本次包含上下滑切集跟手效果与全自动历史同步。每集播完、切集、暂停和退出时自动上传，登录前本机记录自动补传；进入我的或恢复前台自动更新，失败保留重试。移除单独的同步、获取和上传按钮，仅显示同步状态；上传经延迟回读确认，并保留视频身份用于续播。补齐官方用户资料刷新，正确显示昵称、头像和红果号，资料更新失败保留现有显示。\n已使用真实账号在本机及 Android 手机上验证历史读取，真实上传记录经独立 API 回读，并确认在红果官方 App 中显示正确集数。100103 本轮实测未复现，已增加只读请求的有限重试与明确错误定位。真机连续播放间隔与折叠屏体验仍待完整验收。\n'
     tags = subprocess.check_output(['git', 'tag', '--list', 'app-v*'], cwd=ROOT, text=True).splitlines()
     previous = [(tuple(map(int, match.groups())), tag) for tag in tags
                 if (match := TAG_PATTERN.fullmatch(tag)) and tuple(map(int, match.groups())) < version_key(version)]

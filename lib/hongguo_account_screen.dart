@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'core_bridge.dart';
 import 'local_store.dart';
 import 'models.dart';
-import 'hongguo_account_models.dart';
 import 'playback_launch_screen.dart';
 import 'widgets.dart';
 import 'saved_library.dart';
@@ -165,6 +164,8 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     if (!_active) return;
     final result = widget.repository.accountStatus.value;
     final previousUID = _uid;
+    final wasLogged = _logged;
+    final previousSync = _status['lastSync'];
     final previousLoginError = _status['loginError'] as String? ?? '';
     _statusVersion++;
     setState(() {
@@ -184,7 +185,17 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         _error = null;
       }
     });
-    if (widget.collections) unawaited(_refreshStatus(loadCollections: true));
+    if (widget.collections && _logged) {
+      if (previousUID != _uid || !wasLogged) {
+        if (_statusLoading) {
+          _statusRefreshPending = true;
+        } else {
+          unawaited(_load());
+        }
+      } else if (previousSync != _status['lastSync']) {
+        unawaited(_readHistory());
+      }
+    }
   }
 
   void _favoritesChanged() {
@@ -275,6 +286,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
             _error = null;
           }
         });
+        if (_logged && (loadCollections || !wasLogged || previousUID != _uid)) {
+          widget.repository.requestOfficialSync();
+        }
         if (_logged &&
             widget.collections &&
             (previousUID != _uid || previousSync != _status['lastSync'])) {
@@ -322,8 +336,11 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       _statusVersion++;
       setState(() {
         if (result.containsKey('loggedIn')) _status = result;
+        if ((result['warning'] as String? ?? '').isNotEmpty) {
+          _error = result['warning'] as String;
+        }
       });
-      return true;
+      return (result['warning'] as String? ?? '').isEmpty;
     } catch (error) {
       if (current()) setState(() => _error = error.toString());
       return false;
@@ -366,11 +383,10 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     _stopSMSChecks();
     _code.clear();
     _phone.clear();
-    setState(() => _message = '登录成功，正在同步观看历史');
-    await _sync();
+    widget.repository.requestOfficialSync();
     if (!_active || !_logged || _uid != owner) return;
     setState(() {
-      _message = '登录成功';
+      _message = '登录成功，观看历史将自动同步';
       if (_error != null) _error = '账号已登录，资料同步暂未完成：$_error';
     });
   }
@@ -497,21 +513,6 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     }
   }
 
-  Future<void> _sync() async {
-    if (await _run('sync', {'uid': _uid})) {
-      if (_active) setState(() => _message = '观看历史同步完成');
-      try {
-        await widget.repository.hongguoAccount('favorites', {'uid': _uid});
-      } catch (error) {
-        if (_active) setState(() => _error = '追剧同步暂未完成：$error');
-      }
-      if (widget.collections) {
-        await _readHistory();
-        await _load();
-      }
-    }
-  }
-
   Future<void> _load({bool more = false}) async {
     if (!_active || !_logged || !widget.collections || _loading || _busy) {
       return;
@@ -529,6 +530,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       }
     });
     try {
+      if (tab == 1 && !more) widget.repository.requestOfficialSync();
       final command = tab == 0
           ? 'favorites'
           : tab == 1
@@ -538,7 +540,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
           : 'calendar';
       final result = await widget.repository.hongguoAccount(command, {
         'uid': owner,
-        'refresh': tab == 1 && !more,
+        'refresh': false,
         'offset': _offset,
         'cursor': _cursor,
         'mode': tab == 0
@@ -614,66 +616,6 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     }
   }
 
-  Future<void> _uploadLocal() async {
-    final rows = widget.store.history
-        .where((entry) => entry.drama.source == 'hongguo')
-        .toList();
-    final uid = _uid;
-    final accepted = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('上传本机历史？'),
-        content: Text('将本地用户的 ${rows.length} 条观看记录加入当前账号的同步队列，保留双方时间较新的进度。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('上传'),
-          ),
-        ],
-      ),
-    );
-    if (accepted != true || !_active) return;
-    if (_busy || _loading) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    var added = 0;
-    try {
-      for (final row in rows) {
-        if (!_active || _uid != uid) return;
-        final detail = await widget.repository.detail(row.drama);
-        final ep = detail.episodes
-            .where((ep) => ep.number == row.episode)
-            .firstOrNull;
-        if (ep == null) {
-          throw AppFailure(
-            '剧集 ${row.drama.title} 暂未返回第 ${row.episode} 集，已加入的记录保留在队列',
-          );
-        }
-        await widget.repository.hongguoAccount('queueProgress', {
-          'uid': uid,
-          'watch': hongguoWatchPayload(row, ep),
-        });
-        added++;
-      }
-      if (_active) setState(() => _message = '已加入 $added 条历史，正在同步');
-    } catch (error) {
-      if (_active) setState(() => _error = '已加入 $added 条记录。$error');
-    } finally {
-      if (_active) setState(() => _busy = false);
-    }
-    if (_active && _uid == uid) {
-      final failure = _error;
-      await _sync();
-      if (_active && failure != null) setState(() => _error = failure);
-    }
-  }
-
   Future<void> _readHistory() async {
     final owner = _uid;
     try {
@@ -684,7 +626,14 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         for (final row in result['items'] as List? ?? [])
           WatchEntry.fromJson(Map<String, dynamic>.from(row as Map)),
       ];
-      if (_active && owner == _uid) setState(() => _accountHistory = rows);
+      if (_active && owner == _uid) {
+        setState(() {
+          _accountHistory = rows;
+          if ((result['warning'] as String? ?? '').isNotEmpty) {
+            _error = result['warning'] as String;
+          }
+        });
+      }
     } catch (error) {
       if (_active && owner == _uid) setState(() => _error = '账号历史暂不可用：$error');
     }
@@ -731,22 +680,15 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
-                TextButton(
-                  onPressed: _busy || _loading
-                      ? null
-                      : !_logged
-                      ? _openAccount
-                      : history
-                      ? _sync
-                      : _load,
-                  child: Text(
-                    !_logged
-                        ? '登录'
-                        : history
-                        ? '同步'
-                        : '刷新',
+                if (!_logged || !history)
+                  TextButton(
+                    onPressed: _busy || _loading
+                        ? null
+                        : !_logged
+                        ? _openAccount
+                        : _load,
+                    child: Text(_logged ? '刷新' : '登录'),
                   ),
-                ),
               ],
             ),
           ),
@@ -831,12 +773,24 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: AccountAvatar(url: '${p['avatarUrl'] ?? ''}'),
+          ),
+          const SizedBox(height: 12),
           Text(
             p['name'] as String? ?? '用户',
             style: Theme.of(context).textTheme.headlineSmall,
           ),
-          Text('${p['phone'] ?? ''} · UID ${p['uid']}'),
+          Text('${p['phone'] ?? ''} · 红果号 ${p['publicId'] ?? p['uid']}'),
+          if ((_status['profileError'] as String? ?? '').isNotEmpty)
+            Text('资料更新暂未完成：${_status['profileError']}'),
           const SizedBox(height: 16),
+          ValueListenableBuilder<String>(
+            valueListenable: widget.repository.accountSyncMessage,
+            builder: (context, message, _) =>
+                Text(message.isEmpty ? '观看历史自动同步已开启' : message),
+          ),
           Text('待上传 ${intValue(_status['pending'])} 条进度'),
           Text(
             '最近同步：${(DateTime.tryParse('${_status['lastSync']}')?.year ?? 0) >= 2000 ? DateTime.parse('${_status['lastSync']}').toLocal().toString() : '尚未同步'}',
@@ -847,20 +801,13 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _busy ? null : _sync,
-            icon: const Icon(Icons.sync),
-            label: const Text('立即同步观看历史'),
-          ),
-          OutlinedButton(
-            onPressed: _busy ? null : _uploadLocal,
-            child: const Text('上传本机历史'),
-          ),
           TextButton(
             onPressed: _busy ? null : _logout,
             child: const Text('退出账号'),
           ),
-          const Text('播放时自动加入当前账号的进度队列。登录前的本机历史需手动上传；删除本机记录不会删除观看历史。'),
+          const Text(
+            '观看历史全自动同步。每集播完、切集或退出播放时自动上传，登录前的本机历史自动补传；未成功的记录保留并自动重试。删除本机记录不会删除云端历史。',
+          ),
         ],
       );
     }

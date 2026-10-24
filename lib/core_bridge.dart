@@ -19,6 +19,7 @@ import 'download_collections.dart';
 import 'diary_service.dart';
 import 'resource_settings.dart';
 import 'playback_trace.dart';
+import 'official_history_sync.dart';
 
 typedef _NativeRequest = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _DartRequest = Pointer<Utf8> Function(Pointer<Utf8>);
@@ -57,11 +58,13 @@ class AppFailure implements Exception {
 
 abstract class AppRepository {
   final accountStatus = ValueNotifier<Map<String, dynamic>>({});
+  final accountSyncMessage = ValueNotifier<String>('');
   final accountFavorites = ValueNotifier<Set<String>>({});
   bool get accountFavoritesLoaded => true;
   bool isAccountFavorite(String id) => accountFavorites.value.contains(id);
 
   bool get supportsOfficialAccount => false;
+  void requestOfficialSync() {}
   Future<Map<String, dynamic>> hongguoAccount(
     String command, [
     Map<String, dynamic> input = const {},
@@ -258,9 +261,7 @@ class NativeRepository extends AppRepository {
       return _requestAccount(command, input);
     }
     if (result.containsKey('loggedIn')) {
-      if (command != 'status' &&
-          command != 'queueProgress' &&
-          command != 'sync') {
+      if (command != 'status') {
         _accountStatusRevision++;
       }
       final uid = (result['profile'] as Map?)?['uid'] as String? ?? '';
@@ -271,6 +272,11 @@ class NativeRepository extends AppRepository {
         accountFavorites.value = {};
       }
       final previous = accountStatus.value;
+      if (result['loggedIn'] == true &&
+          (previous['loggedIn'] != true ||
+              (previous['profile'] as Map?)?['uid'] != uid)) {
+        requestOfficialSync();
+      }
       if (previous['loggedIn'] != result['loggedIn'] ||
           previous['phase'] != result['phase'] ||
           previous['verificationState'] != result['verificationState'] ||
@@ -278,6 +284,10 @@ class NativeRepository extends AppRepository {
           previous['smsContent'] != result['smsContent'] ||
           previous['expiresAt'] != result['expiresAt'] ||
           previous['loginError'] != result['loginError'] ||
+          previous['pending'] != result['pending'] ||
+          previous['lastSync'] != result['lastSync'] ||
+          previous['syncError'] != result['syncError'] ||
+          previous['profileError'] != result['profileError'] ||
           !mapEquals(previous['profile'] as Map?, result['profile'] as Map?)) {
         accountStatus.value = Map<String, dynamic>.unmodifiable(result);
       }
@@ -323,6 +333,9 @@ class NativeRepository extends AppRepository {
     );
   }
 
+  @override
+  void requestOfficialSync() => _scheduleOfficialProgressSync(immediate: true);
+
   void startOfficialSync() {
     _officialTimer?.cancel();
     _officialTimer = Timer.periodic(
@@ -350,13 +363,36 @@ class NativeRepository extends AppRepository {
     _officialSyncing = true;
     _officialProgressPending = false;
     final epoch = access!.profileEpoch;
+    var localFailures = 0;
+    accountSyncMessage.value = '正在自动同步观看历史';
     try {
       final status = await hongguoAccount('status');
       if (status['loggedIn'] == true &&
           status['busy'] != true &&
           epoch == access?.profileEpoch) {
-        final uid = (status['profile'] as Map)['uid'];
-        await hongguoAccount('sync', {'uid': uid});
+        final uid = (status['profile'] as Map)['uid'] as String;
+        bool current() =>
+            epoch == access?.profileEpoch &&
+            access?.locked == false &&
+            access?.allowsSource('hongguo') == true &&
+            (accountStatus.value['profile'] as Map?)?['uid'] == uid;
+        try {
+          await hongguoAccount('profile', {'uid': uid});
+        } catch (error) {
+          DiaryService.add('[Account] 账号资料暂未更新，保留现有资料：$error');
+        }
+        if (!current()) return;
+        final failed = await queueLocalOfficialHistory(
+          this,
+          access!,
+          uid,
+          isCurrent: current,
+        );
+        if (!current()) return;
+        localFailures = failed;
+        if (failed > 0) _officialProgressPending = true;
+        final synced = await hongguoAccount('sync', {'uid': uid});
+        if (intValue(synced['pending']) > 0) _officialProgressPending = true;
         if (epoch == access?.profileEpoch) {
           await hongguoAccount('favorites', {'uid': uid});
         }
@@ -364,8 +400,27 @@ class NativeRepository extends AppRepository {
         _officialProgressPending = true;
       }
     } catch (error) {
+      _officialProgressPending = true;
       DiaryService.add('[Progress] 官方历史自动同步失败，待上传进度保留，将自动重试：$error');
     } finally {
+      if (epoch == access?.profileEpoch &&
+          access?.allowsSource('hongguo') == true) {
+        try {
+          await hongguoAccount('status');
+        } catch (_) {}
+      }
+      if (epoch == access?.profileEpoch) {
+        accountSyncMessage.value = accountStatus.value['loggedIn'] != true
+            ? ''
+            : localFailures > 0
+            ? '$localFailures 条本机记录等待自动重试'
+            : _officialProgressPending ||
+                  intValue(accountStatus.value['pending']) > 0
+            ? '未完成的记录将自动重试'
+            : (accountStatus.value['syncError'] as String? ?? '').isNotEmpty
+            ? '自动同步暂未完成，将自动重试'
+            : '观看历史已自动同步';
+      }
       _officialSyncing = false;
       if (_officialProgressPending) _scheduleOfficialProgressSync();
     }

@@ -158,6 +158,14 @@ class Episode {
           ? intValue(raw['currentEpisode'])
           : fallback,
       vip = raw['vip'] == true;
+  String get videoId {
+    final url = raw['videoUrl'] as String? ?? '';
+    final value = url.startsWith('hongguo-cenc://')
+        ? url.substring('hongguo-cenc://'.length)
+        : id.split(':').last;
+    return RegExp(r'^[0-9]{1,20}$').hasMatch(value) ? value : '';
+  }
+
   final Map<String, dynamic> raw;
   final String id;
   final String title;
@@ -305,16 +313,23 @@ class WatchEntry {
     required this.position,
     required this.duration,
     required this.updatedAt,
+    this.videoId = '',
   });
+  final String videoId;
   final Drama drama;
   final int episode;
   final double position;
   final double duration;
   final DateTime updatedAt;
+  bool matchesEpisode(Episode value) =>
+      videoId.isNotEmpty && value.videoId.isNotEmpty
+      ? videoId == value.videoId
+      : episode == value.number;
   bool get finished => duration > 1 && position >= duration - 1;
   Map<String, dynamic> toJson() => {
     'drama': drama.toJson(),
     'episode': episode,
+    if (videoId.isNotEmpty) 'videoId': videoId,
     'position': position,
     'duration': duration,
     'updatedAt': updatedAt.toIso8601String(),
@@ -322,6 +337,7 @@ class WatchEntry {
   factory WatchEntry.fromJson(Map<String, dynamic> json) => WatchEntry(
     drama: Drama.fromJson(Map<String, dynamic>.from(json['drama'] as Map)),
     episode: intValue(json['episode']),
+    videoId: json['videoId'] as String? ?? '',
     position: (json['position'] as num?)?.toDouble() ?? 0,
     duration: (json['duration'] as num?)?.toDouble() ?? 0,
     updatedAt:

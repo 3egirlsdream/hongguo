@@ -541,3 +541,42 @@ String formatPosition(double seconds) {
   final value = seconds.isFinite ? seconds.toInt().clamp(0, 999999) : 0;
   return '${value ~/ 60}:${(value % 60).toString().padLeft(2, '0')}';
 }
+
+class AccountAvatar extends StatelessWidget {
+  const AccountAvatar({super.key, required this.url, this.radius = 31});
+  final String url;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final placeholder = Icon(
+      Icons.person_rounded,
+      size: radius,
+      color: colors.onSurfaceVariant,
+    );
+    return Semantics(
+      label: '账号头像',
+      image: true,
+      child: CircleAvatar(
+        radius: radius,
+        backgroundColor: colors.surfaceContainerHigh,
+        child: ClipOval(
+          child: url.isEmpty || DramaCover.imagesDisabled
+              ? placeholder
+              : Image.network(
+                  url,
+                  key: ValueKey(url),
+                  width: radius * 2,
+                  height: radius * 2,
+                  fit: BoxFit.cover,
+                  cacheWidth:
+                      (radius * 2 * MediaQuery.devicePixelRatioOf(context))
+                          .ceil(),
+                  errorBuilder: (context, error, stack) => placeholder,
+                ),
+        ),
+      ),
+    );
+  }
+}

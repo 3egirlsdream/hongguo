@@ -243,9 +243,12 @@ class SeriesSeasonNotice {
 
 int resumeEpisodeIndex(List<Episode> episodes, WatchEntry? watch) {
   if (episodes.isEmpty || watch == null) return 0;
-  final current = episodes.indexWhere((item) => item.number == watch.episode);
+  final current = episodes.indexWhere(watch.matchesEpisode);
   if (current >= 0 && !watch.finished) return current;
-  final next = episodes.indexWhere((item) => item.number > watch.episode);
+  final next = episodes.indexWhere(
+    (item) =>
+        item.number > (current >= 0 ? episodes[current].number : watch.episode),
+  );
   if (next >= 0) return next;
   return current >= 0 ? current : episodes.length - 1;
 }

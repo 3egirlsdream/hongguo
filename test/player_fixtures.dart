@@ -27,6 +27,7 @@ class ScriptedPlayer extends PlatformPlayer {
       width: failed ? 0 : 320,
       height: failed ? 0 : 180,
     );
+    completedController.add(false);
     positionController.add(state.position);
     durationController.add(state.duration);
     playingController.add(play);

@@ -283,7 +283,7 @@ class _DetailScreenState extends State<DetailScreen> {
       final saved = widget.store.watched(detail.drama.id);
       final position =
           resume &&
-              saved?.episode == detail.episodes[index].number &&
+              saved?.matchesEpisode(detail.episodes[index]) == true &&
               !saved!.finished
           ? saved.position
           : 0.0;

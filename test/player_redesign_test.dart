@@ -21,6 +21,11 @@ class SeriesRepository extends RouteRepository {
   int season = 2;
   int preloads = 0;
   final accounts = <String>[];
+  final progress = <Map<String, dynamic>>[];
+  bool loggedIn = false;
+  int immediateSyncs = 0;
+  @override
+  void requestOfficialSync() => immediateSyncs++;
   @override
   bool get supportsOfficialAccount => true;
   @override
@@ -29,6 +34,13 @@ class SeriesRepository extends RouteRepository {
     Map<String, dynamic> data = const {},
   ]) async {
     accounts.add(command);
+    if (command == 'queueProgress') progress.add(data);
+    if (command == 'status' && loggedIn) {
+      return {
+        'loggedIn': true,
+        'profile': {'uid': '7000000000000000001'},
+      };
+    }
     return command == 'seasons'
         ? {
             'currentSeason': season,
@@ -327,6 +339,58 @@ void main() {
       expect(repository.active, ['preloaded']);
       await close(tester);
       expect(repository.active, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'every completed episode queues immediate upload including automatic advance',
+    (tester) async {
+      final repository = SeriesRepository()..loggedIn = true;
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player);
+      player.finishEpisode();
+      await tick(tester);
+      expect(
+        repository.progress.where(
+          (row) =>
+              row['flush'] == true && (row['watch'] as Map)['episode'] == 1,
+        ),
+        isNotEmpty,
+      );
+      player.finishEpisode();
+      await tick(tester);
+      expect(
+        repository.progress.where(
+          (row) =>
+              row['flush'] == true && (row['watch'] as Map)['episode'] == 2,
+        ),
+        isNotEmpty,
+      );
+      expect(
+        repository.progress.every(
+          (row) => (row['watch'] as Map)['position'] == 120,
+        ),
+        isTrue,
+      );
+      await close(tester);
+    },
+  );
+
+  testWidgets(
+    'completion flush still runs when the final position was already saved',
+    (tester) async {
+      final repository = SeriesRepository()..loggedIn = true;
+      final player = ScriptedPlayer();
+      await mount(tester, repository, player, index: 1);
+      await player.seek(const Duration(seconds: 120));
+      await tester.pump(const Duration(seconds: 5));
+      await tick(tester);
+      expect(repository.progress, isNotEmpty);
+      final before = repository.immediateSyncs;
+      player.finishEpisode();
+      await tick(tester);
+      expect(repository.immediateSyncs, greaterThan(before));
+      await close(tester);
     },
   );
 

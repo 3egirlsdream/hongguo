@@ -263,6 +263,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       onTogglePlayback: _togglePlayback,
       onSeek: _seekTo,
       onFullscreen: _rotate,
+      canEpisode: (direction) =>
+          _index + direction >= 0 &&
+          _index + direction < widget.detail.episodes.length,
       onEpisode: (direction) {
         final next = _index + direction;
         if (next < 0) return '已经是第一集';
@@ -301,6 +304,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               _advanceOnResume = true;
               unawaited(_player.pause());
               _checkpoint();
+              unawaited(_saveProgress(flush: true));
             }
           } else {
             _playIntent = false;
@@ -1088,12 +1092,18 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (_savedProgressKey == progressKey &&
         !_progressSaveFailed &&
         !_progressQueueFailed) {
-      if (flush && widget.mediaId == null) LanController.current?.flush();
+      if (flush && widget.mediaId == null) {
+        LanController.current?.flush();
+        if (_officialUID.isNotEmpty) widget.repository.requestOfficialSync();
+      }
       return;
     }
     final entry = WatchEntry(
       drama: widget.repository.catalogUpdates.current(widget.detail.drama),
       episode: savedEpisode.number,
+      videoId: widget.detail.drama.source == 'hongguo'
+          ? savedEpisode.videoId
+          : '',
       position: position,
       duration: duration,
       updatedAt: DateTime.now(),
@@ -2540,12 +2550,22 @@ class _PlayerScreenState extends State<PlayerScreen>
                 : null,
             onPush: widget.mediaId == null ? _pushToDevice : null,
           );
-    final layeredControls = Stack(
+    final media = Stack(
       fit: StackFit.expand,
       children: [
+        if (widget.videoBuilder != null)
+          widget.videoBuilder!(const SizedBox.shrink())
+        else
+          Video(
+            controller: _video!,
+            fit: BoxFit.contain,
+            fill: immersive ? PlayerStyle.background : Colors.black,
+            controls: (_) => const SizedBox.shrink(),
+            pauseUponEnteringBackgroundMode: false,
+            resumeUponEnteringForegroundMode: false,
+          ),
         if (!hideOverlayForPictureInPicture)
           DanmakuOverlay(controller: _danmaku, aspectRatio: _aspectRatio),
-        controls,
       ],
     );
     return KeyedSubtree(
@@ -2556,17 +2576,14 @@ class _PlayerScreenState extends State<PlayerScreen>
           key: _videoPaneKey,
           fit: StackFit.expand,
           children: [
-            if (widget.videoBuilder != null)
-              widget.videoBuilder!(layeredControls)
-            else
-              Video(
-                controller: _video!,
-                fit: BoxFit.contain,
-                fill: immersive ? PlayerStyle.background : Colors.black,
-                controls: (_) => layeredControls,
-                pauseUponEnteringBackgroundMode: false,
-                resumeUponEnteringForegroundMode: false,
+            ColoredBox(
+              color: immersive ? PlayerStyle.background : Colors.black,
+              child: PlayerEpisodeMotion(
+                interactions: _interactions,
+                child: media,
               ),
+            ),
+            controls,
             if (_loading &&
                 !_fastEpisodeSwitch &&
                 !hideOverlayForPictureInPicture)

@@ -7,6 +7,7 @@ import 'package:media_kit/media_kit.dart';
 import 'app_theme.dart';
 import 'core_bridge.dart';
 import 'models.dart';
+import 'player_interactions.dart';
 import 'widgets.dart';
 
 abstract final class PlayerStyle {
@@ -25,6 +26,39 @@ abstract final class PlayerStyle {
       onSurfaceVariant: const Color(0xFF999999),
     ),
     scaffoldBackgroundColor: Colors.white,
+  );
+}
+
+class PlayerEpisodeMotion extends StatelessWidget {
+  const PlayerEpisodeMotion({
+    super.key,
+    required this.interactions,
+    required this.child,
+  });
+  final PlayerInteractions interactions;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRect(
+    child: AnimatedBuilder(
+      animation: interactions,
+      child: child,
+      builder: (context, child) => TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: interactions.episodeDragOffset),
+        duration:
+            interactions.episodeDragging ||
+                MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        child: child,
+        builder: (context, offset, child) => Transform.translate(
+          key: const ValueKey('player-episode-motion'),
+          offset: Offset(0, offset),
+          child: child,
+        ),
+      ),
+    ),
   );
 }
 

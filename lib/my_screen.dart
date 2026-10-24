@@ -41,9 +41,14 @@ class _MyScreenState extends State<MyScreen> {
   void _accountChanged() {
     if (mounted && widget.store.profileEpoch == _epoch) {
       setState(() {
-        _account = widget.repository.accountStatus.value;
+        final next = widget.repository.accountStatus.value;
+        if (_account['loggedIn'] != next['loggedIn'] ||
+            (_account['profile'] as Map?)?['uid'] !=
+                (next['profile'] as Map?)?['uid']) {
+          _accountRevision++;
+        }
+        _account = next;
         _accountError = null;
-        _accountRevision++;
       });
     }
   }
@@ -65,6 +70,7 @@ class _MyScreenState extends State<MyScreen> {
 
   Future<void> _refreshAccount() async {
     if (!widget.repository.supportsOfficialAccount) return;
+    widget.repository.requestOfficialSync();
     try {
       final result = await widget.repository.hongguoAccount('status');
       if (mounted && widget.store.profileEpoch == _epoch) {
@@ -204,7 +210,7 @@ class _MyScreenState extends State<MyScreen> {
     final dark = theme.brightness == Brightness.dark;
     final profile = _account['profile'] as Map?;
     final logged = _account['loggedIn'] == true;
-    final uid = '${profile?['uid'] ?? ''}';
+    final uid = '${profile?['publicId'] ?? profile?['uid'] ?? ''}';
     return AnimatedBuilder(
       animation: Listenable.merge([
         widget.store,
@@ -283,16 +289,10 @@ class _MyScreenState extends State<MyScreen> {
                                 : _accountPage,
                             child: Row(
                               children: [
-                                CircleAvatar(
-                                  radius: 31,
-                                  backgroundColor: dark
-                                      ? colors.surfaceContainerHigh
-                                      : const Color(0xFFE7E8E8),
-                                  foregroundColor: colors.onSurfaceVariant,
-                                  child: const Icon(
-                                    Icons.person_rounded,
-                                    size: 32,
-                                  ),
+                                AccountAvatar(
+                                  url: logged
+                                      ? '${profile?['avatarUrl'] ?? ''}'
+                                      : '',
                                 ),
                                 const SizedBox(width: 12),
                                 Expanded(

@@ -16,9 +16,11 @@ import (
 )
 
 type hgAccountProfile struct {
-	UID   string `json:"uid"`
-	Name  string `json:"name"`
-	Phone string `json:"phone"`
+	UID       string `json:"uid"`
+	Name      string `json:"name"`
+	Phone     string `json:"phone"`
+	AvatarURL string `json:"avatarUrl,omitempty"`
+	PublicID  string `json:"publicId,omitempty"`
 }
 type hgAccountDisk struct {
 	Version int               `json:"version"`
@@ -62,19 +64,20 @@ type hgAccountInput struct {
 	Watch           hgOfficialWatch `json:"watch"`
 }
 type hgOfficialAccount struct {
-	mu         sync.Mutex
-	operation  sync.Mutex
-	dir        string
-	downloader *Downloader
-	disk       hgAccountDisk
-	attempt    *hgLoginAttempt
-	generation uint64
-	cancel     context.CancelFunc
-	retry      time.Time
-	busy       bool
-	loginError string
-	syncError  string
-	library    hgOfficialLibrary
+	mu           sync.Mutex
+	operation    sync.Mutex
+	dir          string
+	downloader   *Downloader
+	disk         hgAccountDisk
+	attempt      *hgLoginAttempt
+	generation   uint64
+	cancel       context.CancelFunc
+	retry        time.Time
+	busy         bool
+	loginError   string
+	syncError    string
+	profileError string
+	library      hgOfficialLibrary
 }
 
 var hgLocalProfileID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
@@ -199,7 +202,7 @@ func (a *hgOfficialAccount) status() map[string]any {
 	if a.disk.Profile != nil {
 		phase = "loggedIn"
 	}
-	result := map[string]any{"loggedIn": a.disk.Profile != nil, "profile": a.disk.Profile, "phase": phase, "busy": a.busy, "retryAfter": max(0, int(math.Ceil(time.Until(a.retry).Seconds()))), "pending": len(a.library.Pending), "lastSync": a.library.LastSync, "syncError": a.syncError, "loginError": a.loginError}
+	result := map[string]any{"loggedIn": a.disk.Profile != nil, "profile": a.disk.Profile, "phase": phase, "busy": a.busy, "retryAfter": max(0, int(math.Ceil(time.Until(a.retry).Seconds()))), "pending": len(a.library.Pending), "lastSync": a.library.LastSync, "syncError": a.syncError, "loginError": a.loginError, "profileError": a.profileError}
 	if phase == "mfa" {
 		result["smsNumber"], result["smsContent"] = a.attempt.MFA.Number, a.attempt.MFA.Content
 		result["expiresAt"] = a.attempt.Expires
@@ -232,6 +235,7 @@ func (a *hgOfficialAccount) cancelLogin(logout bool) error {
 	}
 	a.attempt = nil
 	a.loginError = ""
+	a.profileError = ""
 	return nil
 }
 func (a *hgOfficialAccount) begin(ctx context.Context) (context.Context, *hgAccountHTTP, uint64, func(), error) {
@@ -434,7 +438,8 @@ func (a *hgOfficialAccount) login(ctx context.Context, code string, verify bool)
 	disk := a.disk
 	disk.Session = hgCloneSession(c.session)
 	local := strings.TrimPrefix(attempt.Phone, "+86")
-	disk.Profile = &hgAccountProfile{UID: uid, Name: firstNonEmpty(mapString(data, "screen_name", "name"), "红果用户"), Phone: local[:3] + "****" + local[len(local)-4:]}
+	profile := hgMergeProfile(data, hgAccountProfile{UID: uid, Name: "红果用户", Phone: local[:3] + "****" + local[len(local)-4:]})
+	disk.Profile = &profile
 	previousLibrary := a.library
 	if e = a.loadLibrary(uid); e != nil {
 		return e
@@ -447,6 +452,7 @@ func (a *hgOfficialAccount) login(ctx context.Context, code string, verify bool)
 	a.attempt = nil
 	a.syncError = ""
 	a.loginError = ""
+	a.profileError = ""
 	return nil
 }
 func (a *hgOfficialAccount) requireOwner(uid string) error {
@@ -478,6 +484,8 @@ func (engine *nativeEngine) nativeAccount(ctx context.Context, input nativeInput
 		e = a.cancelLogin(false)
 	case "logout":
 		e = a.cancelLogin(true)
+	case "profile":
+		e = a.refreshProfile(ctx, input.Account.UID)
 	case "queueProgress":
 		e = a.queueProgress(input.Account)
 	case "sync":
@@ -485,7 +493,7 @@ func (engine *nativeEngine) nativeAccount(ctx context.Context, input nativeInput
 	case "history":
 		warning := ""
 		if input.Account.Refresh {
-			if err := a.syncHistory(ctx, input.Account.UID); err != nil {
+			if err := a.refreshHistory(ctx, input.Account.UID); err != nil {
 				if ctx.Err() != nil {
 					return nil, ctx.Err()
 				}
