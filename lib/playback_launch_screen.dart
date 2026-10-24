@@ -23,6 +23,7 @@ Future<void> openPlaybackDirectly(
   if (_playbackLaunches[navigator] == true) return;
   _playbackLaunches[navigator] = true;
   final trace = PlaybackTrace('click');
+  trace.event('launch', fields: {'dramaId': drama.id, 'title': drama.title});
   final profileEpoch = store.profileEpoch;
   try {
     final detail = await trace.measure(
@@ -101,7 +102,18 @@ Future<void> openPlaybackDirectly(
         ),
       ),
     );
-  } catch (error) {
+  } catch (error, stack) {
+    trace.event(
+      'launch_failed',
+      fields: {
+        'dramaId': drama.id,
+        'title': drama.title,
+        if (error is AppFailure) 'code': error.code,
+      },
+      error: error,
+      stack: stack,
+    );
+    unawaited(trace.networkSnapshot());
     if (!context.mounted || profileEpoch != store.profileEpoch) return;
     repository.catalogUpdates.publish(
       repository.catalogUpdates.current(drama),

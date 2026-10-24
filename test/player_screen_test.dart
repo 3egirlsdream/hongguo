@@ -1,3 +1,5 @@
+import 'package:duanju_app/diary_service.dart';
+import 'package:flutter/services.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/player_screen.dart';
@@ -12,6 +14,21 @@ import 'fixtures.dart';
 import 'player_fixtures.dart';
 
 void main() {
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('duanju/device'), (
+          call,
+        ) async {
+          if (call.method == 'diagnosticInfo') {
+            return {
+              'transports': ['wifi'],
+              'validated': true,
+            };
+          }
+          return null;
+        });
+  });
+
   Future<void> settleOperations(WidgetTester tester) async {
     for (var i = 0; i < 12; i++) {
       await tester.pump(const Duration(milliseconds: 10));
@@ -65,6 +82,7 @@ void main() {
   testWidgets(
     'duplicate errors switch once while keeping progress, rate and pause state',
     (tester) async {
+      DiaryService.clear();
       final repository = RouteRepository();
       final player = ScriptedPlayer();
       await mount(tester, repository, player, size: const Size(390, 844));
@@ -82,6 +100,11 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       await settleOperations(tester);
+      expect(DiaryService.fullText, contains('"event":"player_error"'));
+      expect(DiaryService.fullText, contains('"episode":1'));
+      expect(DiaryService.fullText, contains('"positionMs":28000'));
+      expect(DiaryService.fullText, contains('"action":"alternative"'));
+      expect(DiaryService.fullText, contains('"event":"environment"'));
       expect(repository.fallbackCalls, 1);
       expect(repository.primaryCalls, 1);
       expect(player.opened.last.start, const Duration(seconds: 28));

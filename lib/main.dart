@@ -26,11 +26,11 @@ import 'app_update.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  DiaryService.add('[App] 应用启动，版本: 0.2.88+95, 平台: Android');
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   SystemChrome.setSystemUIOverlayStyle(AppTheme.systemBars(Brightness.dark));
   MediaKit.ensureInitialized();
   final device = await AppDevice.detect();
+  DiaryService.add('[App] 应用启动 version=${device.version} platform=Android');
   runApp(AppBootstrap(device: device));
 }
 
@@ -77,6 +77,10 @@ class _AppBootstrapState extends State<AppBootstrap>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      unawaited(DiaryService.flush());
+    }
     if (state == AppLifecycleState.resumed) {
       repository.requestOfficialSync();
       unawaited(_refreshDevice());

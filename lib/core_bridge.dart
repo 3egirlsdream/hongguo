@@ -878,6 +878,7 @@ class NativeRepository extends AppRepository {
   @override
   Future<void> initialize() async {
     final directory = await getApplicationSupportDirectory();
+    if (!background) await DiaryService.initialize(directory.path);
     final build = await _call({
       'action': 'initialize',
       'directory': directory.path,

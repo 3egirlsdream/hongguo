@@ -11,6 +11,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.net.NetworkCapabilities
 import android.net.ConnectivityManager
 import android.net.Uri
 import android.util.Rational
@@ -198,6 +199,27 @@ class MainActivity : FlutterActivity() {
                                 "version" to version,
                                 "flipDevice" to flipDevice,
                                 "pictureInPicture" to isInPictureInPictureMode
+                            ))
+                        }
+                        "diagnosticInfo" -> {
+                            val connection = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                            val capabilities = connection.getNetworkCapabilities(connection.activeNetwork)
+                            val transports = listOf(
+                                NetworkCapabilities.TRANSPORT_WIFI to "wifi",
+                                NetworkCapabilities.TRANSPORT_CELLULAR to "cellular",
+                                NetworkCapabilities.TRANSPORT_ETHERNET to "ethernet",
+                                NetworkCapabilities.TRANSPORT_VPN to "vpn",
+                                NetworkCapabilities.TRANSPORT_BLUETOOTH to "bluetooth"
+                            ).filter { capabilities?.hasTransport(it.first) == true }.map { it.second }
+                            result.success(mapOf(
+                                "sdk" to Build.VERSION.SDK_INT,
+                                "manufacturer" to Build.MANUFACTURER,
+                                "model" to Build.MODEL,
+                                "transports" to transports,
+                                "internet" to (capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true),
+                                "validated" to (capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true),
+                                "metered" to connection.isActiveNetworkMetered,
+                                "proxy" to (connection.defaultProxy != null)
                             ))
                         }
                         "systemProxy" -> {

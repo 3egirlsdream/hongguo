@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:duanju_app/core_bridge.dart';
 import 'package:duanju_app/detail_screen.dart';
 import 'package:duanju_app/downloads_screen.dart';
@@ -114,6 +115,21 @@ class DownloadRepository extends FixtureRepository {
 }
 
 void main() {
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('duanju/device'), (
+          call,
+        ) async {
+          if (call.method == 'diagnosticInfo') {
+            return {
+              'transports': ['wifi'],
+              'validated': true,
+            };
+          }
+          return null;
+        });
+  });
+
   Future<LocalStore> makeStore() async {
     SharedPreferences.setMockInitialValues({});
     final store = LocalStore(await SharedPreferences.getInstance());

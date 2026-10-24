@@ -89,6 +89,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Stopwatch? _mediaOpenClock;
   bool _tracedVideoParameters = false;
   bool _tracedProgress = false;
+  Stopwatch? _bufferingClock;
   bool _preloadEnabled = true;
   bool _fastEpisodeSwitch = false;
   Timer? _switchLoadingTimer;
@@ -281,7 +282,26 @@ class _PlayerScreenState extends State<PlayerScreen>
     _subscriptions.add(
       _player.stream.error.listen((error) {
         if (!_closed && _acceptErrors && mounted && error.trim().isNotEmpty) {
+          if (!_pendingError) {
+            _recordPlaybackEvent('player_error', error: error);
+            unawaited((_activeTrace ?? _initialTrace).networkSnapshot());
+          }
           _queueRecovery();
+        }
+      }),
+    );
+    _subscriptions.add(
+      _player.stream.buffering.listen((buffering) {
+        if (_closed || !_acceptErrors) return;
+        if (buffering && _bufferingClock == null) {
+          _bufferingClock = Stopwatch()..start();
+          _recordPlaybackEvent('buffering_start');
+        } else if (!buffering && _bufferingClock != null) {
+          _recordPlaybackEvent(
+            'buffering_end',
+            fields: {'bufferingMs': _bufferingClock!.elapsedMilliseconds},
+          );
+          _bufferingClock = null;
         }
       }),
     );
@@ -295,6 +315,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           final duration = _player.state.duration;
           if (duration <= Duration.zero ||
               _player.state.position < duration - const Duration(seconds: 2)) {
+            _recordPlaybackEvent('premature_end');
             _queueRecovery();
           } else if (_autoAdvance &&
               _index + 1 < widget.detail.episodes.length) {
@@ -320,6 +341,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (!_closed && _openedIndex == _index && position > Duration.zero) {
           if (!_tracedProgress) {
             _tracedProgress = true;
+            _recordPlaybackEvent('playback_started');
             _activeTrace?.mark(
               'playback_progress',
               elapsedMs: _mediaOpenClock?.elapsedMilliseconds,
@@ -383,6 +405,11 @@ class _PlayerScreenState extends State<PlayerScreen>
             foreground: _foreground,
             now: DateTime.now(),
           )) {
+        _recordPlaybackEvent(
+          'playback_stalled',
+          fields: {'thresholdSeconds': 20},
+        );
+        unawaited((_activeTrace ?? _initialTrace).networkSnapshot());
         unawaited(_recover());
       }
     });
@@ -604,13 +631,25 @@ class _PlayerScreenState extends State<PlayerScreen>
       if ((state.width ?? 0) > 0 && (state.height ?? 0) > 0) return;
       final platform = _player.platform;
       if (platform is! NativePlayer) return;
-      DiaryService.add('[Play] 硬解 8 秒无画面，回退软件解码');
+      _recordPlaybackEvent(
+        'decoder_fallback_start',
+        fields: {
+          'from': 'mediacodec-copy',
+          'to': 'software',
+          'noVideoSeconds': 8,
+        },
+      );
       try {
         await platform.setProperty('hwdec', 'no');
         await _player.seek(state.position);
         if (_playIntent && _foreground) await _player.play();
-      } catch (_) {
-        // 回退失败时保持现有播放，交由播放恢复逻辑处理。
+        _recordPlaybackEvent('decoder_fallback_applied');
+      } catch (error, stack) {
+        _recordPlaybackEvent(
+          'decoder_fallback_failed',
+          error: error,
+          stack: stack,
+        );
       }
     });
   }
@@ -942,11 +981,50 @@ class _PlayerScreenState extends State<PlayerScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _checkpoint();
     _lifecycleState = state;
+    _recordPlaybackEvent('lifecycle', fields: {'state': state.name});
     _applyLifecycleVisibility();
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshPictureInPictureStatus());
       _scheduleSystemUi();
     }
+  }
+
+  void _recordPlaybackEvent(
+    String event, {
+    Object? error,
+    StackTrace? stack,
+    Map<String, Object?> fields = const {},
+  }) {
+    final state = _player.state;
+    final plan = _plan;
+    (_activeTrace ?? _initialTrace).event(
+      event,
+      fields: {
+        'dramaId': widget.detail.drama.id,
+        'title': widget.detail.drama.title,
+        'episode': widget.detail.episodes[_index].number,
+        'videoId': widget.detail.episodes[_index].videoId,
+        'positionMs': state.position.inMilliseconds,
+        'durationMs': state.duration.inMilliseconds,
+        'bufferMs': state.buffer.inMilliseconds,
+        'playing': state.playing,
+        'buffering': state.buffering,
+        'foreground': _foreground,
+        'playIntent': _playIntent,
+        'requestedQuality': _requestedQuality,
+        'width': state.width,
+        'height': state.height,
+        'speed': _speed,
+        if (plan != null) 'local': plan.local,
+        if (plan != null) 'quality': plan.quality,
+        if (plan != null) 'routeIndex': plan.routeIndex,
+        if (plan != null) 'routeCount': plan.routeCount,
+        if (error is AppFailure) 'code': error.code,
+        ...fields,
+      },
+      error: error,
+      stack: stack,
+    );
   }
 
   void _queueRecovery() {
@@ -992,6 +1070,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     final action = current.local
         ? PlaybackRecoveryAction.stop
         : _recovery.next(current);
+    _recordPlaybackEvent('recovery', fields: {'action': action.name});
     if (action == PlaybackRecoveryAction.stop) {
       _resumePosition = position;
       final ticket = _generation;
@@ -1191,6 +1270,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     } catch (_) {
       if (!_closed && ticket == _generation) {
         trace.mark('first_frame_unconfirmed', ok: false);
+        _recordPlaybackEvent(
+          'first_frame_timeout',
+          fields: {'timeoutSeconds': 30},
+        );
+        unawaited(trace.networkSnapshot());
       }
     }
   }
@@ -1222,7 +1306,22 @@ class _PlayerScreenState extends State<PlayerScreen>
     _mediaOpenClock = null;
     _tracedVideoParameters = false;
     _tracedProgress = false;
+    _bufferingClock = null;
     trace.mark('episode_prepare');
+    trace.event(
+      'attempt',
+      fields: {
+        'dramaId': widget.detail.drama.id,
+        'title': widget.detail.drama.title,
+        'episode': widget.detail.episodes[index].number,
+        'videoId': widget.detail.episodes[index].videoId,
+        'requestedQuality': _requestedQuality,
+        'requestedPosition': position,
+        'recovery': recoveryAction?.name,
+        'automaticNext': automaticNext,
+        'localOnly': widget.localOnly,
+      },
+    );
     _advanceOnResume = false;
     _interactions.cancel();
     if (widget.handoff != null &&
@@ -1392,6 +1491,13 @@ class _PlayerScreenState extends State<PlayerScreen>
           'player_configure',
           elapsedMs: configureClock.elapsedMilliseconds,
         );
+        _recordPlaybackEvent(
+          'plan_ready',
+          fields: {
+            'resumeSeconds': seekPosition,
+            'prefetchedBytes': plan.prefetchedBytes,
+          },
+        );
         trace.mark('media_open_start');
         _mediaOpenClock = Stopwatch()..start();
         if (ticket == 1 && _video != null) {
@@ -1430,12 +1536,26 @@ class _PlayerScreenState extends State<PlayerScreen>
           _menuRevision.value++;
         }
       });
-    } catch (error) {
+    } catch (error, stack) {
       if (mounted && !_closed && ticket == _generation) {
         setState(() => _fastEpisodeSwitch = false);
       }
       trace.mark('play_failed', ok: false);
-      DiaryService.add('[Play] 捕获播放流程错误: $error');
+      trace.event(
+        'play_failed',
+        fields: {
+          'dramaId': widget.detail.drama.id,
+          'title': widget.detail.drama.title,
+          'episode': widget.detail.episodes[index].number,
+          'currentAttempt': ticket == _generation,
+          'prepared': prepared != null,
+          'installed': installed,
+          if (error is AppFailure) 'code': error.code,
+        },
+        error: error,
+        stack: stack,
+      );
+      unawaited(trace.networkSnapshot());
       if (!_closed && mounted && ticket == _generation) {
         if (prepared != null && identical(_plan, prepared)) {
           _acceptErrors = true;
@@ -1749,6 +1869,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   @override
   void dispose() {
+    _recordPlaybackEvent('player_closed');
+    unawaited(DiaryService.flush());
     unawaited(
       PlaybackContinuity.clear(
         _continuityOwner,

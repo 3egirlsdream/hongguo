@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 
 	"sync"
@@ -108,12 +110,25 @@ func (log *diagnosticLog) rotate() error {
 	return nil
 }
 
+var diagnosticCredential = regexp.MustCompile(`(?i)(?:x-tt-token|token|access_token|refresh_token|sessionid|decryption_key|decryptionKey|password|secret)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s,;}\]]+)`)
+
+func redactDiagnosticMessage(message string) string {
+	message = rePublicURL.ReplaceAllStringFunc(message, func(raw string) string {
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Hostname() == "" {
+			return "[address hidden]"
+		}
+		return "[host " + parsed.Hostname() + "]"
+	})
+	return diagnosticCredential.ReplaceAllString(message, "[credential hidden]")
+}
+
 func (downloader *Downloader) recordDiagnostic(event diagnosticEvent) {
 	if downloader == nil || downloader.diagnostics == nil {
 		return
 	}
-	event.Message = truncate(redactErrorString(event.Message), 4096)
-	event.DramaTitle = truncate(redactErrorString(event.DramaTitle), 256)
+	event.Message = truncate(redactDiagnosticMessage(event.Message), 4096)
+	event.DramaTitle = truncate(redactDiagnosticMessage(event.DramaTitle), 256)
 	if err := downloader.diagnostics.write(event); err != nil {
 		downloader.diagnostics.warningOnce.Do(func() {
 			fmt.Fprintf(os.Stderr, "诊断日志保存失败：%v\n", publicError(err))
