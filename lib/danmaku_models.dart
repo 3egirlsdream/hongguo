@@ -74,7 +74,34 @@ class DanmakuPage {
       episodeId: episodeId,
       startMs: startMs,
       nextMs: next,
-      items: List.unmodifiable(items),
+      items: List.unmodifiable(deduplicateDanmaku(items)),
     );
   }
+}
+
+List<DanmakuItem> deduplicateDanmaku(Iterable<DanmakuItem> items) {
+  final sorted = items.toList()..sort((a, b) => a.timeMs.compareTo(b.timeMs));
+  final ids = <String>{};
+  final lastText = <String, int>{};
+  final unique = <DanmakuItem>[];
+  for (final item in sorted) {
+    final text = item.text
+        .replaceAll(RegExp(r'[\u200b-\u200d\ufeff]'), '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (item.id.isEmpty ||
+        item.timeMs < 0 ||
+        text.isEmpty ||
+        !ids.add(item.id)) {
+      continue;
+    }
+    final key = text.toLowerCase();
+    final previous = lastText[key];
+    if (previous != null && item.timeMs - previous < danmakuLifetimeMs) {
+      continue;
+    }
+    lastText[key] = item.timeMs;
+    unique.add(DanmakuItem(id: item.id, text: text, timeMs: item.timeMs));
+  }
+  return unique;
 }

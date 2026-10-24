@@ -46,6 +46,7 @@ class Drama {
     bool? vip,
     this.heat = '',
     this.views = '',
+    this.favoriteCount = '',
     this.onlineDate = '',
     this.tags = const [],
     this.releaseStatus = '',
@@ -62,6 +63,7 @@ class Drama {
   bool get vip => vipStatus == true;
   final String heat;
   final String views;
+  final String favoriteCount;
   final String onlineDate;
   final List<String> tags;
   final String releaseStatus;
@@ -87,6 +89,7 @@ class Drama {
         : null,
     heat: json['heat']?.toString() ?? '',
     views: json['views']?.toString() ?? '',
+    favoriteCount: json['favoriteCount']?.toString() ?? '',
     onlineDate: json['onlineDate'] as String? ?? '',
     tags: (json['tags'] as List? ?? const []).whereType<String>().toList(),
     releaseStatus: json['releaseStatus'] as String? ?? '',
@@ -104,6 +107,7 @@ class Drama {
     'vip': vipStatus,
     'heat': heat,
     'views': views,
+    'favoriteCount': favoriteCount,
     'onlineDate': onlineDate,
     'tags': tags,
     'releaseStatus': releaseStatus,
@@ -140,6 +144,9 @@ class Drama {
       vip: fresh.vipStatus ?? vipStatus,
       heat: fresh.heat.isEmpty ? heat : fresh.heat,
       views: fresh.views.isEmpty ? views : fresh.views,
+      favoriteCount: fresh.favoriteCount.isEmpty
+          ? favoriteCount
+          : fresh.favoriteCount,
       onlineDate: fresh.onlineDate.isEmpty ? onlineDate : fresh.onlineDate,
       tags: fresh.tags.isEmpty ? tags : fresh.tags,
       releaseStatus:

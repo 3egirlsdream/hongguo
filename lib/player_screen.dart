@@ -404,7 +404,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     } else {
       _play(
         _index,
-        position: widget.initialPosition,
+        position: widget.initialPosition > 0 ? widget.initialPosition : null,
         playWhenReady: widget.initialPlayWhenReady,
         handoffPlan: handoff?.plan,
       );
@@ -1155,7 +1155,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   Future<void> _play(
     int index, {
-    double position = 0,
+    double? position,
     PlaybackRecoveryAction? recoveryAction,
     bool playWhenReady = true,
     PlaybackPlan? handoffPlan,
@@ -1198,7 +1198,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   Future<void> _playWithTrace(
     int index, {
     required PlaybackTrace trace,
-    double position = 0,
+    double? position,
     PlaybackRecoveryAction? recoveryAction,
     bool playWhenReady = true,
     PlaybackPlan? handoffPlan,
@@ -1215,7 +1215,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         !showControlsOnReady &&
         index == _index + 1 &&
         recoveryAction == null &&
-        position == 0;
+        (position ?? 0) == 0;
     _acceptErrors = false;
     _switchLoadingTimer?.cancel();
     _activeTrace = trace;
@@ -1262,7 +1262,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       _recovery.reset();
       _playIntent = playWhenReady;
     }
-    _resumePosition = position;
+    var seekPosition = position ?? 0.0;
+    _resumePosition = seekPosition;
     _showControlsOnPlaybackReady = showControlsOnReady;
     setState(() {
       _index = index;
@@ -1305,6 +1306,16 @@ class _PlayerScreenState extends State<PlayerScreen>
             await _saveProgress(flush: true);
           }
           if (_closed || ticket != _generation) return;
+          if (position == null && widget.mediaId == null) {
+            final saved = widget.store.episodeWatched(
+              widget.detail.drama,
+              widget.detail.episodes[index],
+            );
+            seekPosition = saved != null && !saved.finished
+                ? saved.position
+                : 0.0;
+            _resumePosition = seekPosition;
+          }
           _openedIndex = -1;
           if (warmed == null) await _player.stop();
           final previous = _plan;
@@ -1390,8 +1401,8 @@ class _PlayerScreenState extends State<PlayerScreen>
           Media(
             plan.url,
             httpHeaders: plan.headers,
-            start: position > 0
-                ? Duration(milliseconds: (position * 1000).round())
+            start: seekPosition > 0
+                ? Duration(milliseconds: (seekPosition * 1000).round())
                 : null,
           ),
           play: _foreground && _playIntent,
@@ -2128,7 +2139,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     final short = constraints.maxHeight < 620;
     final landscapeVideo = _aspectRatio > 1;
     final fullButtonTop =
-        (constraints.maxHeight / 2 +
+        (constraints.maxHeight / 2 -
+                PlayerStyle.landscapeLift(constraints.maxHeight) +
                 constraints.maxWidth / _aspectRatio / 2 +
                 8)
             .clamp(
@@ -2271,6 +2283,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       String label,
       VoidCallback? onPressed, {
       bool selected = false,
+      String? caption,
     }) => Padding(
       padding: EdgeInsets.only(bottom: compact ? 4 : 10),
       child: Column(
@@ -2284,7 +2297,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             icon: Icon(icon),
           ),
           Text(
-            label,
+            caption?.isNotEmpty == true ? caption! : label,
             style: TextStyle(
               color: Colors.white.withValues(alpha: .82),
               fontSize: 11,
@@ -2301,12 +2314,11 @@ class _PlayerScreenState extends State<PlayerScreen>
           _followed ? '已收藏' : '收藏',
           _favoriteBusy ? null : _toggleFavorite,
           selected: _followed,
+          caption: playerFavoriteCount(widget.detail.drama.favoriteCount),
         ),
         action(Icons.video_library_rounded, '系列剧', () => _openDetailsSheet(3)),
         if (widget.repository.supportsDownloads && widget.store.canDownload)
           action(Icons.download_rounded, '下载', () => _openDetailsSheet(2)),
-        if (widget.mediaId == null && LanController.current != null && !compact)
-          action(Icons.cast_rounded, '投屏', _pushToDevice),
       ],
     );
   }
@@ -2340,7 +2352,8 @@ class _PlayerScreenState extends State<PlayerScreen>
                     foregroundColor: _danmakuEnabled
                         ? Colors.white
                         : Colors.white54,
-                    minimumSize: const Size(34, 34),
+                    minimumSize: const Size(44, 44),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     padding: const EdgeInsets.all(6),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -2520,6 +2533,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             fullscreen: _showFullscreen,
             compact: _coverWindow,
             immersive: immersive,
+            raisedVideo: immersive && _aspectRatio > 1,
             showOnPlaybackReady: _showControlsOnPlaybackReady,
             title: title,
             episodeLabel: '第 ${widget.detail.episodes[_index].number} 集',
@@ -2580,7 +2594,10 @@ class _PlayerScreenState extends State<PlayerScreen>
               color: immersive ? PlayerStyle.background : Colors.black,
               child: PlayerEpisodeMotion(
                 interactions: _interactions,
-                child: media,
+                child: PlayerMediaPlacement(
+                  raised: immersive && _aspectRatio > 1,
+                  child: media,
+                ),
               ),
             ),
             controls,

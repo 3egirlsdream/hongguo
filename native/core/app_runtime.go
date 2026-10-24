@@ -54,6 +54,7 @@ type nativeDrama struct {
 	VIP            *bool    `json:"vip"`
 	Heat           string   `json:"heat,omitempty"`
 	Views          string   `json:"views,omitempty"`
+	FavoriteCount  string   `json:"favoriteCount,omitempty"`
 	OnlineDate     string   `json:"onlineDate,omitempty"`
 	Tags           []string `json:"tags,omitempty"`
 	ReleaseStatus  string   `json:"releaseStatus,omitempty"`
@@ -204,7 +205,7 @@ func nativeNormalize(drama Drama) nativeDrama {
 	return nativeDrama{MetadataSchema: 1, ID: drama.ID, Source: source, SourceID: sourceID, Title: drama.DisplayTitle(),
 		Description: firstNonEmpty(drama.Desc, drama.Intro), Cover: cover, Episodes: episodes,
 		Category: nativeDramaCategory(drama), VIP: drama.VIP,
-		Heat: drama.Heat, Views: drama.Views, OnlineDate: providerReleaseDate(drama.OnlineDate),
+		Heat: drama.Heat, Views: drama.Views, FavoriteCount: drama.FavoriteCount, OnlineDate: providerReleaseDate(drama.OnlineDate),
 		Tags: append([]string(nil), drama.Tags...), ReleaseStatus: drama.ReleaseStatus}
 }
 

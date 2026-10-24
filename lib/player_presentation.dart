@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'app_theme.dart';
 import 'core_bridge.dart';
+import 'catalog_sort.dart';
 import 'models.dart';
 import 'player_interactions.dart';
 import 'widgets.dart';
@@ -13,6 +14,8 @@ import 'widgets.dart';
 abstract final class PlayerStyle {
   static const background = Color(0xFF22211D);
   static const accent = Color(0xFFFF8514);
+  static double landscapeLift(double height) =>
+      (height * .045).clamp(0.0, 36.0);
 
   static ThemeData get panelTheme => AppTheme.light.copyWith(
     colorScheme: AppTheme.light.colorScheme.copyWith(
@@ -26,6 +29,41 @@ abstract final class PlayerStyle {
       onSurfaceVariant: const Color(0xFF999999),
     ),
     scaffoldBackgroundColor: Colors.white,
+  );
+}
+
+String playerFavoriteCount(String raw) {
+  final count = catalogMetric(raw);
+  if (count == null || count < 0) return '';
+  final unit = count >= 100000000
+      ? 100000000
+      : count >= 10000
+      ? 10000
+      : 1;
+  if (unit == 1) return count.floor().toString();
+  final value = ((count / unit * 10).floor() / 10).toStringAsFixed(1);
+  return '${value.replaceFirst(RegExp(r'\.0$'), '')}${unit == 10000 ? '万' : '亿'}';
+}
+
+class PlayerMediaPlacement extends StatelessWidget {
+  const PlayerMediaPlacement({
+    super.key,
+    required this.raised,
+    required this.child,
+  });
+  final bool raised;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Transform.translate(
+      key: const ValueKey('player-media-placement'),
+      offset: Offset(
+        0,
+        raised ? -PlayerStyle.landscapeLift(constraints.maxHeight) : 0,
+      ),
+      child: child,
+    ),
   );
 }
 
@@ -551,7 +589,7 @@ class _PlayerTimelineState extends State<PlayerTimeline> {
       child: SliderTheme(
         data: SliderTheme.of(context).copyWith(
           padding: EdgeInsets.zero,
-          trackHeight: 4,
+          trackHeight: 2,
           activeTrackColor: PlayerStyle.accent,
           thumbColor: Colors.white,
           inactiveTrackColor: Colors.white.withValues(alpha: .13),

@@ -34,6 +34,7 @@ class LocalStore extends ChangeNotifier {
   int get lanRevision => _lanRevision;
   int get lanUrgentRevision => _lanUrgentRevision;
   final Map<String, WatchEntry> _history = {};
+  final Map<String, WatchEntry> _episodeProgress = {};
   final Map<String, Drama> _favorites = {};
   final Map<String, FollowState> _followStates = {};
   final Map<String, Drama> _seriesCandidates = {};
@@ -99,6 +100,7 @@ class LocalStore extends ChangeNotifier {
     ];
     _current = 'default';
     _history.clear();
+    _episodeProgress.clear();
     _favorites.clear();
     _followStates.clear();
     _seriesCandidates.clear();
@@ -133,6 +135,7 @@ class LocalStore extends ChangeNotifier {
   void _loadLibrary() {
     _lanDocumentCache = null;
     _history.clear();
+    _episodeProgress.clear();
     _favorites.clear();
     _followStates.clear();
     _seriesCandidates.clear();
@@ -141,6 +144,23 @@ class LocalStore extends ChangeNotifier {
       try {
         final entry = WatchEntry.fromJson(row);
         _history[entry.drama.id] = entry;
+      } catch (_) {}
+    }
+    for (final row in readJsonList(
+      _string(_key('episodeProgress')),
+    ).take(5000)) {
+      try {
+        final drama = _history[row['dramaId']]?.drama;
+        if (drama == null) continue;
+        final entry = WatchEntry.fromJson({...row, 'drama': drama.toJson()});
+        if (entry.episode < 1 ||
+            !entry.position.isFinite ||
+            entry.position < .1 ||
+            !entry.duration.isFinite ||
+            entry.duration < 0) {
+          continue;
+        }
+        _episodeProgress[_episodeProgressKey(entry)] = entry;
       } catch (_) {}
     }
     for (final row in readJsonList(_string(_key('favorites')))) {
@@ -195,6 +215,36 @@ class LocalStore extends ChangeNotifier {
       } catch (_) {}
     }
     return entry != null && allowsSource(entry.drama.source) ? entry : null;
+  }
+
+  static String _episodeProgressKey(WatchEntry entry) =>
+      '${entry.drama.id}:${entry.videoId.isNotEmpty ? 'v${entry.videoId}' : 'n${entry.episode}'}';
+
+  static Map<String, dynamic> _episodeProgressJson(WatchEntry entry) => {
+    'dramaId': entry.drama.id,
+    'episode': entry.episode,
+    'videoId': entry.videoId,
+    'position': entry.position,
+    'duration': entry.duration,
+    'updatedAt': entry.updatedAt.toIso8601String(),
+  };
+
+  WatchEntry? episodeWatched(
+    Drama drama,
+    Episode episode, {
+    WatchEntry? preferred,
+  }) {
+    if (!allowsSource(drama.source)) return null;
+    final candidates =
+        [
+            ..._episodeProgress.values.where(
+              (entry) => entry.drama.id == drama.id,
+            ),
+            ?watched(drama.id),
+            if (preferred != null && preferred.drama.id == drama.id) preferred,
+          ].where((entry) => entry.matchesEpisode(episode)).toList()
+          ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return candidates.firstOrNull;
   }
 
   bool isFavorite(String id) =>
@@ -552,7 +602,23 @@ class LocalStore extends ChangeNotifier {
       }
       final retained = sorted.take(300).map((entry) => entry.drama.id).toSet();
       played.removeWhere((id, _) => !retained.contains(id));
+      final episodeProgress = Map<String, WatchEntry>.of(_episodeProgress);
+      episodeProgress.removeWhere(
+        (key, value) =>
+            !retained.contains(value.drama.id) ||
+            value.drama.id == current.drama.id &&
+                value.episode == current.episode &&
+                (value.videoId.isEmpty || current.videoId.isEmpty),
+      );
+      if (current.position >= .1) {
+        episodeProgress[_episodeProgressKey(current)] = current;
+      }
+      final progress = episodeProgress.values.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       await _commit({
+        _key('episodeProgress'): jsonEncode(
+          progress.take(5000).map(_episodeProgressJson).toList(),
+        ),
         _key('playedEpisodes'): jsonEncode(played),
         _key('history'): jsonEncode(
           sorted.take(300).map((entry) => entry.toJson()).toList(),
@@ -606,7 +672,11 @@ class LocalStore extends ChangeNotifier {
       if (locked || epoch != _epoch) return;
       await _commit(
         {},
-        remove: [_key('history'), _key('playedEpisodes')],
+        remove: [
+          _key('history'),
+          _key('playedEpisodes'),
+          _key('episodeProgress'),
+        ],
         clearSyncProgress: {..._history.keys, ...lanDocument.records.keys},
       );
       _loadLibrary();
@@ -621,8 +691,13 @@ class LocalStore extends ChangeNotifier {
       final entries = Map.of(_history)..remove(id);
       final played = jsonDecode(_string(_key('playedEpisodes')) ?? '{}') as Map;
       played.remove(id);
+      final progress = _episodeProgress.values
+          .where((entry) => entry.drama.id != id)
+          .map(_episodeProgressJson)
+          .toList();
       await _commit(
         {
+          _key('episodeProgress'): jsonEncode(progress),
           _key('playedEpisodes'): jsonEncode(played),
           _key('history'): jsonEncode(
             entries.values.map((entry) => entry.toJson()).toList(),
@@ -891,6 +966,9 @@ class LocalStore extends ChangeNotifier {
           profile.id: {
             ..._backupFollowSync(profile.id),
             'history': readJsonList(_string(_key('history', profile.id))),
+            'episodeProgress': readJsonList(
+              _string(_key('episodeProgress', profile.id)),
+            ),
             'playedEpisodes': jsonDecode(
               _string(_key('playedEpisodes', profile.id)) ?? '{}',
             ),
@@ -950,6 +1028,27 @@ class LocalStore extends ChangeNotifier {
       final library = libraries[profile.id] as Map;
       final history = library['history'] as List,
           favorites = library['favorites'] as List;
+      final progress = library['episodeProgress'] as List? ?? [];
+      if (progress.length > 5000) throw const FormatException('备份分集进度过多');
+      final dramas = {
+        for (final row in history) (row as Map)['drama']['id']: row['drama'],
+      };
+      for (final row in progress) {
+        if (row is! Map || !dramas.containsKey(row['dramaId'])) {
+          throw const FormatException('备份分集进度无效');
+        }
+        final entry = WatchEntry.fromJson({
+          ...Map<String, dynamic>.from(row),
+          'drama': dramas[row['dramaId']],
+        });
+        if (entry.episode < 1 ||
+            !entry.position.isFinite ||
+            entry.position < .1 ||
+            !entry.duration.isFinite ||
+            entry.duration < 0) {
+          throw const FormatException('备份分集进度无效');
+        }
+      }
       final played = library['playedEpisodes'] as Map? ?? {};
       if (played.length > 300 ||
           played.entries.any(
@@ -1036,6 +1135,9 @@ class LocalStore extends ChangeNotifier {
           _key('lanRecords', profile.id): jsonEncode(
             LanDocument(replica: lanID(), records: syncRecords).toJson(),
           ),
+        _key('episodeProgress', profile.id): jsonEncode(
+          library['episodeProgress'] ?? [],
+        ),
         _key('history', profile.id): jsonEncode(library['history']),
         _key('playedEpisodes', profile.id): jsonEncode(
           library['playedEpisodes'] ?? {},

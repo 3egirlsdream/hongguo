@@ -145,7 +145,6 @@ class _DetailScreenState extends State<DetailScreen> {
                 detail.episodes,
                 widget.store.watched(merged.id),
               ),
-              resume: true,
             ),
           );
         } else if (widget.downloadOnOpen && widget.store.canDownload) {
@@ -245,7 +244,7 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
-  Future<void> _play(int index, {bool resume = false}) async {
+  Future<void> _play(int index) async {
     if (_openingPlayback) return;
     _openingPlayback = true;
     final trace = PlaybackTrace('detail_click');
@@ -280,13 +279,11 @@ class _DetailScreenState extends State<DetailScreen> {
           return;
         }
       }
-      final saved = widget.store.watched(detail.drama.id);
-      final position =
-          resume &&
-              saved?.matchesEpisode(detail.episodes[index]) == true &&
-              !saved!.finished
-          ? saved.position
-          : 0.0;
+      final saved = widget.store.episodeWatched(
+        detail.drama,
+        detail.episodes[index],
+      );
+      final position = saved != null && !saved.finished ? saved.position : 0.0;
       if (!mounted || _profileEpoch != widget.store.profileEpoch) {
         return;
       }
@@ -530,7 +527,7 @@ class _DetailScreenState extends State<DetailScreen> {
                           ),
                           onPressed: !allowed || _loading || episodes.isEmpty
                               ? null
-                              : () => _play(resumeIndex, resume: true),
+                              : () => _play(resumeIndex),
                           icon: const Icon(Icons.play_arrow_rounded, size: 26),
                           label: Text(
                             watched != null && episodes.isNotEmpty

@@ -21,7 +21,7 @@ List<DanmakuFlight> planDanmaku(
 }) {
   if (!width.isFinite || width <= 0 || rows < 1) return const [];
   final lanes = List<DanmakuFlight?>.filled(rows.clamp(1, 4), null);
-  final sorted = items.toList()..sort((a, b) => a.timeMs.compareTo(b.timeMs));
+  final sorted = deduplicateDanmaku(items);
   final seen = <String>{};
   final flights = <DanmakuFlight>[];
   for (final item in sorted) {
@@ -103,13 +103,13 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> {
             constraints.maxHeight,
             constraints.maxWidth / aspect,
           );
-          final fontSize = width < 600 ? 16.0 : 20.0;
+          final fontSize = width < 600 ? 14.0 : 18.0;
           final scaler = MediaQuery.textScalerOf(context);
           final rowHeight = scaler.scale(fontSize) * 1.5;
           final rows = ((height * .55 - 8) / rowHeight).floor().clamp(0, 4);
           final style = TextStyle(
             fontSize: fontSize,
-            fontWeight: FontWeight.w600,
+            fontWeight: FontWeight.w300,
             color: Colors.white,
             height: 1.2,
             shadows: const [

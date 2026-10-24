@@ -149,6 +149,24 @@ func TestHongguoAccountLiveHistory(t *testing.T) {
 		t.Fatal("real account returned no history; authenticate against the official App before accepting this result")
 	}
 	t.Logf("real account history_read=confirmed records=%d", len(before))
+	if title := os.Getenv("HONGGUO_AUDIT_SERIES_TITLE"); title != "" {
+		found := false
+		for _, watch := range bundle.Watches {
+			if watch.Drama.Title != title {
+				continue
+			}
+			found = true
+			cloud, exists := before[watch.Drama.ID]
+			t.Logf("real watch audit title=%s local_episode=%d local_position=%.3f local_time=%s cloud_exists=%v cloud_episode=%d cloud_position=%.3f cloud_time=%s same_video=%v confirmed=%v", title, watch.Episode, watch.Position, watch.UpdatedAt.Format(time.RFC3339Nano), exists, cloud.Episode, cloud.Position, cloud.UpdatedAt.Format(time.RFC3339Nano), watch.VideoID == cloud.VideoID, hgWatchConfirmed(cloud, watch))
+			if !hgWatchConfirmed(cloud, watch) {
+				t.Error("latest real device watch is not independently confirmed in cloud history")
+			}
+		}
+		if !found {
+			t.Fatal("requested real watch was not present on device")
+		}
+		return
+	}
 	if os.Getenv("HONGGUO_ACCOUNT_UPLOAD") != "1" {
 		t.Log("read-only probe; no history uploaded")
 		return

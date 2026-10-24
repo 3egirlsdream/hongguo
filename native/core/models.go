@@ -47,6 +47,7 @@ type Drama struct {
 	Remark            string             `json:"remark,omitempty"`
 	Score             string             `json:"score,omitempty"`
 	Views             string             `json:"views,omitempty"`
+	FavoriteCount     string             `json:"favoriteCount,omitempty"`
 	Heat              string             `json:"heat,omitempty"`
 	OnlineDate        string             `json:"onlineDate,omitempty"`
 	Tags              []string           `json:"tags,omitempty"`

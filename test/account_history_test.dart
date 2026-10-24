@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:duanju_app/core_bridge.dart';
 import 'package:duanju_app/follow_state.dart';
 import 'package:duanju_app/hongguo_account_models.dart';
@@ -129,6 +131,102 @@ void main() {
     expect(saved.matchesEpisode(episodes.last), isFalse);
     final finished = WatchEntry.fromJson({...saved.toJson(), 'position': 60});
     expect(resumeEpisodeIndex(episodes, finished), 1);
+  });
+
+  testWidgets(
+    'urgent upload requested during an active sync runs immediately afterwards',
+    (tester) async {
+      final first = Completer<void>();
+      var calls = 0;
+      final scheduler = OfficialHistoryScheduler(() async {
+        calls++;
+        if (calls == 1) await first.future;
+      });
+      addTearDown(scheduler.stop);
+      scheduler.start();
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(calls, 1);
+      scheduler.request(immediate: true);
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(calls, 1);
+      first.complete();
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      expect(calls, 2);
+      scheduler.stop();
+    },
+  );
+
+  testWidgets('normal uploads coalesce and stopping disables retry timers', (
+    tester,
+  ) async {
+    var calls = 0;
+    final scheduler = OfficialHistoryScheduler(() async {
+      calls++;
+    });
+    addTearDown(scheduler.stop);
+    scheduler.start();
+    await tester.pump(const Duration(milliseconds: 1));
+    scheduler.request();
+    scheduler.request();
+    await tester.pump(const Duration(seconds: 14));
+    expect(calls, 1);
+    await tester.pump(const Duration(seconds: 1));
+    expect(calls, 2);
+    scheduler.stop();
+    scheduler.request(immediate: true);
+    await tester.pump(const Duration(minutes: 2));
+    expect(calls, 2);
+  });
+
+  test('each episode retains its own progress through restart, backup and deletion', () async {
+    final store = await create();
+    final first = watch('7000000000000000002', videoId: '7000000000000000003');
+    final second = WatchEntry(
+      drama: first.drama,
+      episode: 2,
+      videoId: '7000000000000000004',
+      position: 47,
+      duration: 120,
+      updatedAt: first.updatedAt.add(const Duration(minutes: 1)),
+    );
+    await store.saveWatch(first);
+    await store.saveWatch(second);
+    final episodes = [
+      Episode({'id': first.videoId, 'currentEpisode': 1}, 1),
+      Episode({'id': second.videoId, 'currentEpisode': 2}, 2),
+    ];
+    final restarted = LocalStore(store.preferences);
+    addTearDown(restarted.dispose);
+    expect(restarted.episodeWatched(first.drama, episodes.first)?.position, 12);
+    expect(restarted.episodeWatched(first.drama, episodes.last)?.position, 47);
+    final backup = await restarted.exportBackup();
+    await restarted.clearHistory();
+    expect(restarted.episodeWatched(first.drama, episodes.first), isNull);
+    await restarted.importBackup(backup);
+    expect(restarted.episodeWatched(first.drama, episodes.first)?.position, 12);
+    expect(restarted.episodeWatched(first.drama, episodes.last)?.position, 47);
+    await restarted.saveProfile(
+      id: 'default',
+      name: '管理员',
+      sources: [],
+      download: true,
+      pin: 'synthetic-pin',
+    );
+    await restarted.saveProfile(
+      name: '访客',
+      sources: ['hongguo'],
+      download: false,
+    );
+    await restarted.switchProfile(
+      restarted.profiles.firstWhere((profile) => !profile.admin).id,
+    );
+    expect(restarted.episodeWatched(first.drama, episodes.first), isNull);
+    await restarted.switchProfile('default', pin: 'synthetic-pin');
+    expect(restarted.episodeWatched(first.drama, episodes.first)?.position, 12);
+    await restarted.removeHistory(first.drama.id);
+    expect(restarted.episodeWatched(first.drama, episodes.first), isNull);
+    expect(restarted.episodeWatched(first.drama, episodes.last), isNull);
   });
 
   testWidgets(

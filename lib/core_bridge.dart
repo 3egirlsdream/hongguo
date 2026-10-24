@@ -198,8 +198,9 @@ class NativeRepository extends AppRepository {
   int _readSequence = 0;
   final _activeReads = <String, int>{};
 
-  Timer? _officialTimer;
-  Timer? _officialProgressTimer;
+  late final _officialScheduler = OfficialHistoryScheduler(
+    _syncOfficialHistory,
+  );
   bool _officialProgressPending = false;
   bool _officialSyncing = false;
   int _accountEpoch = -1;
@@ -320,36 +321,17 @@ class NativeRepository extends AppRepository {
   }
 
   void _scheduleOfficialProgressSync({bool immediate = false}) {
-    if (_officialTimer == null) return;
     _officialProgressPending = true;
-    if ((_officialProgressTimer?.isActive ?? false) && !immediate) return;
-    _officialProgressTimer?.cancel();
-    _officialProgressTimer = Timer(
-      immediate ? Duration.zero : const Duration(seconds: 15),
-      () {
-        _officialProgressTimer = null;
-        unawaited(_syncOfficialHistory());
-      },
-    );
+    _officialScheduler.request(immediate: immediate);
   }
 
   @override
   void requestOfficialSync() => _scheduleOfficialProgressSync(immediate: true);
 
-  void startOfficialSync() {
-    _officialTimer?.cancel();
-    _officialTimer = Timer.periodic(
-      const Duration(seconds: 90),
-      (_) => _syncOfficialHistory(),
-    );
-    unawaited(_syncOfficialHistory());
-  }
+  void startOfficialSync() => _officialScheduler.start();
 
   void stopOfficialSync() {
-    _officialTimer?.cancel();
-    _officialTimer = null;
-    _officialProgressTimer?.cancel();
-    _officialProgressTimer = null;
+    _officialScheduler.stop();
     _officialProgressPending = false;
   }
 

@@ -6,6 +6,7 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/playback_preferences.dart';
 import 'package:duanju_app/player_screen.dart';
+import 'package:duanju_app/player_presentation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -91,6 +92,32 @@ DramaSeason season(
 );
 
 void main() {
+  test('favorite counts preserve units and switch at exact thresholds', () {
+    for (final entry in {
+      '0': '0',
+      '9999': '9999',
+      '10000': '1万',
+      '265000': '26.5万',
+      '99999999': '9999.9万',
+      '100000000': '1亿',
+      '126000000': '1.2亿',
+      '26.5万': '26.5万',
+      '2.5亿': '2.5亿',
+      '1,234,567': '123.4万',
+      '': '',
+      '-1': '',
+      'unknown': '',
+    }.entries) {
+      expect(playerFavoriteCount(entry.key), entry.value, reason: entry.key);
+    }
+    final drama = Drama.fromJson({'id': 'hongguo:1', 'favoriteCount': 265000});
+    expect(
+      drama.merge(Drama.fromJson({'id': drama.id})).favoriteCount,
+      '265000',
+    );
+    expect(Drama.fromJson(drama.toJson()).favoriteCount, '265000');
+  });
+
   setUpAll(() async {
     if (!const bool.fromEnvironment('CAPTURE_PLAYER')) return;
     final font = const String.fromEnvironment('CAPTURE_FONT');
@@ -316,6 +343,51 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('预约'), findsOneWidget);
+      await close(tester);
+    },
+  );
+
+  testWidgets(
+    'portrait landscape video moves up with its play control and lower cast action is absent',
+    (tester) async {
+      final player = ScriptedPlayer();
+      await mount(tester, SeriesRepository(), player);
+      player.videoSize(1920, 1080);
+      await tick(tester);
+      final placement = tester.widget<Transform>(
+        find.byKey(const ValueKey('player-media-placement')),
+      );
+      expect(placement.transform.getTranslation().y, lessThan(0));
+      expect(placement.transform.getTranslation().y, greaterThanOrEqualTo(-36));
+      expect(find.byTooltip('投屏'), findsNothing);
+      await close(tester);
+    },
+  );
+
+  testWidgets(
+    'switching to the previous and next episode resumes their independent saved positions',
+    (tester) async {
+      final player = ScriptedPlayer();
+      final store = await mount(tester, SeriesRepository(), player);
+      Future<void> select(int number) async {
+        await tester.tap(find.byKey(const ValueKey('player-open-details')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(ValueKey('play-episode-$number')));
+        await tick(tester);
+      }
+
+      await player.seek(const Duration(seconds: 23));
+      await select(2);
+      await player.seek(const Duration(seconds: 47));
+      await select(1);
+      expect(player.opened.last.start, const Duration(seconds: 23));
+      await select(2);
+      expect(player.opened.last.start, const Duration(seconds: 47));
+      final detail = await SeriesRepository().detail(FixtureRepository.free);
+      expect(
+        store.episodeWatched(detail.drama, detail.episodes.first)?.position,
+        23,
+      );
       await close(tester);
     },
   );

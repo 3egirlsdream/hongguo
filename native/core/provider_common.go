@@ -108,6 +108,9 @@ func mergeDramaMetadata(base, extra Drama) Drama {
 	if strings.TrimSpace(base.Views) == "" {
 		base.Views = extra.Views
 	}
+	if base.FavoriteCount == "" {
+		base.FavoriteCount = extra.FavoriteCount
+	}
 	if strings.TrimSpace(base.Heat) == "" {
 		base.Heat = extra.Heat
 	}

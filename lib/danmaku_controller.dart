@@ -278,8 +278,7 @@ class DanmakuController extends ChangeNotifier {
         unique.putIfAbsent(item.id, () => item);
       }
     }
-    final sorted = unique.values.toList()
-      ..sort((a, b) => a.timeMs.compareTo(b.timeMs));
+    final sorted = deduplicateDanmaku(unique.values);
     items = List.unmodifiable(sorted);
     dataRevision++;
   }

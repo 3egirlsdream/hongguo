@@ -148,6 +148,9 @@ func mergeNativeDrama(previous, fresh nativeDrama) nativeDrama {
 	if fresh.VIP == nil {
 		fresh.VIP = previous.VIP
 	}
+	if fresh.FavoriteCount == "" {
+		fresh.FavoriteCount = previous.FavoriteCount
+	}
 	if fresh.Heat == "" {
 		fresh.Heat = previous.Heat
 	}

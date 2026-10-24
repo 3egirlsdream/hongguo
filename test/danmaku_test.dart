@@ -48,6 +48,27 @@ Future<void> flushDanmaku() async {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('duplicate text is suppressed across ids and adjacent page boundaries for one display lifetime', () {
+    final items = [
+      const DanmakuItem(id: 'a', text: '合成  弹幕', timeMs: 29990),
+      const DanmakuItem(id: 'b', text: '合成 弹幕', timeMs: 30010),
+      const DanmakuItem(id: 'c', text: '合成\u200b 弹幕', timeMs: 31000),
+      const DanmakuItem(id: 'd', text: '其他弹幕', timeMs: 32000),
+      const DanmakuItem(id: 'a', text: '同一身份重复', timeMs: 39000),
+      const DanmakuItem(id: 'e', text: '合成 弹幕', timeMs: 40000),
+    ];
+    expect(deduplicateDanmaku(items).map((item) => item.id), ['a', 'd', 'e']);
+    expect(
+      planDanmaku(
+        items,
+        width: 500,
+        rows: 4,
+        measure: (text) => text.length * 10,
+      ).map((item) => item.item.id),
+      ['a', 'd', 'e'],
+    );
+  });
+
   test('danmaku keeps zero timestamps and text while rejecting unverified items and windows', () {
     final json = <String, dynamic>{
       'episodeId': '1001',
@@ -299,7 +320,7 @@ void main() {
       for (var i = 0; i < 120; i++)
         DanmakuItem(
           id: '$i',
-          text: i.isEven ? '短' : '较长的合成文字',
+          text: i.isEven ? '短$i' : '较长的合成文字$i',
           timeMs: i * 180,
         ),
     ];

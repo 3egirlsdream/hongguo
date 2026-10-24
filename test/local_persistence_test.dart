@@ -130,6 +130,7 @@ void main() {
       library.remove('followSync');
       library['favorites'] = [next.toJson()];
       library['followStates'] = {};
+      library['episodeProgress'] = [];
       library['history'] = [
         WatchEntry(
           drama: next,

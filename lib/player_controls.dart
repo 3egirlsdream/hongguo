@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 
 import 'lan_controller.dart';
 import 'player_interactions.dart';
+import 'player_presentation.dart';
 import 'widgets.dart';
 
 class PlayerControls extends StatefulWidget {
@@ -32,6 +33,7 @@ class PlayerControls extends StatefulWidget {
     this.panelOpen = false,
     this.compact = false,
     this.immersive = false,
+    this.raisedVideo = false,
     this.onSeek,
     this.onDanmaku,
     this.onRetryDanmaku,
@@ -60,6 +62,7 @@ class PlayerControls extends StatefulWidget {
   final bool panelOpen;
   final bool compact;
   final bool immersive;
+  final bool raisedVideo;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
@@ -296,22 +299,28 @@ class _PlayerControlsState extends State<PlayerControls> {
     required double buffered,
   }) {
     if (widget.immersive) {
-      return Center(
-        child: widget.enabled && !buffering
-            ? IconButton(
-                key: const ValueKey('player-playback-toggle'),
-                tooltip: playing ? '暂停播放' : '开始播放',
-                onPressed: () {
-                  widget.onTogglePlayback();
-                  _show();
-                },
-                iconSize: 64,
-                color: Colors.white,
-                icon: Icon(
-                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                ),
-              )
-            : const SizedBox.shrink(),
+      return Transform.translate(
+        offset: Offset(
+          0,
+          widget.raisedVideo ? -PlayerStyle.landscapeLift(viewport.height) : 0,
+        ),
+        child: Center(
+          child: widget.enabled && !buffering
+              ? IconButton(
+                  key: const ValueKey('player-playback-toggle'),
+                  tooltip: playing ? '暂停播放' : '开始播放',
+                  onPressed: () {
+                    widget.onTogglePlayback();
+                    _show();
+                  },
+                  iconSize: 64,
+                  color: Colors.white,
+                  icon: Icon(
+                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
       );
     }
     final compact = widget.compact || viewport.height < 240;
@@ -477,7 +486,7 @@ class _PlayerControlsState extends State<PlayerControls> {
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
               padding: EdgeInsets.zero,
-              trackHeight: 4,
+              trackHeight: 2,
               activeTrackColor: const Color(0xFFFF8514),
               thumbColor: const Color(0xFFFF8514),
               inactiveTrackColor: Colors.white.withValues(alpha: .3),

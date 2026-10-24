@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'core_bridge.dart';
 import 'diary_service.dart';
 import 'hongguo_account_models.dart';
@@ -45,4 +47,53 @@ Future<int> queueLocalOfficialHistory(
     }
   }
   return failed;
+}
+
+class OfficialHistoryScheduler {
+  OfficialHistoryScheduler(this.synchronize);
+  final Future<void> Function() synchronize;
+  Timer? _periodic, _timer;
+  bool _enabled = false, _running = false, _pending = false, _urgent = false;
+
+  void start() {
+    stop();
+    _enabled = true;
+    _periodic = Timer.periodic(
+      const Duration(seconds: 90),
+      (_) => request(immediate: true),
+    );
+    request(immediate: true);
+  }
+
+  void stop() {
+    _enabled = false;
+    _periodic?.cancel();
+    _timer?.cancel();
+    _periodic = _timer = null;
+    _pending = _urgent = false;
+  }
+
+  void request({bool immediate = false}) {
+    if (!_enabled) return;
+    _pending = true;
+    _urgent = _urgent || immediate;
+    if (_running || (_timer?.isActive == true && !immediate)) return;
+    _timer?.cancel();
+    _timer = Timer(_urgent ? Duration.zero : const Duration(seconds: 15), _run);
+  }
+
+  Future<void> _run() async {
+    _timer = null;
+    if (!_enabled || _running) return;
+    _pending = _urgent = false;
+    _running = true;
+    try {
+      await synchronize();
+    } catch (_) {
+      _pending = true;
+    } finally {
+      _running = false;
+      if (_enabled && _pending) request(immediate: _urgent);
+    }
+  }
 }

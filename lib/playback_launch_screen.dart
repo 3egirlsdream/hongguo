@@ -82,10 +82,12 @@ Future<void> openPlaybackDirectly(
       );
       if (accepted != true || !context.mounted) return;
     }
-    final position =
-        watched?.matchesEpisode(episode) == true && watched?.finished == false
-        ? watched!.position
-        : 0.0;
+    final saved = store.episodeWatched(
+      mergedDrama,
+      episode,
+      preferred: watched,
+    );
+    final position = saved != null && !saved.finished ? saved.position : 0.0;
     if (!context.mounted || profileEpoch != store.profileEpoch) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
