@@ -152,6 +152,7 @@ void main() {
     Size size = const Size(390, 844),
     double scale = 1,
     int index = 0,
+    String favoriteCount = '',
     PlaybackPreferences preferences = const PlaybackPreferences(),
   }) async {
     tester.view.physicalSize = size;
@@ -170,7 +171,14 @@ void main() {
           key: const ValueKey('capture-player'),
           child: PlayerScreen(
             detail: DramaDetail(
-              detail.drama,
+              detail.drama.merge(
+                Drama(
+                  id: detail.drama.id,
+                  source: detail.drama.source,
+                  title: detail.drama.title,
+                  favoriteCount: favoriteCount,
+                ),
+              ),
               detail.episodes,
               currentSeason: repository.season,
               seasons: repository.seasons,
@@ -343,6 +351,58 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('预约'), findsOneWidget);
+      await close(tester);
+    },
+  );
+
+  testWidgets(
+    'favorite count is visible below portrait, sheet and wide panel favorite actions',
+    (tester) async {
+      await mount(
+        tester,
+        SeriesRepository(),
+        ScriptedPlayer(),
+        favoriteCount: '265000',
+      );
+      expect(find.text('26.5万'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('player-favorite-count')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('player-open-details')));
+      await tester.pumpAndSettle();
+      expect(find.text('26.5万'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('player-panel-favorite-count')),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey('player-panel-favorite-count')),
+            )
+            .dy,
+        greaterThan(
+          tester
+              .getBottomLeft(
+                find.byKey(const ValueKey('player-panel-favorite')),
+              )
+              .dy,
+        ),
+      );
+      await close(tester);
+      await mount(
+        tester,
+        SeriesRepository(),
+        ScriptedPlayer(),
+        size: const Size(1000, 800),
+        favoriteCount: '100000000',
+      );
+      expect(find.text('1亿'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('player-panel-favorite-count')),
+        findsOneWidget,
+      );
       await close(tester);
     },
   );

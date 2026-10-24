@@ -24,6 +24,7 @@ class PlayerMenu extends StatefulWidget {
     required this.onEpisode,
     required this.onPreferences,
     required this.onFavorite,
+    this.favoriteCount = '',
     this.playedNumbers = const {},
     this.showDanmaku = false,
     this.danmakuStatus = '',
@@ -40,6 +41,7 @@ class PlayerMenu extends StatefulWidget {
   final int actualQuality;
   final bool local;
   final bool favorite;
+  final String favoriteCount;
   final Set<int> playedNumbers;
   final bool showDanmaku;
   final String danmakuStatus;
@@ -298,6 +300,15 @@ class _PlayerMenuState extends State<PlayerMenu> {
             ),
             label: Text(widget.favorite ? '取消追剧' : '加入追剧'),
           ),
+          if (playerFavoriteCount(widget.favoriteCount).isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '收藏数 ${playerFavoriteCount(widget.favoriteCount)}',
+                key: const ValueKey('player-menu-favorite-count'),
+                textAlign: TextAlign.center,
+              ),
+            ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
             key: const ValueKey('player-diary-btn'),

@@ -292,31 +292,55 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                   horizontal: compact ? 30 : 48,
                   vertical: compact ? 8 : 12,
                 ),
-                child: FilledButton.icon(
-                  key: const ValueKey('player-panel-favorite'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: PlayerStyle.accent,
-                    foregroundColor: Colors.white,
-                    minimumSize: Size(0, compact ? 42 : 46),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(9),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton.icon(
+                      key: const ValueKey('player-panel-favorite'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: PlayerStyle.accent,
+                        foregroundColor: Colors.white,
+                        minimumSize: Size(0, compact ? 42 : 46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        textStyle: const TextStyle(fontSize: 17),
+                      ),
+                      onPressed: widget.favoriteBusy ? null : widget.onFavorite,
+                      icon: Icon(
+                        widget.followed
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        size: 24,
+                      ),
+                      label: Text(
+                        widget.favoriteBusy
+                            ? '保存中'
+                            : widget.followed
+                            ? '已收藏'
+                            : '收藏',
+                      ),
                     ),
-                    textStyle: const TextStyle(fontSize: 17),
-                  ),
-                  onPressed: widget.favoriteBusy ? null : widget.onFavorite,
-                  icon: Icon(
-                    widget.followed
-                        ? Icons.star_rounded
-                        : Icons.star_border_rounded,
-                    size: 24,
-                  ),
-                  label: Text(
-                    widget.favoriteBusy
-                        ? '保存中'
-                        : widget.followed
-                        ? '已收藏'
-                        : '收藏',
-                  ),
+                    if (playerFavoriteCount(widget.detail.drama.favoriteCount)
+                        .isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          playerFavoriteCount(
+                            widget.detail.drama.favoriteCount,
+                          ),
+                          key: const ValueKey('player-panel-favorite-count'),
+                          semanticsLabel:
+                              '收藏数 ${playerFavoriteCount(widget.detail.drama.favoriteCount)}',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF99652D),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),

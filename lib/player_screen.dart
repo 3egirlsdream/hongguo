@@ -1794,6 +1794,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               qualities: _plan?.qualities ?? [],
               actualQuality: _plan?.quality ?? 0,
               local: _plan?.local == true,
+              favoriteCount: widget.detail.drama.favoriteCount,
               favorite:
                   (widget.store.isFavorite(widget.detail.drama.id) ||
                   widget.repository.isAccountFavorite(widget.detail.drama.id)),
@@ -2420,6 +2421,12 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
           Text(
             caption?.isNotEmpty == true ? caption! : label,
+            key: caption?.isNotEmpty == true
+                ? const ValueKey('player-favorite-count')
+                : null,
+            semanticsLabel: caption?.isNotEmpty == true
+                ? '收藏数 $caption'
+                : label,
             style: TextStyle(
               color: Colors.white.withValues(alpha: .82),
               fontSize: 11,
