@@ -348,7 +348,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 	} else if input.Action == "danmaku" {
 		duration = 10 * time.Second
 	} else if input.Action == "preload" {
-		duration = 15 * time.Second
+		duration = 18 * time.Second
 	} else if input.Action == "detail" {
 		duration = 12 * time.Second
 	} else if input.Action == "resolve" {
@@ -625,11 +625,13 @@ func (engine *nativeEngine) nativeDetail(ctx context.Context, drama nativeDrama,
 	client := engine.downloader.hongguoClient()
 	client.mu.Lock()
 	var seasons []hongguoOfficialSeason
+	currentSeason := 0
 	if cached, found := client.details[sourceID]; found && time.Now().Before(cached.ExpiresAt) {
 		seasons = append(seasons, cached.Seasons...)
+		currentSeason = cached.CurrentSeason
 	}
 	client.mu.Unlock()
-	return map[string]any{"drama": drama, "chapters": chapters, "warning": warning, "seasons": seasons}, nil
+	return map[string]any{"drama": drama, "chapters": chapters, "warning": warning, "seasons": seasons, "currentSeason": currentSeason}, nil
 }
 
 func (engine *nativeEngine) nativeResolve(ctx context.Context, input nativeInput) (nativePlan, error) {

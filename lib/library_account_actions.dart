@@ -49,9 +49,10 @@ Future<void> updateLibraryFollowing(
       await store.toggleFavorite(drama);
     }
   } catch (error) {
-    if (context.mounted && epoch == store.profileEpoch)
+    if (context.mounted && epoch == store.profileEpoch) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('追剧更新失败：$error')));
+    }
   } finally {
     _followingRequests.remove(key);
   }

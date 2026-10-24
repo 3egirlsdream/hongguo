@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:duanju_app/core_bridge.dart';
 import 'package:duanju_app/downloads_screen.dart';
+import 'package:duanju_app/detail_screen.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/media_library.dart';
 import 'package:duanju_app/media_pipeline.dart';
@@ -31,6 +32,12 @@ class DeviceFixtureRepository extends AppRepository {
     episodes: 3,
   );
 
+  @override
+  Future<CatalogPage> recommendations(
+    String genre, {
+    bool more = false,
+    bool force = false,
+  }) async => CatalogPage([drama]);
   @override
   Future<void> initialize() => native.initialize();
   @override
@@ -265,11 +272,6 @@ void main() {
     await tester.pumpWidget(DuanjuApp(repository: repository, store: store));
     await until(() => find.text('设备播放验证').evaluate().isNotEmpty, 'catalog');
     await tester.tap(find.text('设备播放验证'));
-    await until(
-      () => find.byKey(const ValueKey('episode-1')).evaluate().isNotEmpty,
-      'detail',
-    );
-    await tester.tap(find.byKey(const ValueKey('episode-1')));
     await until(() => find.byType(Video).evaluate().isNotEmpty, 'player');
     await player().setVolume(0);
     await decoded(1);
@@ -278,7 +280,7 @@ void main() {
     await tester.fling(find.byType(Video), const Offset(0, -160), 900);
     await decoded(2);
 
-    await tester.tap(find.byTooltip('旋转与全屏').first);
+    await tester.tap(find.byKey(const ValueKey('player-fullscreen')));
     await until(
       () =>
           MediaQuery.orientationOf(tester.element(find.byType(Video))) ==
@@ -295,16 +297,17 @@ void main() {
           Orientation.portrait,
       'portrait',
     );
+    await tester.tap(find.byKey(const ValueKey('player-open-details')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('play-episode-3')));
     await decoded(3);
+    await tester.tap(find.byKey(const ValueKey('player-open-details')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('play-episode-1')));
     await decoded(1);
     await player().seek(player().state.duration - const Duration(seconds: 1));
     await decoded(2);
-    final backTooltip = MaterialLocalizations.of(
-      tester.element(find.byType(Video)),
-    ).backButtonTooltip;
-    await tester.tap(find.byTooltip(backTooltip));
+    await tester.tap(find.byKey(const ValueKey('player-back')));
     await until(
       () => store.watched(DeviceFixtureRepository.drama.id)?.episode == 2,
       'saved history',
@@ -377,16 +380,16 @@ void main() {
       expect(repository.primaryCalls, 1);
       expect(find.text('暂时无法播放'), findsNothing);
       expect(repository.activeSessions.length, 1);
-      await tester.tap(find.byTooltip('播放倍速'));
+      await tester.tap(find.byKey(const ValueKey('player-speed')));
       await tester.pump(const Duration(milliseconds: 200));
-      await tester.tap(find.text('1.5x').last);
+      await tester.tap(find.byKey(const ValueKey('menu-speed-1.5')));
       await until(() => player().state.rate == 1.5, 'playback speed');
       final resumePosition = player().state.position;
 
       repository.failAll = true;
-      await tester.tap(find.byTooltip('清晰度'));
+      await tester.tap(find.byKey(const ValueKey('player-more')));
       await tester.pump(const Duration(milliseconds: 200));
-      await tester.tap(find.text('1080P').last);
+      await tester.tap(find.byKey(const ValueKey('menu-quality-1080')));
       await until(
         () => find.text('暂时无法播放').evaluate().isNotEmpty,
         'bounded retry failure',
@@ -462,13 +465,14 @@ void main() {
 
       try {
         await tester.pumpWidget(
-          DuanjuApp(repository: repository, store: store),
+          MaterialApp(
+            home: DetailScreen(
+              drama: DeviceFixtureRepository.drama,
+              repository: repository,
+              store: store,
+            ),
+          ),
         );
-        await until(
-          () => find.text('设备播放验证').evaluate().isNotEmpty,
-          'download catalog',
-        );
-        await tester.tap(find.text('设备播放验证'));
         await until(
           () => find.byTooltip('下载选集').evaluate().isNotEmpty,
           'download detail',
@@ -509,11 +513,18 @@ void main() {
           ),
         );
         await until(
-          () => find.text('本地播放').evaluate().isNotEmpty,
-          'local playback buttons',
+          () => find.text('设备播放验证').evaluate().isNotEmpty,
+          'download collection',
         );
+        await tester.tap(find.text('设备播放验证'));
+        await tester.pumpAndSettle();
         final first = jobs.firstWhere((job) => job.episode.number == 1);
-        await tester.tap(find.byKey(ValueKey('local-play-${first.id}')));
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(ValueKey('download-task-${first.id}')),
+            matching: find.byType(ListTile),
+          ),
+        );
         await until(
           () => find.byType(Video).evaluate().isNotEmpty,
           'offline player',
@@ -521,6 +532,8 @@ void main() {
         await player().setVolume(0);
         for (final number in [1, 2, 3]) {
           if (number != 1) {
+            await tester.tap(find.byKey(const ValueKey('player-open-details')));
+            await tester.pumpAndSettle();
             await tester.tap(find.byKey(ValueKey('play-episode-$number')));
           }
           await until(
@@ -547,14 +560,12 @@ void main() {
           });
         }
         await binding.takeScreenshot('android-offline-playback');
-        await tester.tap(
-          find.byTooltip(
-            MaterialLocalizations.of(tester.element(find.byType(Video)))
-                .backButtonTooltip,
-          ),
-        );
+        await tester.tap(find.byKey(const ValueKey('player-back')));
         await until(
-          () => find.text('本地播放').evaluate().isNotEmpty,
+          () => find
+              .byKey(ValueKey('download-task-${first.id}'))
+              .evaluate()
+              .isNotEmpty,
           'return to downloads',
         );
         await binding.takeScreenshot('android-offline-downloads');

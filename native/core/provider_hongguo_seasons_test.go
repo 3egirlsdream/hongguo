@@ -29,8 +29,8 @@ func TestHongguoOfficialSeasonsUseTagsAndSeasonNumbers(t *testing.T) {
 		if season.Number == 5 && (!season.Reservable || season.Playable) {
 			t.Fatal("upcoming reservation mapping")
 		}
-		if season.Number == 6 && (season.Reservable || season.Playable) {
-			t.Fatal("missing reservation flag was invented")
+		if season.Number == 6 && (!season.Reservable || season.Playable) {
+			t.Fatal("missing reservation state must not hide an upcoming season")
 		}
 	}
 	if len(next) != 1 || next[0].Number != 4 || !next[0].Playable {

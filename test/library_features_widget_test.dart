@@ -3,11 +3,11 @@ import 'dart:async';
 import 'package:duanju_app/batch_download_screen.dart';
 import 'package:duanju_app/detail_screen.dart';
 import 'package:duanju_app/follow_state.dart';
-import 'package:duanju_app/home_screen.dart';
+import 'package:duanju_app/recommendations_screen.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/saved_library.dart';
-import 'package:duanju_app/widgets.dart';
+import 'package:duanju_app/search_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -76,8 +76,8 @@ void main() {
       expect(continued, [first.id]);
       await tester.tap(find.byKey(ValueKey('drama-actions-${first.id}')));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('删除这条观看记录'));
-      await tester.tap(find.text('删除这条观看记录'));
+      await tester.ensureVisible(find.text('删除本机观看记录'));
+      await tester.tap(find.text('删除本机观看记录'));
       await tester.pumpAndSettle();
       expect(store.history.single.drama.id, second.id);
       expect(store.following(first.id)!.manuallyWatched, isTrue);
@@ -250,59 +250,6 @@ void main() {
   });
 
   testWidgets(
-    'home update uses a shared source job then reloads stale cache without another catalog request',
-    (tester) async {
-      viewport(tester, const Size(430, 844));
-      final store = await create();
-      await store.toggleFavorite(first);
-      final repository = LibraryFeatureRepository();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: HomeScreen(repository: repository, store: store),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final before = repository.requests.length;
-      await tester.tap(find.byKey(const ValueKey('catalog-refresh')));
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('catalog-refresh')));
-      expect(repository.starts, ['hongguo:update']);
-      repository.cachedPages['hongguo'] = CatalogPage(
-        [
-          const Drama(
-            id: 'hongguo:one',
-            source: 'hongguo',
-            title: '合成一号',
-            episodes: 5,
-          ),
-          second,
-          const Drama(id: 'hongguo:new', source: 'hongguo', title: '新发现的合成剧'),
-        ],
-        fresh: false,
-        page: 4,
-        hasMore: true,
-      );
-      repository.statuses['hongguo'] = repository.finished('hongguo');
-      await tester.pump(const Duration(seconds: 2));
-      await tester.pump(const Duration(milliseconds: 150));
-      await tester.pumpAndSettle();
-      expect(repository.requests.length, before);
-      expect(find.text('新发现的合成剧'), findsOneWidget);
-      expect(store.following(first.id)!.newEpisodes, 3);
-      expect(
-        tester
-            .widget<RefreshAction>(
-              find.byKey(const ValueKey('catalog-refresh')),
-            )
-            .loading,
-        isFalse,
-      );
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-    },
-  );
-
-  testWidgets(
     'multi-selection previews all selected dramas before creating any download',
     (tester) async {
       viewport(tester, const Size(390, 844));
@@ -310,13 +257,14 @@ void main() {
       final repository = LibraryFeatureRepository();
       await tester.pumpWidget(
         MaterialApp(
-          home: HomeScreen(repository: repository, store: store),
+          home: SearchScreen(repository: repository, store: store),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('select-catalog-dramas')));
-      await tester.pump();
-      await tester.tap(find.byKey(ValueKey(first.id)));
+      await tester.enterText(find.byType(TextField), '合成');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      await tester.longPress(find.byKey(ValueKey(first.id)));
       await tester.tap(find.byKey(ValueKey(second.id)));
       await tester.pump();
       expect(find.text('已选 2 部'), findsOneWidget);
@@ -343,7 +291,7 @@ void main() {
         ..pendingDetail = Completer<DramaDetail>();
       await tester.pumpWidget(
         MaterialApp(
-          home: HomeScreen(repository: repository, store: store),
+          home: RecommendationsScreen(repository: repository, store: store),
         ),
       );
       await tester.pumpAndSettle();

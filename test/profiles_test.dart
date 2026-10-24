@@ -125,8 +125,7 @@ void main() {
             name: '管理员',
             admin: true,
             salt: '11111111111111111111111111111111',
-            pinHash:
-                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            pinHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
           ).toJson(),
           const LocalProfile(
             id: 'viewer',
@@ -136,6 +135,7 @@ void main() {
           ).toJson(),
         ]),
         'activeProfile': 'viewer',
+        'forceLogin': false,
       });
       final store = LocalStore(await SharedPreferences.getInstance());
       final repository = NativeRepository()..access = store;
@@ -157,7 +157,7 @@ void main() {
             isA<AppFailure>().having(
               (e) => e.message,
               'message',
-              anyOf(contains('权限'), contains('版本不包含')),
+              anyOf(contains('权限'), contains('不支持此内容')),
             ),
           ),
         );
@@ -176,8 +176,7 @@ void main() {
           name: '管理员',
           admin: true,
           salt: '11111111111111111111111111111111',
-          pinHash:
-              'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          pinHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         ).toJson(),
         const LocalProfile(
           id: 'viewer',
@@ -187,6 +186,7 @@ void main() {
         ).toJson(),
       ]),
       'activeProfile': 'viewer',
+      'forceLogin': false,
     });
     final store = LocalStore(await SharedPreferences.getInstance());
     await tester.pumpWidget(
@@ -196,7 +196,7 @@ void main() {
     expect(find.text('下载'), findsNothing);
     expect(find.text('黄豆'), findsNothing);
     expect(find.text('黄果 AI'), findsNothing);
-    expect(find.text('红果'), findsOneWidget);
+    expect(find.text('为你推荐'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     store.dispose();
   });

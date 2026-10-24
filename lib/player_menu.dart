@@ -6,6 +6,7 @@ import 'models.dart';
 import 'episode_browser.dart';
 import 'playback_preferences.dart';
 import 'diary_service.dart';
+import 'player_presentation.dart';
 
 enum PlayerMenuSection { episodes, speed, quality, settings }
 
@@ -125,10 +126,9 @@ class _PlayerMenuState extends State<PlayerMenu> {
               ),
             Expanded(
               child: widget.section == PlayerMenuSection.episodes
-                  ? PlayerEpisodeGrid(
+                  ? PlayerEpisodePicker(
                       episodes: widget.episodes,
                       currentIndex: widget.currentIndex,
-                      keyPrefix: 'menu-episode',
                       playedNumbers: widget.playedNumbers,
                       onSelected: widget.onEpisode,
                     )
@@ -262,7 +262,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
             key: const ValueKey('player-preload-enabled'),
             contentPadding: EdgeInsets.zero,
             title: const Text('下一集预加载'),
-            subtitle: Text(widget.local ? '本地播放不预取网络视频' : widget.preloadStatus),
+            subtitle: Text(widget.preloadStatus),
             value: preferences.preload,
             onChanged: _busy
                 ? null

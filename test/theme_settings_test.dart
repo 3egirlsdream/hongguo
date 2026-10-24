@@ -3,7 +3,6 @@ import 'package:duanju_app/theme_settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:duanju_app/theme_appearance.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fixtures.dart';
@@ -34,10 +33,7 @@ void main() {
     expect(saved.scale, 1.25);
 
     // 越界值必须被收敛到允许区间。
-    final clamped = ThemeAppearance.fromJson({
-      'scale': 9.0,
-      'blurBars': true,
-    });
+    final clamped = ThemeAppearance.fromJson({'scale': 9.0, 'blurBars': true});
     expect(clamped.scale, ThemeAppearance.maxScale);
     expect(clamped.floatingBar, isFalse);
 
@@ -75,7 +71,7 @@ void main() {
       '模糊',
       '悬浮底栏',
       '液态玻璃',
-      '预测性返回手势',
+      '全屏返回手势',
       '横移返回手势',
       '界面缩放',
     ]) {

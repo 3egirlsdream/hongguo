@@ -119,6 +119,7 @@ class _DetailScreenState extends State<DetailScreen> {
           detail.episodes,
           warning: detail.warning,
           seasons: detail.seasons,
+          currentSeason: detail.currentSeason,
         );
         _loading = false;
         _episodePage =
@@ -182,6 +183,7 @@ class _DetailScreenState extends State<DetailScreen> {
           _detail!.episodes,
           warning: _detail!.warning,
           seasons: _detail!.seasons,
+          currentSeason: _detail!.currentSeason,
         );
       });
       widget.repository.catalogUpdates.publish(updated);

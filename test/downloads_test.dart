@@ -237,20 +237,17 @@ void main() {
       ),
     );
     await tick(tester);
-    expect(find.byKey(const ValueKey('player-download')), findsNothing);
-    expect(find.byKey(const ValueKey('player-favorite')), findsNothing);
     expect(find.byKey(const ValueKey('player-volume')), findsNothing);
+    expect(find.byKey(const ValueKey('play-episode-1')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('player-open-details')));
+    await tester.pumpAndSettle();
     expect(find.text('选集'), findsOneWidget);
     expect(find.text('简介'), findsOneWidget);
-    expect(find.text('下载'), findsOneWidget);
-    expect(find.text('追剧'), findsNothing);
-    expect(find.text('加入追剧'), findsNothing);
-    expect(find.byKey(const ValueKey('player-follow-status')), findsNothing);
-    await tester.tap(find.text('简介'));
+    expect(find.byKey(const ValueKey('play-episode-1')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('player-detail-tab-1')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('player-follow-status')), findsOneWidget);
-    expect(find.text('加入追剧'), findsOneWidget);
-    await tester.tap(find.text('下载'));
+    await tester.tap(find.byTooltip('下载选集'));
     await tester.pumpAndSettle();
     expect(find.text('下载选集'), findsOneWidget);
     expect(find.byKey(const ValueKey('download-episode-1')), findsOneWidget);
@@ -285,23 +282,50 @@ void main() {
       ),
     );
     await tick(tester);
-    await tester.tap(find.byKey(const ValueKey('pause-1')));
+    await tester.tap(find.text('测试短剧'));
+    await tester.pumpAndSettle();
+    final firstMenu = find.descendant(
+      of: find.byKey(const ValueKey('download-task-1')),
+      matching: find.byType(PopupMenuButton<String>),
+    );
+    await tester.tap(firstMenu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('暂停'));
     await tick(tester);
     expect(repository.commands, ['pause:1']);
-    await tester.tap(find.byKey(const ValueKey('resume-1')));
+    await tester.tap(firstMenu);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('继续 / 重试'));
     await tick(tester);
     expect(repository.commands.last, 'resume:1');
-    await tester.tap(find.text('已下载').first);
+    await tester.tap(find.byTooltip('筛选下载合集'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已下载'));
+    await tester.tap(find.text('应用'));
     await tick(tester);
     expect(find.byKey(const ValueKey('download-task-1')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey('remove-2')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('download-task-2')),
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除视频'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保留'));
     await tester.pumpAndSettle();
     expect(repository.commands, isNot(contains('remove:2')));
-    await tester.tap(find.byKey(const ValueKey('remove-2')));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey('download-task-2')),
+        matching: find.byType(PopupMenuButton<String>),
+      ),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('删除'));
+    await tester.tap(find.text('删除视频'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认删除'));
     await tester.pumpAndSettle();
     expect(repository.commands.last, 'remove:2');
     expect(find.text('暂无符合条件的任务'), findsOneWidget);
@@ -344,7 +368,14 @@ void main() {
         ),
       );
       await tick(tester);
-      await tester.tap(find.byKey(const ValueKey('local-play-3')));
+      await tester.tap(find.text('测试短剧'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('download-task-3')),
+          matching: find.byType(ListTile),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.text('offline player'), findsOneWidget);
       expect(repository.detailCalls, 0);
@@ -395,7 +426,9 @@ void main() {
         expect(repository.onlineCalls, 1);
         expect(player.opened.last.uri, contains('online.mp4'));
         expect(player.opened.last.start, const Duration(seconds: 28));
-        await tester.tap(find.byTooltip('下一集').last);
+        await tester.tap(find.byKey(const ValueKey('player-open-details')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('play-episode-2')));
         await tick(tester);
         expect(player.opened.last.uri, contains('local.mp4'));
         expect(repository.onlineCalls, 1);

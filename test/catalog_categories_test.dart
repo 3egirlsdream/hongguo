@@ -6,7 +6,6 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/ranking_models.dart';
-import 'package:duanju_app/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -129,36 +128,6 @@ void main() {
     return store;
   }
 
-  for (final width in [390.0, 320.0]) {
-    testWidgets('compact home keeps search collapsed at $width', (
-      tester,
-    ) async {
-      await mount(
-        tester,
-        CategoryRepository(),
-        width: width,
-        scale: width == 320 ? 2 : 1,
-      );
-      expect(find.byType(TextField), findsNothing);
-      final coverTop = tester.getTopLeft(find.byType(DramaCover).first).dy;
-      expect(coverTop, lessThan(150));
-      final switcher = find.byKey(const ValueKey('source-switch'));
-      final rankings = find.byKey(const ValueKey('open-rankings'));
-      expect(
-        tester.getCenter(switcher).dy,
-        closeTo(tester.getCenter(rankings).dy, 2),
-      );
-      await tester.tap(find.byKey(const ValueKey('toggle-search')));
-      await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('toggle-search')));
-      await tester.pumpAndSettle();
-      expect(find.byType(TextField), findsNothing);
-      expect(tester.getTopLeft(find.byType(DramaCover).first).dy, coverTop);
-      expect(tester.takeException(), isNull);
-    });
-  }
-
   test(
     'remote content types never hide fine categories from cached pages',
     () async {
@@ -194,7 +163,7 @@ void main() {
     (tester) async {
       final repository = CategoryRepository();
       await mount(tester, repository);
-      await tester.tap(find.byKey(const ValueKey('open-rankings')));
+      await tester.tap(find.byKey(const ValueKey('bottom-nav-1')));
       await tester.pumpAndSettle();
       expect(repository.rankRequests, ['hongguo-hot|1|false']);
       expect(find.text('总热播榜'), findsOneWidget);
@@ -211,7 +180,7 @@ void main() {
         find.byKey(const ValueKey('rank-21-hongguo:rank:hongguo-hot:2')),
         findsNothing,
       );
-      expect(repository.categoryRequests, ['hongguo||1']);
+      expect(repository.categoryRequests, isEmpty);
       expect(tester.takeException(), isNull);
     },
   );

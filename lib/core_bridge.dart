@@ -5,7 +5,6 @@ import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
-import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'models.dart';
@@ -17,6 +16,7 @@ import 'ranking_models.dart';
 import 'cover_decoder.dart';
 import 'catalog_updates.dart';
 import 'download_collections.dart';
+import 'diary_service.dart';
 import 'resource_settings.dart';
 import 'playback_trace.dart';
 
@@ -196,6 +196,8 @@ class NativeRepository extends AppRepository {
   final _activeReads = <String, int>{};
 
   Timer? _officialTimer;
+  Timer? _officialProgressTimer;
+  bool _officialProgressPending = false;
   bool _officialSyncing = false;
   int _accountEpoch = -1;
   String _accountUID = '';
@@ -224,7 +226,13 @@ class NativeRepository extends AppRepository {
       return _requestAccount(command, input);
     }
 
-    if ({'status', 'cancel', 'logout', 'queueProgress'}.contains(command)) {
+    if ({
+      'status',
+      'cancel',
+      'logout',
+      'queueProgress',
+      'seasons',
+    }.contains(command)) {
       return request();
     }
     final pending = _accountRequests.then((_) => request());
@@ -281,8 +289,9 @@ class NativeRepository extends AppRepository {
           for (final row in result['items'] as List? ?? [])
             (row['drama'] as Map)['id'] as String,
         };
-        if (!setEquals(ids, accountFavorites.value))
+        if (!setEquals(ids, accountFavorites.value)) {
           accountFavorites.value = ids;
+        }
       } else if (command == 'favorite' && result['confirmed'] == true) {
         final ids = Set<String>.of(accountFavorites.value);
         final id = 'hongguo:${input['id']}';
@@ -294,7 +303,24 @@ class NativeRepository extends AppRepository {
         accountFavorites.value = ids;
       }
     }
+    if (command == 'queueProgress') {
+      _scheduleOfficialProgressSync(immediate: input['flush'] == true);
+    }
     return result;
+  }
+
+  void _scheduleOfficialProgressSync({bool immediate = false}) {
+    if (_officialTimer == null) return;
+    _officialProgressPending = true;
+    if ((_officialProgressTimer?.isActive ?? false) && !immediate) return;
+    _officialProgressTimer?.cancel();
+    _officialProgressTimer = Timer(
+      immediate ? Duration.zero : const Duration(seconds: 15),
+      () {
+        _officialProgressTimer = null;
+        unawaited(_syncOfficialHistory());
+      },
+    );
   }
 
   void startOfficialSync() {
@@ -309,6 +335,9 @@ class NativeRepository extends AppRepository {
   void stopOfficialSync() {
     _officialTimer?.cancel();
     _officialTimer = null;
+    _officialProgressTimer?.cancel();
+    _officialProgressTimer = null;
+    _officialProgressPending = false;
   }
 
   Future<void> _syncOfficialHistory() async {
@@ -319,6 +348,7 @@ class NativeRepository extends AppRepository {
       return;
     }
     _officialSyncing = true;
+    _officialProgressPending = false;
     final epoch = access!.profileEpoch;
     try {
       final status = await hongguoAccount('status');
@@ -327,12 +357,17 @@ class NativeRepository extends AppRepository {
           epoch == access?.profileEpoch) {
         final uid = (status['profile'] as Map)['uid'];
         await hongguoAccount('sync', {'uid': uid});
-        if (epoch == access?.profileEpoch)
+        if (epoch == access?.profileEpoch) {
           await hongguoAccount('favorites', {'uid': uid});
+        }
+      } else if (status['busy'] == true && intValue(status['pending']) > 0) {
+        _officialProgressPending = true;
       }
-    } catch (_) {
+    } catch (error) {
+      DiaryService.add('[Progress] 官方历史自动同步失败，待上传进度保留，将自动重试：$error');
     } finally {
       _officialSyncing = false;
+      if (_officialProgressPending) _scheduleOfficialProgressSync();
     }
   }
 
@@ -749,7 +784,7 @@ class NativeRepository extends AppRepository {
               : action == 'danmaku'
               ? 15
               : action == 'preload'
-              ? 20
+              ? 23
               : 70,
         ),
       );

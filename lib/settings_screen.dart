@@ -11,7 +11,6 @@ import 'local_store.dart';
 import 'profiles_screen.dart';
 import 'app_build.dart';
 import 'catalog_management_screen.dart';
-import 'widgets.dart';
 import 'resource_settings_screen.dart';
 import 'theme_settings_screen.dart';
 import 'lan_screen.dart';

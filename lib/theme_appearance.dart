@@ -34,29 +34,29 @@ class ThemeAppearance {
     bool? predictiveBack,
     bool? swipeBack,
     double? scale,
-  }) =>
-      ThemeAppearance(
-        blurBars: blurBars ?? this.blurBars,
-        floatingBar: floatingBar ?? this.floatingBar,
-        liquidGlass: liquidGlass ?? this.liquidGlass,
-        predictiveBack: predictiveBack ?? this.predictiveBack,
-        swipeBack: swipeBack ?? this.swipeBack,
-        scale: scale ?? this.scale,
-      );
+  }) => ThemeAppearance(
+    blurBars: blurBars ?? this.blurBars,
+    floatingBar: floatingBar ?? this.floatingBar,
+    liquidGlass: liquidGlass ?? this.liquidGlass,
+    predictiveBack: predictiveBack ?? this.predictiveBack,
+    swipeBack: swipeBack ?? this.swipeBack,
+    scale: scale ?? this.scale,
+  );
 
   Map<String, dynamic> toJson() => {
-        'blurBars': blurBars,
-        'floatingBar': floatingBar,
-        'liquidGlass': liquidGlass,
-        'predictiveBack': predictiveBack,
-        'swipeBack': swipeBack,
-        'scale': scale,
-      };
+    'blurBars': blurBars,
+    'floatingBar': floatingBar,
+    'liquidGlass': liquidGlass,
+    'predictiveBack': predictiveBack,
+    'swipeBack': swipeBack,
+    'scale': scale,
+  };
 
   factory ThemeAppearance.fromJson(Map<String, dynamic> value) {
     final rawScale = (value['scale'] as num? ?? 1).toDouble();
-    final scale =
-        rawScale.isFinite ? rawScale.clamp(minScale, maxScale).toDouble() : 1.0;
+    final scale = rawScale.isFinite
+        ? rawScale.clamp(minScale, maxScale).toDouble()
+        : 1.0;
     final floating = value['floatingBar'] as bool? ?? false;
     return ThemeAppearance(
       blurBars: value['blurBars'] as bool? ?? false,

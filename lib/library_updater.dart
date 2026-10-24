@@ -34,8 +34,9 @@ class LibraryUpdater extends ChangeNotifier {
   }
 
   void startWatching() {
-    if (_timer != null || !repository.supportsSourceManagement || !_valid)
+    if (_timer != null || !repository.supportsSourceManagement || !_valid) {
       return;
+    }
     unawaited(refresh());
     _timer = Timer.periodic(const Duration(seconds: 2), (_) {
       _ticks++;
@@ -82,8 +83,9 @@ class LibraryUpdater extends ChangeNotifier {
     if (!_valid ||
         !repository.supportsSourceManagement ||
         busy(_source) ||
-        sources != null && !sources.any((s) => s.id == _source))
+        sources != null && !sources.any((s) => s.id == _source)) {
       return;
+    }
     _stopRequested = false;
     _pending = true;
     _error = '';
@@ -92,8 +94,9 @@ class LibraryUpdater extends ChangeNotifier {
     try {
       final status = await repository.startSourceJob(_source, 'update');
       _accept(status, submitted: true);
-      if (_valid && _stopRequested && status.running)
+      if (_valid && _stopRequested && status.running) {
         _accept(await repository.cancelSourceJob(_source));
+      }
     } catch (error) {
       if (_valid) _error = error.toString();
     } finally {
@@ -103,8 +106,9 @@ class LibraryUpdater extends ChangeNotifier {
   }
 
   Future<void> stop([Iterable<SourceSite>? sources]) async {
-    if (!_valid || sources != null && !sources.any((s) => s.id == _source))
+    if (!_valid || sources != null && !sources.any((s) => s.id == _source)) {
       return;
+    }
     _stopRequested = true;
     if (_pending || _status?.running != true) return;
     _pending = true;

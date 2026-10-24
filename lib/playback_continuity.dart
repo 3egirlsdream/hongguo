@@ -76,9 +76,13 @@ class PlaybackSnapshot {
   }
 }
 
+class _WindowChanges extends ChangeNotifier {
+  void emit() => notifyListeners();
+}
+
 class PlaybackContinuity {
   static const _channel = MethodChannel('duanju/playback');
-  static final windowChanges = ChangeNotifier();
+  static final windowChanges = _WindowChanges();
   static bool get _supported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
@@ -90,7 +94,7 @@ class PlaybackContinuity {
           : (call) async {
               if (call.method == 'windowChanged') {
                 await listener();
-                windowChanges.notifyListeners();
+                windowChanges.emit();
               }
               return null;
             },

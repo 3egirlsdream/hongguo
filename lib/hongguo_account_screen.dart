@@ -120,8 +120,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       if (_active &&
           !widget.collections &&
           (!_busy || _checkingSMS) &&
-          !_loading)
+          !_loading) {
         _refreshStatus();
+      }
     });
   }
 
@@ -193,8 +194,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         _logged &&
         !_loading &&
         !_busy &&
-        !_statusLoading)
+        !_statusLoading) {
       unawaited(_load());
+    }
   }
 
   void _accessChanged() {
@@ -275,8 +277,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         });
         if (_logged &&
             widget.collections &&
-            (previousUID != _uid || previousSync != _status['lastSync']))
+            (previousUID != _uid || previousSync != _status['lastSync'])) {
           await _readHistory();
+        }
         if ((loadCollections || !wasLogged) && _logged && widget.collections) {
           await _load();
         }
@@ -565,10 +568,12 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         );
       }
       setState(() {
-        if ((result['warning'] as String? ?? '').isNotEmpty)
+        if ((result['warning'] as String? ?? '').isNotEmpty) {
           _error = result['warning'] as String;
-        if (tab == 1)
+        }
+        if (tab == 1) {
           _accountHistory = [for (final row in rows) WatchEntry.fromJson(row)];
+        }
         if (!more) _items.clear();
         final existing = _items
             .map((row) => '${row['id'] ?? (row['drama'] as Map?)?['id']}')
@@ -650,10 +655,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
             '剧集 ${row.drama.title} 暂未返回第 ${row.episode} 集，已加入的记录保留在队列',
           );
         }
-        final id = hongguoEpisodeID(ep);
         await widget.repository.hongguoAccount('queueProgress', {
           'uid': uid,
-          'watch': {...row.toJson(), 'videoId': id},
+          'watch': hongguoWatchPayload(row, ep),
         });
         added++;
       }

@@ -67,10 +67,10 @@ void main() {
     (tester) async {
       final repository = RouteRepository();
       final player = ScriptedPlayer();
-      await mount(tester, repository, player);
+      await mount(tester, repository, player, size: const Size(390, 844));
       await tester.tap(find.byKey(const ValueKey('player-speed')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('1.5x').last);
+      await tester.tap(find.byKey(const ValueKey('menu-speed-1.5')));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('关闭菜单'));
       await tester.pumpAndSettle();
@@ -166,15 +166,14 @@ void main() {
       final repository = RouteRepository();
       final player = ScriptedPlayer();
       await mount(tester, repository, player, size: const Size(390, 844));
+      await tester.tap(find.byKey(const ValueKey('player-more')));
+      await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey('player-picture-in-picture')),
         findsOneWidget,
       );
-      expect(find.text('选集'), findsOneWidget);
-      expect(find.text('简介'), findsOneWidget);
-      expect(find.text('下载'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('player-picture-in-picture')));
-      await tester.pump();
+      await tester.pumpAndSettle();
       await tester.pump();
       await settleOperations(tester);
       expect(
@@ -236,15 +235,19 @@ void main() {
       final player = ScriptedPlayer();
       await mount(tester, repository, player, size: const Size(390, 844));
       final speed = tester.getRect(find.byKey(const ValueKey('player-speed')));
-      final quality = tester.getRect(
-        find.byKey(const ValueKey('player-quality')),
-      );
-      final pip = tester.getRect(
+      final more = tester.getRect(find.byKey(const ValueKey('player-more')));
+      expect(more.left - speed.right, lessThan(8));
+      expect(more.right, greaterThan(330));
+      expect(find.byKey(const ValueKey('player-quality')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('player-more')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('menu-quality-0')), findsOneWidget);
+      expect(
         find.byKey(const ValueKey('player-picture-in-picture')),
+        findsOneWidget,
       );
-      expect(quality.left - speed.right, lessThan(8));
-      expect(pip.left - quality.right, lessThan(8));
-      expect(pip.right, greaterThan(330));
+      await tester.tap(find.byTooltip('关闭菜单'));
+      await tester.pumpAndSettle();
       await unmount(tester, player);
     } finally {
       messenger.setMockMethodCallHandler(AppDevice.channel, null);

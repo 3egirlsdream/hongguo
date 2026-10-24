@@ -70,12 +70,32 @@ func (downloader *Downloader) hongguoAppDetail(ctx context.Context, seriesID str
 }
 
 func parseHongguoAppDetail(result map[string]any, seriesID string) (hongguoDetailEntry, error) {
-	detail := nestedMap(result, "data", "video_data")
+	node := nestedMap(result, "data")
+	if keyed := nestedMap(node, seriesID); len(keyed) > 0 {
+		node = keyed
+	}
+	detail := nestedMap(node, "video_data")
 	returnedID := mapString(detail, "series_id_str", "series_id")
 	if returnedID != seriesID {
 		return hongguoDetailEntry{}, errors.New("红果 App 未返回所请求的剧集")
 	}
 	season, _ := strconv.Atoi(mapString(detail, "season_index"))
+	if season < 1 {
+		for _, metadata := range []map[string]any{detail, node} {
+			for _, value := range anyList(metadata["secondary_infos"]) {
+				info := nestedMap(value)
+				if mapString(info, "data_type") == "0" {
+					if number := hongguoOfficialSeasonNumber(mapString(info, "content")); number > 0 {
+						season = number
+						break
+					}
+				}
+			}
+			if season > 0 {
+				break
+			}
+		}
+	}
 	entry := hongguoDetailEntry{Drama: hongguoDramaFromAny(detail, "短剧"), CurrentSeason: season}
 	seen := map[string]bool{}
 	episodes := map[int]bool{}

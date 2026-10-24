@@ -6,7 +6,7 @@ import 'package:duanju_app/home_screen.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/main.dart';
 import 'package:duanju_app/player_screen.dart';
-import 'package:duanju_app/settings_screen.dart';
+import 'package:duanju_app/theme_settings_screen.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -104,20 +104,19 @@ void main() {
     final repository = FixtureRepository();
     await tester.pumpWidget(DuanjuApp(repository: repository, store: store));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('bottom-nav-1')));
+    await tester.tap(find.byKey(const ValueKey('bottom-nav-3')));
     await tester.pumpAndSettle();
-    expect(find.text('我的追剧'), findsOneWidget);
-    await tester.tap(find.byTooltip('更多'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('设置与备份'));
+    await tester.tap(find.byKey(const ValueKey('my-settings')));
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('theme-setting')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('主题'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('浅色'));
     await tester.pumpAndSettle();
     expect(store.themeMode, 'light');
     expect(
-      Theme.of(tester.element(find.byType(SettingsScreen))).brightness,
+      Theme.of(tester.element(find.byType(ThemeSettingsScreen))).brightness,
       Brightness.light,
     );
     expect(
@@ -128,14 +127,16 @@ void main() {
       SystemChrome.latestStyle?.systemNavigationBarContrastEnforced,
       isFalse,
     );
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded).last);
+    await tester.pumpAndSettle();
     await tester.tap(find.byType(BackButton).last);
     await tester.pumpAndSettle();
-    expect(find.text('我的追剧'), findsOneWidget);
+    expect(find.byKey(const ValueKey('my-settings')), findsOneWidget);
     expect(
       tester
           .widget<AppBottomNavigation>(find.byType(AppBottomNavigation))
           .selectedIndex,
-      1,
+      3,
     );
     final requests = repository.requests.length;
     await store.setThemeMode('system');
@@ -152,7 +153,7 @@ void main() {
       Brightness.light,
     );
     expect(repository.requests.length, requests);
-    expect(find.text('我的追剧'), findsOneWidget);
+    expect(find.byKey(const ValueKey('my-settings')), findsOneWidget);
     tester.platformDispatcher.clearPlatformBrightnessTestValue();
     await tester.pumpWidget(const SizedBox.shrink());
     store.dispose();
@@ -170,9 +171,8 @@ void main() {
             theme: AppTheme.light,
             home: StatefulBuilder(
               builder: (context, setState) => MediaQuery(
-                data: MediaQuery.of(
-                  context,
-                ).copyWith(textScaler: TextScaler.linear(2)),
+                data: MediaQuery.of(context)
+                    .copyWith(textScaler: TextScaler.linear(2)),
                 child: Scaffold(
                   bottomNavigationBar: AppBottomNavigation(
                     selectedIndex: selected,
@@ -254,9 +254,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 40));
       }
       expect(
-        Theme.of(
-          tester.element(find.byKey(const ValueKey('video-theme'))),
-        ).brightness,
+        Theme.of(tester.element(find.byKey(const ValueKey('video-theme'))))
+            .brightness,
         Brightness.dark,
       );
       expect(
@@ -265,12 +264,14 @@ void main() {
       );
       expect(
         SystemChrome.latestStyle?.systemNavigationBarIconBrightness,
-        Brightness.dark,
+        Brightness.light,
       );
       expect(
         SystemChrome.latestStyle?.systemNavigationBarContrastEnforced,
         isFalse,
       );
+      await tester.tap(find.byKey(const ValueKey('player-open-details')));
+      await tester.pumpAndSettle();
       expect(find.text('选集'), findsOneWidget);
       expect(find.byKey(const ValueKey('play-episode-1')), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());

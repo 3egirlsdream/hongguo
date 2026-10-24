@@ -14,6 +14,7 @@ class PlaybackPreloader extends ChangeNotifier {
   PlaybackPlan? _ready;
   String? _identity;
   Timer? _delay;
+  Completer<void>? _pending;
   DateTime _expires = DateTime(2000), _retryAt = DateTime(2000);
   int _generation = 0;
   bool _closed = false, loading = false;
@@ -42,6 +43,7 @@ class PlaybackPreloader extends ChangeNotifier {
     Episode episode, {
     int quality = 0,
     bool online = false,
+    bool urgent = false,
   }) {
     if (_closed) return;
     final identity = _key(drama, episode, quality, online);
@@ -54,56 +56,65 @@ class PlaybackPreloader extends ChangeNotifier {
       _ready = null;
       _release(expired);
     }
-    if (_ready != null ||
-        loading ||
-        _delay != null ||
-        _now().isBefore(_retryAt)) {
+    if (_ready != null || loading || _now().isBefore(_retryAt)) {
       return;
     }
+    if (_delay != null) {
+      if (!urgent) return;
+      _delay?.cancel();
+      _pending?.complete();
+    }
     final ticket = _generation;
-    _delay = Timer(const Duration(milliseconds: 600), () async {
-      _delay = null;
-      loading = true;
-      notifyListeners();
-      try {
-        final plan = await repository.preload(
-          drama,
-          episode,
-          quality: quality,
-          online: online,
-        );
-        if (_closed || ticket != _generation) {
-          if (plan != null) await repository.release(plan.session);
-          return;
-        }
-        if (plan == null || plan.url.isEmpty) throw AppFailure('未取得预加载结果');
-        var expires = _now().add(const Duration(minutes: 2));
-        if (plan.expiresAt > 0) {
-          final authorizationExpiry = DateTime.fromMillisecondsSinceEpoch(
-            plan.expiresAt,
-          ).subtract(const Duration(seconds: 5));
-          if (authorizationExpiry.isBefore(expires)) {
-            expires = authorizationExpiry;
+    final pending = Completer<void>();
+    _pending = pending;
+    _delay = Timer(
+      urgent ? Duration.zero : const Duration(milliseconds: 250),
+      () async {
+        _delay = null;
+        loading = true;
+        notifyListeners();
+        try {
+          final plan = await repository.preload(
+            drama,
+            episode,
+            quality: quality,
+            online: online,
+          );
+          if (_closed || ticket != _generation) {
+            if (plan != null) await repository.release(plan.session);
+            return;
+          }
+          if (plan == null || plan.url.isEmpty) throw AppFailure('未取得预加载结果');
+          var expires = _now().add(const Duration(minutes: 2));
+          if (plan.expiresAt > 0) {
+            final authorizationExpiry = DateTime.fromMillisecondsSinceEpoch(
+              plan.expiresAt,
+            ).subtract(const Duration(seconds: 5));
+            if (authorizationExpiry.isBefore(expires)) {
+              expires = authorizationExpiry;
+            }
+          }
+          if (!expires.isAfter(_now())) {
+            _release(plan);
+            throw AppFailure('下一集播放凭证即将过期');
+          }
+          _ready = plan;
+          _expires = expires;
+          error = '';
+        } catch (failure) {
+          if (_closed || ticket != _generation) return;
+          error = failure.toString();
+          _retryAt = _now().add(const Duration(seconds: 5));
+        } finally {
+          if (!pending.isCompleted) pending.complete();
+          if (!_closed && ticket == _generation) {
+            _pending = null;
+            loading = false;
+            notifyListeners();
           }
         }
-        if (!expires.isAfter(_now())) {
-          _release(plan);
-          throw AppFailure('下一集播放凭证即将过期');
-        }
-        _ready = plan;
-        _expires = expires;
-        error = '';
-      } catch (failure) {
-        if (_closed || ticket != _generation) return;
-        error = failure.toString();
-        _retryAt = _now().add(const Duration(seconds: 30));
-      } finally {
-        if (!_closed && ticket == _generation) {
-          loading = false;
-          notifyListeners();
-        }
-      }
-    });
+      },
+    );
     notifyListeners();
   }
 
@@ -113,6 +124,7 @@ class PlaybackPreloader extends ChangeNotifier {
     int quality = 0,
     bool online = false,
   }) {
+    if (_identity != _key(drama, episode, quality, online)) return null;
     final result =
         _identity == _key(drama, episode, quality, online) &&
             _now().isBefore(_expires)
@@ -123,11 +135,31 @@ class PlaybackPreloader extends ChangeNotifier {
     return result;
   }
 
+  Future<PlaybackPlan?> claim(
+    Drama drama,
+    Episode episode, {
+    int quality = 0,
+    bool online = false,
+    Duration wait = Duration.zero,
+  }) async {
+    final identity = _key(drama, episode, quality, online);
+    if (_identity != identity || _closed) return null;
+    final pending = _pending;
+    if (_ready == null && pending != null && wait > Duration.zero) {
+      await pending.future.timeout(wait, onTimeout: () {});
+    }
+    if (_identity != identity || _closed) return null;
+    return take(drama, episode, quality: quality, online: online);
+  }
+
   void pause() {
     final changed = loading || _delay != null;
     _generation++;
     _delay?.cancel();
     _delay = null;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null && !pending.isCompleted) pending.complete();
     if (loading) {
       unawaited(repository.cancelPreload().catchError((Object _) {}));
     }

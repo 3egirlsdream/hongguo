@@ -148,7 +148,8 @@ void main() {
         fixtureProbe(rate: 48000),
       ]);
       expect(audioOnly.videoTranscodes, 0);
-      expect(audioOnly.audioTranscodes, 1);
+      expect(audioOnly.audioTranscodes, 3);
+      expect(audioOnly.canonicalAac, isTrue);
       final identical = MergePlan.create([fixtureProbe(), fixtureProbe()]);
       expect(identical.videoTranscodes, 0);
       expect(identical.audioTranscodes, 0);
@@ -163,7 +164,8 @@ void main() {
     ]);
     expect(plan.audio, isNotNull);
     expect(plan.videoTranscodes, 0);
-    expect(plan.audioTranscodes, 2);
+    expect(plan.audioTranscodes, 3);
+    expect(plan.canonicalAac, isTrue);
   });
 
   test('local media rejects paths outside the library', () {
@@ -198,7 +200,7 @@ void main() {
     try {
       await expectLater(
         library.merge(jobs),
-        throwsA(predicate((Object error) => error.toString().contains('已取消'))),
+        throwsA(predicate((Object error) => error.toString().contains('已停止'))),
       );
       expect(executor.commands, isEmpty);
       expect(repository.leased, isFalse);

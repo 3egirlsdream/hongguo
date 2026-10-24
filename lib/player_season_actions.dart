@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'core_bridge.dart';
+import 'drama_list_card.dart';
 import 'hongguo_account_screen.dart';
 import 'local_store.dart';
 import 'models.dart';
@@ -18,6 +19,9 @@ class PlayerSeasonActions extends StatefulWidget {
     this.label = '下一季',
     this.bottomInset = true,
     this.playLabel = '播放下一季',
+    this.listCard = false,
+    this.scale = 1,
+    this.showReservation = true,
   });
   final DramaSeason season;
   final AppRepository repository;
@@ -27,6 +31,9 @@ class PlayerSeasonActions extends StatefulWidget {
   final String label;
   final bool bottomInset;
   final String playLabel;
+  final bool listCard;
+  final double scale;
+  final bool showReservation;
 
   @override
   State<PlayerSeasonActions> createState() => _PlayerSeasonActionsState();
@@ -66,12 +73,15 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
   Future<void> _refresh() async {
     final generation = ++_generation;
     final epoch = widget.store.profileEpoch;
-    if (!widget.repository.supportsOfficialAccount || !widget.season.reservable)
+    if (!widget.repository.supportsOfficialAccount ||
+        !widget.season.reservable) {
       return;
+    }
     try {
       var status = widget.repository.accountStatus.value;
-      if (status.isEmpty)
+      if (status.isEmpty) {
         status = await widget.repository.hongguoAccount('status');
+      }
       if (!_current(generation, epoch)) return;
       final uid = (status['profile'] as Map?)?['uid'] as String? ?? '';
       setState(() {
@@ -168,6 +178,50 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
   @override
   Widget build(BuildContext context) {
     final season = widget.season;
+    final actions = [
+      if (widget.showReservation &&
+          season.reservable &&
+          widget.repository.supportsOfficialAccount)
+        TextButton.icon(
+          onPressed: _busy ? null : _reserve,
+          icon: Icon(
+            _reserved == true
+                ? Icons.notifications_active_outlined
+                : Icons.notification_add_outlined,
+            size: 18,
+          ),
+          label: Text(
+            _busy
+                ? '提交中'
+                : _reserved == true
+                ? '取消预约'
+                : '预约',
+          ),
+        ),
+      if (season.playable)
+        FilledButton(
+          onPressed: widget.opening ? null : widget.onPlay,
+          child: Text(widget.opening ? '正在打开' : widget.playLabel),
+        ),
+    ];
+    if (widget.listCard) {
+      return DramaListCard(
+        drama: season.drama,
+        repository: widget.repository,
+        heading: widget.label,
+        scale: widget.scale,
+        publishText: season.publishText.isNotEmpty
+            ? season.publishText
+            : season.playable
+            ? ''
+            : '上线时间待公布',
+        expandToContent: true,
+        footer: actions.isEmpty
+            ? null
+            : Wrap(spacing: 8, runSpacing: 4, children: actions),
+        onTap: season.playable && !widget.opening ? widget.onPlay : null,
+      );
+    }
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: SafeArea(
@@ -200,29 +254,7 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
                 ),
               ),
               const SizedBox(width: 8),
-              if (season.reservable &&
-                  widget.repository.supportsOfficialAccount)
-                TextButton.icon(
-                  onPressed: _busy ? null : _reserve,
-                  icon: Icon(
-                    _reserved == true
-                        ? Icons.notifications_active_outlined
-                        : Icons.notification_add_outlined,
-                    size: 18,
-                  ),
-                  label: Text(
-                    _busy
-                        ? '提交中'
-                        : _reserved == true
-                        ? '取消预约'
-                        : '预约',
-                  ),
-                ),
-              if (season.playable)
-                FilledButton(
-                  onPressed: widget.opening ? null : widget.onPlay,
-                  child: Text(widget.opening ? '正在打开' : widget.playLabel),
-                ),
+              ...actions,
             ],
           ),
         ),

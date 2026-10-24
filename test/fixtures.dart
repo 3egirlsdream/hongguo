@@ -40,6 +40,16 @@ class FixtureRepository extends AppRepository {
     vip: true,
   );
   @override
+  Future<CatalogPage> recommendations(
+    String genre, {
+    bool more = false,
+    bool force = false,
+  }) async {
+    if (fail) throw AppFailure('合成网络错误');
+    return CatalogPage(cachedPages['hongguo']?.items ?? [free]);
+  }
+
+  @override
   Future<void> initialize() async {}
   @override
   Future<CatalogPage> cached(String source, {String category = ''}) async =>

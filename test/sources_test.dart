@@ -130,7 +130,13 @@ void main() {
     (tester) async {
       SharedPreferences.setMockInitialValues({
         'profiles': jsonEncode([
-          const LocalProfile(id: 'default', name: '管理员', admin: true).toJson(),
+          LocalProfile(
+            id: 'default',
+            name: '管理员',
+            admin: true,
+            salt: '0' * 32,
+            pinHash: '1' * 64,
+          ).toJson(),
           const LocalProfile(
             id: 'viewer',
             name: '只看红果',
@@ -139,6 +145,7 @@ void main() {
           ).toJson(),
         ]),
         'activeProfile': 'viewer',
+        'forceLogin': false,
       });
       final store = testStore(await SharedPreferences.getInstance());
       final repository = SourceFixtureRepository();
@@ -203,7 +210,7 @@ void main() {
         if (operation == 'check') {
           await tester.tap(find.byKey(const ValueKey('check-hongguo')));
         } else {
-          await tester.tap(find.byTooltip('红果更多操作'));
+          await tester.tap(find.byTooltip('更多操作'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('仅检测目录'));
         }
@@ -298,9 +305,8 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(
-              context,
-            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: const TextScaler.linear(1.5)),
             child: child!,
           ),
           home: CatalogManagementScreen(repository: repository, store: store),

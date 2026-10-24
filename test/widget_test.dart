@@ -1,5 +1,5 @@
 import 'package:duanju_app/local_store.dart';
-import 'package:duanju_app/main.dart';
+import 'package:duanju_app/detail_screen.dart';
 import 'package:duanju_app/models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,24 +14,39 @@ void main() {
   }
 
   for (final size in [const Size(390, 844), const Size(1280, 800)]) {
-    testWidgets('catalog and fresh details at $size', (tester) async {
+    testWidgets('fresh details and saved progress at $size', (tester) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final repository = FixtureRepository();
       final local = await store();
-      await tester.pumpWidget(DuanjuApp(repository: repository, store: local));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: DetailScreen(
+            drama: FixtureRepository.free,
+            repository: repository,
+            store: local,
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byTooltip('VIP：隐藏'), findsNothing);
-      expect(find.text('测试短剧'), findsOneWidget);
+      expect(find.text('测试短剧'), findsWidgets);
       expect(find.text('黄豆'), findsNothing);
       expect(find.text('会员测试剧'), findsNothing);
-      await tester.tap(find.text('测试短剧'));
-      await tester.pumpAndSettle();
       expect(repository.detailCalls, 1);
-      expect(find.byKey(const ValueKey('episode-2')), findsOneWidget);
-      await tester.tap(find.byTooltip('加入追剧'));
+      if (size.width < 960) {
+        await tester.ensureVisible(find.text('选集 · 2 集'));
+        await tester.tap(find.text('选集 · 2 集'));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.byKey(const ValueKey('episode-2')));
+        expect(find.byKey(const ValueKey('episode-2')), findsOneWidget);
+      }
+      await tester.ensureVisible(find.byKey(const ValueKey('follow-status')));
+      await tester.tap(find.byKey(const ValueKey('follow-status')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('想看'));
       await tester.pumpAndSettle();
       expect(local.isFavorite(FixtureRepository.free.id), isTrue);
       for (final episode in [1, 2]) {
@@ -45,93 +60,16 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('继续第 $episode 集'), findsOneWidget);
-        for (final number in [1, 2]) {
-          final button = tester.widget<OutlinedButton>(
-            find.byKey(ValueKey('episode-$number')),
-          );
-          expect(
-            button.style?.backgroundColor?.resolve({}),
-            number == episode ? isNotNull : isNull,
-          );
-        }
+        expect(find.text('继续播放 · 第 $episode 集'), findsOneWidget);
       }
       await local.clearHistory();
       await tester.pumpAndSettle();
       expect(find.text('立即播放'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+      local.dispose();
       expect(tester.takeException(), isNull);
     });
   }
-
-  testWidgets('failed catalog can be retried', (tester) async {
-    final repository = FixtureRepository()..fail = true;
-    await tester.pumpWidget(
-      DuanjuApp(repository: repository, store: await store()),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('暂时无法加载'), findsOneWidget);
-    repository.fail = false;
-    await tester.tap(find.text('重试'));
-    await tester.pumpAndSettle();
-    expect(find.text('测试短剧'), findsOneWidget);
-  });
-
-  testWidgets('fresh disk catalog skips the network and resumes pagination', (
-    tester,
-  ) async {
-    final repository = FixtureRepository();
-    repository.cachedPages['hongguo'] = CatalogPage(
-      [
-        FixtureRepository.free,
-        for (var index = 0; index < 30; index++)
-          Drama(
-            id: 'hongguo:cached-$index',
-            source: 'hongguo',
-            title: '缓存短剧$index',
-            episodes: 1,
-            category: '合成数据',
-          ),
-      ],
-      fresh: true,
-      page: 3,
-      hasMore: true,
-    );
-    await tester.pumpWidget(
-      DuanjuApp(repository: repository, store: await store()),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('测试短剧'), findsOneWidget);
-    expect(repository.requests, isEmpty);
-    final scrollable = find.byType(CustomScrollView);
-    for (var i = 0; i < 4 && repository.pages.isEmpty; i++) {
-      await tester.drag(scrollable, const Offset(0, -900));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 50));
-    }
-    await tester.pumpAndSettle();
-    expect(repository.pages, [4]);
-    await tester.tap(find.byKey(const ValueKey('catalog-refresh')));
-    await tester.pumpAndSettle();
-    expect(repository.pages, [4, 1]);
-    expect(repository.forced, [false, true]);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('stale disk catalog remains usable when refresh fails', (
-    tester,
-  ) async {
-    final repository = FixtureRepository()..fail = true;
-    repository.cachedPages['hongguo'] = CatalogPage([FixtureRepository.free]);
-    await tester.pumpWidget(
-      DuanjuApp(repository: repository, store: await store()),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('测试短剧'), findsOneWidget);
-    expect(find.text('合成网络错误'), findsNothing);
-    expect(find.text('暂时无法加载'), findsNothing);
-    expect(repository.requests, ['hongguo']);
-    expect(tester.takeException(), isNull);
-  });
 
   test('watch progress and favorites survive a new store', () async {
     final local = await store();

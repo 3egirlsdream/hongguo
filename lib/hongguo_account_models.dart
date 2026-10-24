@@ -1,5 +1,11 @@
 import 'models.dart';
 
+Map<String, dynamic> hongguoWatchPayload(WatchEntry entry, Episode episode) => {
+  ...entry.toJson(),
+  'updatedAt': entry.updatedAt.toUtc().toIso8601String(),
+  'videoId': hongguoEpisodeID(episode),
+};
+
 String hongguoEpisodeID(Episode episode) {
   final raw = episode.raw['videoUrl'] as String? ?? '';
   final id = raw.startsWith('hongguo-cenc://')

@@ -199,11 +199,13 @@ class DramaDetail {
     this.episodes, {
     this.warning = '',
     this.seasons = const [],
+    this.currentSeason = 0,
   });
   final Drama drama;
   final List<Episode> episodes;
   final String warning;
   final List<DramaSeason> seasons;
+  final int currentSeason;
   factory DramaDetail.fromJson(Map<String, dynamic> json) {
     final rows = json['chapters'] as List? ?? const [];
     return DramaDetail(
@@ -213,6 +215,7 @@ class DramaDetail {
           Episode(Map<String, dynamic>.from(rows[i] as Map), i + 1),
       ],
       warning: json['warning'] as String? ?? '',
+      currentSeason: intValue(json['currentSeason']),
       seasons: [
         for (final row in json['seasons'] as List? ?? const [])
           DramaSeason.fromJson(Map<String, dynamic>.from(row as Map)),

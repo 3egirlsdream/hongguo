@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'core_bridge.dart';
 import 'detail_screen.dart';
+import 'drama_list_card.dart';
 import 'local_store.dart';
 import 'ranking_models.dart';
 import 'widgets.dart';
@@ -542,166 +543,13 @@ class _RankingCard extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final drama = item.drama;
-    final metadata = [
-      if (drama.episodes > 0) '共 ${drama.episodes} 集',
-      if (drama.releaseLabel != '状态未知') drama.releaseLabel,
-      if (drama.vip) 'VIP',
-    ].join(' · ');
-    final metric = item.metric.trim();
-    final hasHeatLabel = metric.endsWith('热度');
-    final metricValue = hasHeatLabel
-        ? metric.substring(0, metric.length - 2).trim()
-        : metric;
-    final secondaryStyle = TextStyle(
-      color: colors.onSurfaceVariant,
-      fontSize: 14 * scale,
-      height: 1.3,
-    );
-
-    return Material(
-      color: Colors.transparent,
-      clipBehavior: Clip.hardEdge,
-      child: InkWell(
-        key: ValueKey('rank-${item.rank}-${drama.id}'),
-        onFocusChange: (focused) {
-          if (focused) Scrollable.ensureVisible(context, alignment: .4);
-        },
-        onTap: onTap,
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 12 * scale),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final coverWidth = (constraints.maxWidth * .35).clamp(0.0, 176.0);
-              return SizedBox(
-                height: coverWidth / .72,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    SizedBox(
-                      width: coverWidth,
-                      child: DramaCover(
-                        drama: drama,
-                        repository: repository,
-                        radius: 3 * scale,
-                        showOverlay: false,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                    SizedBox(width: 14 * scale),
-                    Expanded(
-                      child: ClipRect(
-                        child: Stack(
-                          children: [
-                            Positioned(
-                              top: 3 * scale,
-                              left: 0,
-                              right: 0,
-                              bottom: (metric.isEmpty ? 0 : 43) * scale,
-                              child: ClipRect(
-                                child: OverflowBox(
-                                  alignment: Alignment.topLeft,
-                                  minHeight: 0,
-                                  maxHeight: double.infinity,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        '第 ${item.rank} 名',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: colors.primary,
-                                          fontSize: 15 * scale,
-                                          height: 1.3,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      SizedBox(height: 8 * scale),
-                                      Text(
-                                        drama.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: colors.onSurface,
-                                          fontSize: 18 * scale,
-                                          height: 1.25,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      if (drama.category.trim().isNotEmpty) ...[
-                                        SizedBox(height: 10 * scale),
-                                        Text(
-                                          drama.category.trim(),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: secondaryStyle,
-                                        ),
-                                      ],
-                                      if (metadata.isNotEmpty) ...[
-                                        SizedBox(height: 5 * scale),
-                                        Text(
-                                          metadata,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: secondaryStyle,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            if (metric.isNotEmpty)
-                              Positioned(
-                                left: 0,
-                                right: 0,
-                                bottom: 5 * scale,
-                                height: 32 * scale,
-                                child: ClipRect(
-                                  child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text.rich(
-                                      TextSpan(
-                                        text: metricValue,
-                                        children: [
-                                          if (hasHeatLabel)
-                                            TextSpan(
-                                              text: ' 热度',
-                                              style: TextStyle(
-                                                fontSize: 14 * scale,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        color: colors.primary,
-                                        fontSize: 24 * scale,
-                                        height: 1.2,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => DramaListCard(
+    key: ValueKey('rank-${item.rank}-${item.drama.id}'),
+    drama: item.drama,
+    repository: repository,
+    scale: scale,
+    heading: '第 ${item.rank} 名',
+    metric: item.metric,
+    onTap: onTap,
+  );
 }

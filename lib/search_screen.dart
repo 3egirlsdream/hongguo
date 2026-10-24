@@ -101,12 +101,14 @@ class _SearchScreenState extends State<SearchScreen> {
         try {
           final cached = await widget.repository.cached('hongguo');
           for (final drama in cached.items) {
-            if (widget.store.allowsSource(drama.source))
+            if (widget.store.allowsSource(drama.source)) {
               updates[drama.id] = drama;
+            }
           }
         } catch (error) {
-          if (mounted && epoch == widget.store.profileEpoch)
+          if (mounted && epoch == widget.store.profileEpoch) {
             setState(() => _error = '更新后读取缓存失败：$error');
+          }
         }
         if (!mounted || epoch != widget.store.profileEpoch) return;
         _browser.updateDramas(updates.values);
@@ -116,8 +118,9 @@ class _SearchScreenState extends State<SearchScreen> {
               updates[item.id] == null ? item : item.merge(updates[item.id]!),
           ];
           for (final id in _selectedDramas.keys.toList()) {
-            if (updates[id] != null)
+            if (updates[id] != null) {
               _selectedDramas[id] = _selectedDramas[id]!.merge(updates[id]!);
+            }
           }
         });
         await saveUserChange(

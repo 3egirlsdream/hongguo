@@ -97,8 +97,8 @@ void main() {
       expect(store.profile.admin, isFalse);
       expect(store.profile.sources, ['huangdou']);
       expect(store.canDownload, isFalse);
-      expect(store.source, '');
-      expect(store.allowsSource('hongguo'), isFalse);
+      expect(store.source, 'hongguo');
+      expect(store.allowsSource('hongguo'), isTrue);
       expect(store.allowsSource('huangdou'), false);
       store.dispose();
     },
@@ -128,8 +128,8 @@ void main() {
 
     expect(store.configurationError, isNull);
     expect(store.profile.sources, ['dsd']);
-    expect(store.sources.map((source) => source.id), []);
-    expect(store.source, '');
+    expect(store.sources.map((source) => source.id), ['hongguo']);
+    expect(store.source, 'hongguo');
     expect(store.allowsSource('dsd'), false);
     store.dispose();
   });
@@ -168,7 +168,7 @@ void main() {
               isA<AppFailure>().having(
                 (error) => error.message,
                 'message',
-                '当前版本不包含此站源',
+                '当前版本不支持此内容',
               ),
             ),
           );

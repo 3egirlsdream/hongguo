@@ -31,6 +31,7 @@ class PlayerControls extends StatefulWidget {
     this.danmakuStatus = '',
     this.panelOpen = false,
     this.compact = false,
+    this.immersive = false,
     this.onSeek,
     this.onDanmaku,
     this.onRetryDanmaku,
@@ -58,6 +59,7 @@ class PlayerControls extends StatefulWidget {
   final String danmakuStatus;
   final bool panelOpen;
   final bool compact;
+  final bool immersive;
   final Future<void> Function(Duration)? onSeek;
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
@@ -247,22 +249,23 @@ class _PlayerControlsState extends State<PlayerControls> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        const IgnorePointer(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Color(0xAA000000),
-                                  Colors.transparent,
-                                  Color(0xE6000000),
-                                ],
-                                stops: [0, .45, 1],
+                        if (!widget.immersive)
+                          const IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Color(0xAA000000),
+                                    Colors.transparent,
+                                    Color(0xE6000000),
+                                  ],
+                                  stops: [0, .45, 1],
+                                ),
                               ),
                             ),
                           ),
-                        ),
                         _controlsChrome(
                           constraints.biggest,
                           playing: state.playing,
@@ -292,6 +295,25 @@ class _PlayerControlsState extends State<PlayerControls> {
     required double position,
     required double buffered,
   }) {
+    if (widget.immersive) {
+      return Center(
+        child: widget.enabled && !buffering
+            ? IconButton(
+                key: const ValueKey('player-playback-toggle'),
+                tooltip: playing ? '暂停播放' : '开始播放',
+                onPressed: () {
+                  widget.onTogglePlayback();
+                  _show();
+                },
+                iconSize: 64,
+                color: Colors.white,
+                icon: Icon(
+                  playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                ),
+              )
+            : const SizedBox.shrink(),
+      );
+    }
     final compact = widget.compact || viewport.height < 240;
     final horizontal = (viewport.width * .028).clamp(8.0, 28.0);
     final top = (viewport.height * .035).clamp(6.0, 20.0);
@@ -456,8 +478,8 @@ class _PlayerControlsState extends State<PlayerControls> {
             data: SliderTheme.of(context).copyWith(
               padding: EdgeInsets.zero,
               trackHeight: 4,
-              activeTrackColor: const Color(0xFF35DED8),
-              thumbColor: const Color(0xFF35DED8),
+              activeTrackColor: const Color(0xFFFF8514),
+              thumbColor: const Color(0xFFFF8514),
               inactiveTrackColor: Colors.white.withValues(alpha: .3),
               secondaryActiveTrackColor: Colors.white.withValues(alpha: .5),
               thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
@@ -517,7 +539,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       child: TextButton(
         key: key,
         style: TextButton.styleFrom(
-          foregroundColor: selected ? const Color(0xFF35DED8) : Colors.white,
+          foregroundColor: selected ? const Color(0xFFFF8514) : Colors.white,
           disabledForegroundColor: Colors.white.withValues(alpha: .38),
           backgroundColor: Colors.transparent,
           minimumSize: const Size(44, 44),

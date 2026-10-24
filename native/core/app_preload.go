@@ -15,7 +15,7 @@ import (
 
 type nativePreloadKey struct{}
 
-const nativePreloadLimit = 4 << 20
+const nativePreloadLimit = 8 << 20
 
 func (engine *nativeEngine) nativePreload(ctx context.Context, input nativeInput) (nativePlan, error) {
 	ctx = context.WithValue(ctx, backgroundCatalogKey{}, true)
@@ -29,9 +29,15 @@ func (engine *nativeEngine) nativePreload(ctx context.Context, input nativeInput
 	stream := engine.stream
 	engine.mu.Unlock()
 	if exists && stream != nil && choice.streamSession != "" {
-		warming, cancel := context.WithTimeout(ctx, 6*time.Second)
-		plan.PrefetchedBytes = stream.nativePrefetch(warming, choice.streamSession, plan.URL, input.Quality)
-		cancel()
+		budget := 8 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			budget = min(budget, time.Until(deadline)-500*time.Millisecond)
+		}
+		if budget > 0 {
+			warming, cancel := context.WithTimeout(ctx, budget)
+			plan.PrefetchedBytes = stream.nativePrefetch(warming, choice.streamSession, plan.URL, input.Quality)
+			cancel()
+		}
 	}
 	if err := ctx.Err(); err != nil {
 		engine.nativeReleasePlayback(plan.Session)
@@ -151,7 +157,7 @@ func (stream *nativeStreamServer) nativePrefetch(ctx context.Context, token, ent
 				break
 			}
 			segments++
-			if master || segments >= 2 || seconds >= 8 {
+			if master || segments >= 3 || seconds >= 12 {
 				break
 			}
 		}

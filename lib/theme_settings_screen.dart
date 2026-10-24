@@ -83,8 +83,8 @@ class _ThemeSettingsScreenState extends State<ThemeSettingsScreen> {
                 padding: padding.copyWith(
                   left: 16,
                   right: 16,
-                  top: 4,
-                  bottom: 28,
+                  top: padding.top + 4,
+                  bottom: padding.bottom + 28,
                 ),
                 children: [
                   const MiuixSmallTitle(

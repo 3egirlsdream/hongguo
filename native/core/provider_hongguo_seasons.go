@@ -10,11 +10,47 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 const hongguoRelatedSeasonsPath = "/reading/bookapi/plan/v"
 
-var hongguoOfficialSeasonTag = regexp.MustCompile(`^第([1-9][0-9]{0,2})季$`)
+var hongguoOfficialSeasonTag = regexp.MustCompile(`^第\s*([0-9零〇一二两兩三四五六七八九十百]+)\s*季$`)
+
+func hongguoOfficialSeasonNumber(label string) int {
+	label = norm.NFKC.String(strings.TrimSpace(label))
+	tag := hongguoOfficialSeasonTag.FindStringSubmatch(label)
+	if tag == nil {
+		return 0
+	}
+	if number, err := strconv.Atoi(tag[1]); err == nil {
+		if number > 0 && number < 1000 {
+			return number
+		}
+		return 0
+	}
+	_, number, _, _ := hongguoSearchSeason("官方" + label)
+	return number
+}
+
+func hongguoRelatedSeasonRows(cell map[string]any) ([]any, error) {
+	rows, direct := cell["video_data"].([]any)
+	if len(rows) > 0 {
+		return rows, nil
+	}
+	children, nested := cell["cell_data"].([]any)
+	if !direct && !nested {
+		return nil, errors.New("红果相关作品缺少剧集数据")
+	}
+	for _, child := range children {
+		videos, ok := nestedMap(child)["video_data"].([]any)
+		if ok {
+			rows = append(rows, videos...)
+		}
+	}
+	return rows, nil
+}
 
 type hongguoOfficialSeason struct {
 	Drama       nativeDrama `json:"drama"`
@@ -28,6 +64,7 @@ type hongguoOfficialSeason struct {
 
 type hongguoOfficialSeasons struct {
 	CurrentSeason int                     `json:"currentSeason"`
+	Warning       string                  `json:"warning,omitempty"`
 	Seasons       []hongguoOfficialSeason `json:"seasons"`
 	RelatedWorks  []hongguoOfficialSeason `json:"relatedWorks"`
 }
@@ -58,38 +95,33 @@ func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, cur
 		if mapString(cell, "cell_name") != "相关作品" {
 			continue
 		}
-		rows, ok := cell["video_data"].([]any)
-		if !ok {
-			return response, errors.New("红果相关作品缺少剧集数据")
+		rows, err := hongguoRelatedSeasonRows(cell)
+		if err != nil {
+			return response, err
 		}
 		for _, item := range rows {
 			row := nestedMap(item)
 			label := strings.TrimSpace(mapString(nestedMap(row, "tag_info"), "text"))
-			tag := hongguoOfficialSeasonTag.FindStringSubmatch(label)
-			number := 0
-			if tag != nil {
-				number, _ = strconv.Atoi(tag[1])
-			}
+			number := hongguoOfficialSeasonNumber(label)
 			id := mapString(row, "series_id")
 			if !hongguoNumericID.MatchString(id) || seen[id] {
 				continue
 			}
 			seen[id] = true
-			episodes, _ := strconv.Atoi(mapString(row, "episode_cnt"))
-			_, hasReservation := row["online_subscribed"]
-			reservable := hasReservation && episodes == 0
+			episodes, episodeErr := strconv.Atoi(mapString(row, "episode_cnt"))
+			reservable := episodeErr == nil && episodes == 0
 			playable := episodes > 0 && !hgBool(row["disable_play"])
 			drama := nativeDrama{ID: providerDramaID(sourceHongguo, id), Source: sourceHongguo, SourceID: id, Title: mapString(row, "title"), Description: mapString(row, "video_desc"), Cover: mapString(row, "cover"), Episodes: max(0, episodes)}
 			if drama.Title == "" {
 				continue
 			}
-			if tag != nil && drama.ID == current.ID {
+			if number > 0 && drama.ID == current.ID {
 				response.CurrentSeason = number
 			}
 			publish := hongguoPublishText(time.Now(), row)
 			work := hongguoOfficialSeason{Drama: drama, Number: number, Playable: playable, Reservable: reservable, PublishText: publish, Label: label}
 			response.RelatedWorks = append(response.RelatedWorks, work)
-			if tag != nil {
+			if number > 0 {
 				response.Seasons = append(response.Seasons, work)
 			}
 		}
@@ -107,7 +139,19 @@ func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, cur
 	sort.SliceStable(response.Seasons, func(i, j int) bool { return response.Seasons[i].Number < response.Seasons[j].Number })
 	for i := range response.Seasons {
 		season := &response.Seasons[i]
-		if response.CurrentSeason > 0 && season.Number > response.CurrentSeason && (season.Playable || season.Reservable) {
+		if response.CurrentSeason > 0 && season.Number > response.CurrentSeason && season.Playable {
+			season.Next = true
+			return response, nil
+		}
+	}
+	for _, season := range response.Seasons {
+		if season.Number > response.CurrentSeason && season.Drama.Episodes > 0 {
+			return response, nil
+		}
+	}
+	for i := range response.Seasons {
+		season := &response.Seasons[i]
+		if response.CurrentSeason > 0 && season.Number > response.CurrentSeason && !season.Playable && season.Reservable {
 			season.Next = true
 			break
 		}
@@ -119,49 +163,94 @@ func (a *hgOfficialAccount) seasons(ctx context.Context, seriesID string) (hongg
 	if !hongguoNumericID.MatchString(seriesID) {
 		return hongguoOfficialSeasons{}, errors.New("多季剧集身份无效")
 	}
-	ctx, client, generation, finish, err := a.begin(ctx)
-	if err != nil {
-		return hongguoOfficialSeasons{}, err
-	}
-	defer finish()
-	if err = client.register(ctx); err != nil {
-		return hongguoOfficialSeasons{}, err
-	}
-	if err = a.persistClient(ctx, client, generation); err != nil {
+	a.mu.Lock()
+	session, generation := hgCloneSession(a.disk.Session), a.generation
+	a.mu.Unlock()
+	client := hgNewAccountHTTP(a.downloader, session)
+	if err := client.register(ctx); err != nil {
 		return hongguoOfficialSeasons{}, err
 	}
 	cache := a.downloader.hongguoClient()
 	cache.mu.Lock()
 	entry, found := cache.details[seriesID]
 	cache.mu.Unlock()
+	var detailErr error
 	if !found || !time.Now().Before(entry.ExpiresAt) {
 		detail, requestErr := client.json(ctx, "/novel/player/video_detail/v1/", http.MethodPost, nil, hongguoOfficialDetailPayload(seriesID), false)
-		if requestErr != nil {
-			return hongguoOfficialSeasons{}, requestErr
+		detailErr = requestErr
+		if requestErr == nil {
+			if fresh, parseErr := parseHongguoAppDetail(detail, seriesID); parseErr == nil {
+				entry = fresh
+			} else {
+				detailErr = parseErr
+				if fresh.CurrentSeason > 0 {
+					entry.CurrentSeason = fresh.CurrentSeason
+				}
+				if entry.Drama.ID == "" && fresh.Drama.ID != "" {
+					entry.Drama = fresh.Drama
+				}
+			}
 		}
-		entry, err = parseHongguoAppDetail(detail, seriesID)
-		if err != nil {
-			return hongguoOfficialSeasons{}, err
-		}
+	}
+	if ctx.Err() != nil {
+		return hongguoOfficialSeasons{}, ctx.Err()
 	}
 	current := nativeNormalize(entry.Drama)
-	current.SourceID = seriesID
-	result, err := client.json(ctx, hongguoRelatedSeasonsPath, http.MethodGet, hongguoRelatedSeasonsQuery(seriesID), nil, false)
-	if err != nil {
-		return hongguoOfficialSeasons{}, err
+	current.ID, current.Source, current.SourceID = providerDramaID(sourceHongguo, seriesID), sourceHongguo, seriesID
+	if current.Title == "" {
+		current.Title = "当前作品"
 	}
-	seasons, err := parseHongguoOfficialSeasons(result, current, entry.CurrentSeason)
-	if err != nil {
-		return hongguoOfficialSeasons{}, err
+	var seasons hongguoOfficialSeasons
+	var lastErr error
+	loaded := false
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			timer := time.NewTimer(time.Duration(100+300*attempt) * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return hongguoOfficialSeasons{}, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		result, requestErr := client.json(ctx, hongguoRelatedSeasonsPath, http.MethodGet, hongguoRelatedSeasonsQuery(seriesID), nil, false)
+		if requestErr != nil {
+			lastErr = requestErr
+			continue
+		}
+		parsed, parseErr := parseHongguoOfficialSeasons(result, current, entry.CurrentSeason)
+		if parseErr != nil {
+			lastErr = parseErr
+			continue
+		}
+		seasons, loaded, lastErr = parsed, true, nil
+		if len(seasons.RelatedWorks) > 0 {
+			break
+		}
 	}
-	if err = a.persistClient(ctx, client, generation); err != nil {
-		return hongguoOfficialSeasons{}, err
+	if !loaded {
+		return hongguoOfficialSeasons{}, lastErr
+	}
+	if seasons.CurrentSeason == 0 && detailErr != nil {
+		seasons.Warning = "相关作品已读取，但当前季号暂未确认，请刷新重试"
+	} else if lastErr != nil {
+		seasons.Warning = "相关作品补查暂未完成，请刷新重试"
+	}
+	a.mu.Lock()
+	changed := a.generation != generation
+	a.mu.Unlock()
+	if ctx.Err() != nil || changed {
+		return hongguoOfficialSeasons{}, errors.New("相关作品查询已取消")
+	}
+	if len(entry.Chapters) == 0 || detailErr != nil {
+		return seasons, nil
 	}
 	cache.mu.Lock()
 	if len(cache.details) >= 128 {
 		cache.details = map[string]hongguoDetailEntry{}
 	}
 	entry.Seasons = seasons.Seasons
+	entry.CurrentSeason = seasons.CurrentSeason
 	entry.ExpiresAt = time.Now().Add(5 * time.Minute)
 	cache.details[seriesID] = entry
 	cache.mu.Unlock()
