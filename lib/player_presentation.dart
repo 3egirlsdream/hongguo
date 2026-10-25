@@ -331,68 +331,6 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
               ),
             ),
             Expanded(child: widget.child),
-            if (!widget.sidebar)
-              DecoratedBox(
-                decoration: const BoxDecoration(
-                  border: Border(top: BorderSide(color: Color(0xFFF2F2F2))),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      FilledButton.icon(
-                        key: const ValueKey('player-panel-favorite'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: PlayerStyle.accent,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(0, 36),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          textStyle: const TextStyle(fontSize: 14),
-                        ),
-                        onPressed: widget.favoriteBusy
-                            ? null
-                            : widget.onFavorite,
-                        icon: Icon(
-                          widget.followed
-                              ? Icons.star_rounded
-                              : Icons.star_border_rounded,
-                          size: 20,
-                        ),
-                        label: Text(
-                          widget.favoriteBusy
-                              ? '保存中'
-                              : widget.followed
-                              ? '已收藏'
-                              : '收藏',
-                        ),
-                      ),
-                      if (count.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                            count,
-                            key: const ValueKey('player-panel-favorite-count'),
-                            semanticsLabel: '收藏数 $count',
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Color(0xFF99652D),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
           ],
         ),
       );

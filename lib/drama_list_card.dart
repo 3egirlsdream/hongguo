@@ -14,7 +14,6 @@ class DramaListCard extends StatelessWidget {
     this.metric = '',
     this.publishText = '',
     this.footer,
-    this.expandToContent = false,
     this.compact = false,
     this.onTap,
   });
@@ -26,7 +25,6 @@ class DramaListCard extends StatelessWidget {
   final String metric;
   final String publishText;
   final Widget? footer;
-  final bool expandToContent;
   final bool compact;
   final VoidCallback? onTap;
 
@@ -40,7 +38,7 @@ class DramaListCard extends StatelessWidget {
     ].join(' · ');
     final secondaryStyle = TextStyle(
       color: colors.onSurfaceVariant,
-      fontSize: 14 * scale,
+      fontSize: (compact ? 11 : 14) * scale,
       height: 1.3,
     );
     final information = Column(
@@ -53,19 +51,19 @@ class DramaListCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: colors.primary,
-            fontSize: 15 * scale,
+            fontSize: (compact ? 12 : 15) * scale,
             height: 1.3,
             fontWeight: FontWeight.w700,
           ),
         ),
-        SizedBox(height: 8 * scale),
+        SizedBox(height: (compact ? 4 : 8) * scale),
         Text(
           drama.title,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: colors.onSurface,
-            fontSize: 18 * scale,
+            fontSize: (compact ? 14 : 18) * scale,
             height: 1.25,
             fontWeight: FontWeight.w700,
           ),
@@ -80,7 +78,7 @@ class DramaListCard extends StatelessWidget {
           ),
         ],
         if (metadata.isNotEmpty) ...[
-          SizedBox(height: 5 * scale),
+          SizedBox(height: (compact ? 3 : 5) * scale),
           Text(
             metadata,
             maxLines: 1,
@@ -89,7 +87,7 @@ class DramaListCard extends StatelessWidget {
           ),
         ],
         if (publishText.isNotEmpty) ...[
-          SizedBox(height: 5 * scale),
+          SizedBox(height: (compact ? 3 : 5) * scale),
           Text(publishText, style: secondaryStyle),
         ],
       ],
@@ -159,23 +157,36 @@ class DramaListCard extends StatelessWidget {
                   ),
                   SizedBox(width: 14 * scale),
                   Expanded(
-                    child: expandToContent
-                        ? ConstrainedBox(
-                            constraints: BoxConstraints(minHeight: coverHeight),
-                            child: Padding(
-                              padding: EdgeInsets.only(top: 3 * scale),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
+                    child: compact
+                        ? SizedBox(
+                            height: coverHeight,
+                            child: LayoutBuilder(
+                              builder: (context, contentConstraints) => Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
                                 children: [
-                                  information,
-                                  if (bottom != null)
-                                    Padding(
-                                      padding: EdgeInsets.only(top: 8 * scale),
-                                      child: bottom,
+                                  Expanded(
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.topLeft,
+                                      child: SizedBox(
+                                        width: contentConstraints.maxWidth,
+                                        child: information,
+                                      ),
                                     ),
+                                  ),
+                                  if (bottom != null) ...[
+                                    SizedBox(height: 4 * scale),
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxHeight: coverHeight * .4,
+                                      ),
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        alignment: Alignment.bottomLeft,
+                                        child: bottom,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

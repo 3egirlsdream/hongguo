@@ -3037,7 +3037,6 @@ class _PlayerScreenState extends State<PlayerScreen>
         heading: label,
         scale: scale,
         compact: true,
-        expandToContent: true,
         footer: Text(
           '正在播放',
           style: TextStyle(

@@ -115,7 +115,7 @@ def prepare():
             'url': base + urllib.parse.quote(name, safe=''),
             'size': target.stat().st_size, 'sha256': file_hash(target),
         })
-    notes = f'野果 {version}\n\nAndroid arm64：使用固定 temp 发布证书，可覆盖安装。\n\n本次更新：\n- 竖屏底部播放面板缩小标题、页签和集数字号，减少封面、选集网格与收藏区留白，普通手机选集最多排 6 列。\n- 横屏右侧隐藏当前剧封面、重复季数和大收藏底栏，标题栏保留小收藏按钮及数量，增加列表可见空间。\n- 缩小系列剧卡片，精简重复分类；放大字体时自适应调整列数，保留当前集定位。\n\n验证：静态分析零问题，172 项 Flutter 测试通过；本地正式签名构建、应用版本 / 构建号、arm64 架构和 16 KiB 对齐核对通过。本轮手机未连接，真实设备外观与触控效果仍待验收。\n'
+    notes = f'野果 {version}\n\nAndroid arm64：使用固定 temp 发布证书，可覆盖安装。\n\n本次更新：\n- 系列剧与关联剧卡片缩小播放按钮和文字间距，右侧内容限制在海报高度内，按钮底边与海报对齐；兼容窄侧栏、长标题及放大字体。\n- 移除详情面板底部的收藏按钮、数量和整块占位，为简介、选集、系列剧及下载内容增加显示区域。\n\n验证：静态分析零问题，176 项 Flutter 测试通过；正式安装包由 GitHub Actions 构建，并检查固定发布证书和 16 KiB 对齐。真实设备外观与触控效果仍待验收。\n'
     tags = subprocess.check_output(['git', 'tag', '--list', 'app-v*'], cwd=ROOT, text=True).splitlines()
     previous = [(tuple(map(int, match.groups())), tag) for tag in tags
                 if (match := TAG_PATTERN.fullmatch(tag)) and tuple(map(int, match.groups())) < version_key(version)]

@@ -6,7 +6,9 @@ import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
 import 'package:duanju_app/playback_preferences.dart';
 import 'package:duanju_app/player_screen.dart';
+import 'package:duanju_app/player_season_actions.dart';
 import 'package:duanju_app/player_presentation.dart';
+import 'package:duanju_app/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -305,6 +307,78 @@ void main() {
     );
   }
 
+  for (final layout in [
+    (360.0, 1.0, false, false),
+    (216.0, 1.0, true, false),
+    (216.0, 1.8, true, true),
+    (296.0, 1.8, true, false),
+  ]) {
+    testWidgets('series card actions stay within poster $layout', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final store = testStore(await SharedPreferences.getInstance());
+      addTearDown(store.dispose);
+      final repository = SeriesRepository();
+      var plays = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context)
+                .copyWith(textScaler: TextScaler.linear(layout.$2)),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: layout.$1,
+                child: PlayerSeasonActions(
+                  season: DramaSeason(
+                    drama: Drama(
+                      id: 'hongguo:synthetic-related',
+                      source: 'hongguo',
+                      title: layout.$3 ? '合成长标题关联作品第二季完整剧名' : '合成关联剧',
+                      episodes: 471,
+                    ),
+                    number: 0,
+                    playable: true,
+                    reservable: layout.$4,
+                    publishText: layout.$4 ? '预计十二月三十一日十二点上线' : '',
+                  ),
+                  repository: repository,
+                  store: store,
+                  label: '同IP',
+                  playLabel: '播放',
+                  listCard: true,
+                  compactCard: true,
+                  scale: .9,
+                  onPlay: () async => plays++,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final poster = tester.getRect(find.byType(DramaCover));
+      final play = tester.getRect(find.byType(FilledButton));
+      final title = tester.getRect(find.textContaining('合成').first);
+      expect(play.bottom, closeTo(poster.bottom, .01));
+      expect(play.top, greaterThanOrEqualTo(title.bottom - .01));
+      expect(play.right, lessThanOrEqualTo(poster.left + layout.$1 + .01));
+      expect(play.height, lessThanOrEqualTo(poster.height * .4 + .01));
+      for (final text in find.byType(Text).evaluate()) {
+        final bounds = tester.getRect(find.byWidget(text.widget));
+        expect(bounds.top, greaterThanOrEqualTo(poster.top - .01));
+        expect(bounds.bottom, lessThanOrEqualTo(poster.bottom + .01));
+      }
+      await tester.tap(find.byType(FilledButton));
+      expect(plays, 1);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('series puts later seasons in order before related works', (
     tester,
   ) async {
@@ -373,7 +447,7 @@ void main() {
   );
 
   testWidgets(
-    'favorite count is visible below portrait, sheet and wide panel favorite actions',
+    'favorite counts remain on portrait and sidebar without a sheet footer',
     (tester) async {
       await mount(
         tester,
@@ -388,25 +462,11 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('player-open-details')));
       await tester.pumpAndSettle();
-      expect(find.text('26.5万'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('player-panel-favorite-count')),
-        findsOneWidget,
+        findsNothing,
       );
-      expect(
-        tester
-            .getTopLeft(
-              find.byKey(const ValueKey('player-panel-favorite-count')),
-            )
-            .dy,
-        greaterThan(
-          tester
-              .getBottomLeft(
-                find.byKey(const ValueKey('player-panel-favorite')),
-              )
-              .dy,
-        ),
-      );
+      expect(find.byKey(const ValueKey('player-panel-favorite')), findsNothing);
       await close(tester);
       await mount(
         tester,
@@ -457,6 +517,14 @@ void main() {
         }
         final grid = tester.getRect(
           find.byKey(const ValueKey('player-episode-grid')),
+        );
+        expect(
+          find.byKey(const ValueKey('player-panel-favorite')),
+          findsNothing,
+        );
+        expect(
+          grid.bottom,
+          closeTo(tester.getRect(find.byType(PlayerDetailsPanel)).bottom, .01),
         );
         final episodes = find.byWidgetPredicate(
           (widget) =>

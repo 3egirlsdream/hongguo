@@ -180,17 +180,27 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
   @override
   Widget build(BuildContext context) {
     final season = widget.season;
+    final compact = widget.listCard && widget.compactCard;
+    final compactButtonStyle = compact
+        ? TextButton.styleFrom(
+            minimumSize: Size(64 * widget.scale, 30 * widget.scale),
+            padding: EdgeInsets.symmetric(horizontal: 14 * widget.scale),
+            textStyle: TextStyle(fontSize: 12 * widget.scale),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          )
+        : null;
     final actions = [
       if (widget.showReservation &&
           season.reservable &&
           widget.repository.supportsOfficialAccount)
         TextButton.icon(
+          style: compactButtonStyle,
           onPressed: _busy ? null : _reserve,
           icon: Icon(
             _reserved == true
                 ? Icons.notifications_active_outlined
                 : Icons.notification_add_outlined,
-            size: 18,
+            size: compact ? 14 * widget.scale : 18,
           ),
           label: Text(
             _busy
@@ -202,6 +212,7 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
         ),
       if (season.playable)
         FilledButton(
+          style: compactButtonStyle,
           onPressed: widget.opening ? null : widget.onPlay,
           child: Text(widget.opening ? '正在打开' : widget.playLabel),
         ),
@@ -218,9 +229,14 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
             : season.playable
             ? ''
             : '上线时间待公布',
-        expandToContent: true,
         footer: actions.isEmpty
             ? null
+            : compact
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 8 * widget.scale,
+                children: actions,
+              )
             : Wrap(spacing: 8, runSpacing: 4, children: actions),
         onTap: season.playable && !widget.opening ? widget.onPlay : null,
       );
