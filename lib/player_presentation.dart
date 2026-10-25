@@ -111,6 +111,7 @@ class PlayerDetailsPanel extends StatefulWidget {
     required this.followed,
     required this.onFavorite,
     required this.child,
+    this.sidebar = false,
     this.favoriteBusy = false,
     this.onClose,
     this.onDownload,
@@ -127,6 +128,7 @@ class PlayerDetailsPanel extends StatefulWidget {
   final VoidCallback? onClose;
   final VoidCallback? onDownload;
   final Widget child;
+  final bool sidebar;
 
   @override
   State<PlayerDetailsPanel> createState() => _PlayerDetailsPanelState();
@@ -138,10 +140,11 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final compact = constraints.maxHeight < 390;
+      final compact = widget.sidebar || constraints.maxHeight < 390;
       final tiny = constraints.maxHeight < 280;
       final drama = widget.detail.drama;
       final colors = Theme.of(context).colorScheme;
+      final count = playerFavoriteCount(drama.favoriteCount);
       return Material(
         color: colors.surface,
         child: Column(
@@ -160,7 +163,7 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                 children: [
                   if (widget.onClose != null)
                     SizedBox(
-                      height: 24,
+                      height: 16,
                       child: Center(
                         child: Container(
                           width: 38,
@@ -173,28 +176,29 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                       ),
                     ),
                   Padding(
-                    padding: EdgeInsets.fromLTRB(18, compact ? 4 : 12, 6, 10),
+                    padding: const EdgeInsets.fromLTRB(12, 4, 4, 6),
                     child: Row(
                       children: [
-                        SizedBox(
-                          width: tiny
-                              ? 28
-                              : compact
-                              ? 38
-                              : 48,
-                          height: tiny
-                              ? 38
-                              : compact
-                              ? 52
-                              : 66,
-                          child: DramaCover(
-                            drama: drama,
-                            repository: widget.repository,
-                            radius: 7,
-                            showOverlay: false,
+                        if (!widget.sidebar)
+                          SizedBox(
+                            width: tiny
+                                ? 28
+                                : compact
+                                ? 30
+                                : 36,
+                            height: tiny
+                                ? 38
+                                : compact
+                                ? 42
+                                : 50,
+                            child: DramaCover(
+                              drama: drama,
+                              repository: widget.repository,
+                              radius: 7,
+                              showOverlay: false,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 14),
+                        if (!widget.sidebar) const SizedBox(width: 10),
                         Expanded(
                           child: InkWell(
                             onTap: () => widget.onTab(1),
@@ -203,15 +207,15 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                               children: [
                                 Text(
                                   drama.title,
-                                  maxLines: compact ? 1 : 2,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
-                                    fontSize: compact ? 16 : 18,
+                                    fontSize: compact ? 13 : 15,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
-                                if (!tiny) ...[
-                                  const SizedBox(height: 7),
+                                if (!tiny && !widget.sidebar) ...[
+                                  const SizedBox(height: 4),
                                   Text(
                                     [
                                       if (widget.currentSeason > 0)
@@ -220,7 +224,7 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                                     ].join(' · '),
                                     style: TextStyle(
                                       color: colors.onSurfaceVariant,
-                                      fontSize: 14,
+                                      fontSize: 12,
                                     ),
                                   ),
                                 ],
@@ -228,6 +232,46 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                             ),
                           ),
                         ),
+                        if (widget.sidebar)
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                key: const ValueKey('player-sidebar-favorite'),
+                                tooltip: widget.followed ? '已收藏' : '收藏',
+                                onPressed: widget.favoriteBusy
+                                    ? null
+                                    : widget.onFavorite,
+                                constraints: const BoxConstraints(
+                                  minWidth: 40,
+                                  minHeight: 40,
+                                ),
+                                padding: const EdgeInsets.all(6),
+                                visualDensity: VisualDensity.compact,
+                                color: widget.followed
+                                    ? PlayerStyle.accent
+                                    : colors.onSurfaceVariant,
+                                icon: Icon(
+                                  widget.followed
+                                      ? Icons.star_rounded
+                                      : Icons.star_border_rounded,
+                                  size: 20,
+                                ),
+                              ),
+                              if (count.isNotEmpty)
+                                Text(
+                                  count,
+                                  key: const ValueKey(
+                                    'player-sidebar-favorite-count',
+                                  ),
+                                  semanticsLabel: '收藏数 $count',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
                         if (widget.onClose != null)
                           IconButton(
                             tooltip: '收起详情面板',
@@ -241,7 +285,10 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
               ),
             ),
             SizedBox(
-              height: compact ? 40 : 46,
+              height: math.max(
+                36.0,
+                MediaQuery.textScalerOf(context).scale(14) * 1.25 + 10,
+              ),
               child: Row(
                 children: [
                   const SizedBox(width: 8),
@@ -253,10 +300,11 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
                           foregroundColor: widget.tab == item.$1
                               ? colors.onSurface
                               : colors.onSurfaceVariant,
-                          minimumSize: const Size(0, 40),
+                          minimumSize: const Size(0, 36),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           padding: const EdgeInsets.symmetric(horizontal: 4),
                           textStyle: TextStyle(
-                            fontSize: 17,
+                            fontSize: 14,
                             fontWeight: widget.tab == item.$1
                                 ? FontWeight.w600
                                 : FontWeight.w400,
@@ -283,67 +331,68 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
               ),
             ),
             Expanded(child: widget.child),
-            DecoratedBox(
-              decoration: const BoxDecoration(
-                border: Border(top: BorderSide(color: Color(0xFFF2F2F2))),
-              ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 30 : 48,
-                  vertical: compact ? 8 : 12,
+            if (!widget.sidebar)
+              DecoratedBox(
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFF2F2F2))),
                 ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    FilledButton.icon(
-                      key: const ValueKey('player-panel-favorite'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: PlayerStyle.accent,
-                        foregroundColor: Colors.white,
-                        minimumSize: Size(0, compact ? 42 : 46),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(9),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FilledButton.icon(
+                        key: const ValueKey('player-panel-favorite'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: PlayerStyle.accent,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(0, 36),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          textStyle: const TextStyle(fontSize: 14),
                         ),
-                        textStyle: const TextStyle(fontSize: 17),
-                      ),
-                      onPressed: widget.favoriteBusy ? null : widget.onFavorite,
-                      icon: Icon(
-                        widget.followed
-                            ? Icons.star_rounded
-                            : Icons.star_border_rounded,
-                        size: 24,
-                      ),
-                      label: Text(
-                        widget.favoriteBusy
-                            ? '保存中'
-                            : widget.followed
-                            ? '已收藏'
-                            : '收藏',
-                      ),
-                    ),
-                    if (playerFavoriteCount(widget.detail.drama.favoriteCount)
-                        .isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          playerFavoriteCount(
-                            widget.detail.drama.favoriteCount,
-                          ),
-                          key: const ValueKey('player-panel-favorite-count'),
-                          semanticsLabel:
-                              '收藏数 ${playerFavoriteCount(widget.detail.drama.favoriteCount)}',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Color(0xFF99652D),
-                            fontSize: 12,
-                          ),
+                        onPressed: widget.favoriteBusy
+                            ? null
+                            : widget.onFavorite,
+                        icon: Icon(
+                          widget.followed
+                              ? Icons.star_rounded
+                              : Icons.star_border_rounded,
+                          size: 20,
+                        ),
+                        label: Text(
+                          widget.favoriteBusy
+                              ? '保存中'
+                              : widget.followed
+                              ? '已收藏'
+                              : '收藏',
                         ),
                       ),
-                  ],
+                      if (count.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            count,
+                            key: const ValueKey('player-panel-favorite-count'),
+                            semanticsLabel: '收藏数 $count',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF99652D),
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       );
@@ -358,12 +407,14 @@ class PlayerEpisodePicker extends StatefulWidget {
     required this.currentIndex,
     required this.playedNumbers,
     required this.onSelected,
+    this.sidebar = false,
   });
 
   final List<Episode> episodes;
   final int currentIndex;
   final Set<int> playedNumbers;
   final ValueChanged<int> onSelected;
+  final bool sidebar;
 
   @override
   State<PlayerEpisodePicker> createState() => _PlayerEpisodePickerState();
@@ -397,29 +448,39 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
     );
     final range = target ~/ 30;
     final colors = Theme.of(context).colorScheme;
+    final rangeWidth = math.max(
+      72.0,
+      MediaQuery.textScalerOf(context).scale(13) * 4.5 + 16,
+    );
     return Column(
       children: [
         SizedBox(
-          height: 44,
+          height: math.max(
+            36.0,
+            MediaQuery.textScalerOf(context).scale(13) + 16,
+          ),
           child: ListView.builder(
             controller: _ranges,
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
             itemCount: (widget.episodes.length / 30).ceil(),
             itemBuilder: (context, index) {
               final start = index * 30;
               final end = math.min(start + 30, widget.episodes.length) - 1;
               return SizedBox(
-                width: 86,
+                width: rangeWidth,
                 child: TextButton(
                   key: ValueKey('player-range-$index'),
                   onPressed: () => setState(() => _located = start),
                   style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    minimumSize: const Size(0, 36),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     foregroundColor: index == range
                         ? colors.onSurface
                         : colors.onSurfaceVariant,
                     textStyle: TextStyle(
-                      fontSize: 15,
+                      fontSize: 13,
                       fontWeight: index == range
                           ? FontWeight.w600
                           : FontWeight.w400,
@@ -427,6 +488,8 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
                   ),
                   child: Text(
                     '${widget.episodes[start].number}–${widget.episodes[end].number}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               );
@@ -439,13 +502,21 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
               final textScale = MediaQuery.textScalerOf(context);
               final digits = widget.episodes.last.number.toString().length;
               final minimum = math.max(
-                49.0,
-                textScale.scale(16) * digits * .62 + 20,
+                44.0,
+                textScale.scale(14) * digits * .62 + 16,
               );
-              final columns = ((constraints.maxWidth - 36 + 8) / (minimum + 8))
+              final columns = ((constraints.maxWidth - 16 + 6) / (minimum + 6))
                   .floor()
-                  .clamp(1, 8);
-              final extent = math.max(48.0, textScale.scale(17) + 28);
+                  .clamp(1, widget.sidebar ? 8 : 6);
+              final extent = math.max(44.0, textScale.scale(14) + 20);
+              final visibleRows = math.max(
+                1,
+                ((constraints.maxHeight - 16) / (extent + 6)).floor(),
+              );
+              final firstRow = math.max(
+                0,
+                target ~/ columns - visibleRows ~/ 2,
+              );
               final layout =
                   '$target:$columns:$extent:${constraints.maxHeight}';
               if (layout != _layout) {
@@ -454,31 +525,32 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
                   if (!mounted || _layout != layout) return;
                   if (_scroll.hasClients) {
                     _scroll.jumpTo(
-                      (target ~/ columns * (extent + 8) -
-                              constraints.maxHeight / 2 +
-                              extent / 2)
-                          .clamp(0.0, _scroll.position.maxScrollExtent),
+                      (firstRow * (extent + 6)).clamp(
+                        0.0,
+                        _scroll.position.maxScrollExtent,
+                      ),
                     );
                   }
                   if (_ranges.hasClients) {
                     _ranges.jumpTo(
-                      (range * 86.0 - constraints.maxWidth / 2 + 43).clamp(
-                        0.0,
-                        _ranges.position.maxScrollExtent,
-                      ),
+                      (range * rangeWidth -
+                              constraints.maxWidth / 2 +
+                              rangeWidth / 2)
+                          .clamp(0.0, _ranges.position.maxScrollExtent),
                     );
                   }
                 });
               }
               return GridView.builder(
                 controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
+                key: const ValueKey('player-episode-grid'),
+                padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
                 itemCount: widget.episodes.length,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
                   mainAxisExtent: extent,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 6,
+                  mainAxisSpacing: 6,
                 ),
                 itemBuilder: (context, index) {
                   final episode = widget.episodes[index];
@@ -505,6 +577,8 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
                             ? colors.primaryContainer
                             : colors.surfaceContainer,
                         padding: EdgeInsets.zero,
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -515,7 +589,7 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
                           Center(
                             child: Text(
                               '${episode.number}',
-                              style: const TextStyle(fontSize: 17),
+                              style: const TextStyle(fontSize: 14),
                             ),
                           ),
                           if (current || played)

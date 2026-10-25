@@ -20,6 +20,23 @@ import 'player_fixtures.dart';
 class SeriesRepository extends RouteRepository {
   List<DramaSeason> seasons = [];
   int season = 2;
+  int episodeCount = 2;
+  @override
+  Future<DramaDetail> detail(Drama drama) async {
+    if (episodeCount == 2) return super.detail(drama);
+    detailCalls++;
+    return DramaDetail(
+      drama,
+      List.generate(
+        episodeCount,
+        (index) => Episode({
+          'id': '${index + 1}',
+          'currentEpisode': index + 1,
+        }, index + 1),
+      ),
+    );
+  }
+
   int preloads = 0;
   final accounts = <String>[];
   final progress = <Map<String, dynamic>>[];
@@ -400,12 +417,70 @@ void main() {
       );
       expect(find.text('1亿'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('player-panel-favorite-count')),
+        find.byKey(const ValueKey('player-sidebar-favorite-count')),
         findsOneWidget,
       );
       await close(tester);
     },
   );
+
+  for (final layout in [
+    (const Size(390, 844), 1.0, 24),
+    (const Size(900, 400), 1.0, 20),
+    (const Size(360, 720), 1.8, 8),
+  ]) {
+    testWidgets(
+      'compact panel keeps many complete episodes visible at $layout',
+      (tester) async {
+        final repository = SeriesRepository()..episodeCount = 108;
+        await mount(
+          tester,
+          repository,
+          ScriptedPlayer(),
+          size: layout.$1,
+          scale: layout.$2,
+          index: 78,
+          favoriteCount: '265000',
+        );
+        if (layout.$1.width < layout.$1.height) {
+          await tester.tap(find.byKey(const ValueKey('player-open-details')));
+          await tester.pumpAndSettle();
+        } else {
+          expect(
+            find.byKey(const ValueKey('player-panel-favorite')),
+            findsNothing,
+          );
+          expect(
+            find.byKey(const ValueKey('player-sidebar-favorite')),
+            findsOneWidget,
+          );
+        }
+        final grid = tester.getRect(
+          find.byKey(const ValueKey('player-episode-grid')),
+        );
+        final episodes = find.byWidgetPredicate(
+          (widget) =>
+              widget is TextButton &&
+              widget.key is ValueKey<String> &&
+              (widget.key! as ValueKey<String>).value.startsWith(
+                'play-episode-',
+              ),
+        );
+        final visible = episodes.evaluate().where((element) {
+          final rect = tester.getRect(find.byWidget(element.widget));
+          return grid.contains(rect.topLeft) &&
+              grid.contains(rect.bottomRight - const Offset(.1, .1));
+        }).length;
+        expect(visible, greaterThanOrEqualTo(layout.$3));
+        expect(
+          find.byKey(const ValueKey('play-episode-79')).hitTestable(),
+          findsOneWidget,
+        );
+        await capture(tester, 'compact-panel-${layout.$1.width.toInt()}');
+        await close(tester);
+      },
+    );
+  }
 
   testWidgets(
     'portrait landscape video moves up with its play control and lower cast action is absent',

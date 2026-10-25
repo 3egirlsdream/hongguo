@@ -2189,10 +2189,19 @@ class _PlayerScreenState extends State<PlayerScreen>
                             children: [
                               Expanded(child: _videoPane(context)),
                               SizedBox(
-                                width: constraints.maxWidth >= 840 ? 360 : 300,
+                                width: constraints.maxHeight < 500
+                                    ? (constraints.maxWidth * .30).clamp(
+                                        240.0,
+                                        300.0,
+                                      )
+                                    : 340,
                                 child: Column(
                                   children: [
-                                    Expanded(child: _mobilePlaybackPanel()),
+                                    Expanded(
+                                      child: _mobilePlaybackPanel(
+                                        sidebar: true,
+                                      ),
+                                    ),
                                     Theme(
                                       data: PlayerStyle.panelTheme,
                                       child: _seasonFooter(),
@@ -2830,42 +2839,45 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _mobilePlaybackPanel({bool sheet = false}) => Theme(
-    data: PlayerStyle.panelTheme,
-    child: ColoredBox(
-      color: Colors.white,
-      child: SafeArea(
-        top: false,
-        child: PlayerDetailsPanel(
-          detail: widget.detail,
-          repository: widget.repository,
-          currentSeason: _currentSeason,
-          tab: _mobileTab,
-          onTab: (tab) {
-            setState(() => _mobileTab = tab);
-            if (tab == 3) _refreshSeasonsIfNeeded();
-          },
-          followed: _followed,
-          favoriteBusy: _favoriteBusy,
-          onFavorite: _toggleFavorite,
-          onClose: sheet ? _closeDetailsSheet : null,
-          onDownload:
-              widget.repository.supportsDownloads && widget.store.canDownload
-              ? () => setState(() => _mobileTab = 2)
-              : null,
-          child: _mobileTab == 0
-              ? _episodePanel()
-              : _mobileTab == 1
-              ? _mobileSynopsis()
-              : _mobileTab == 2
-              ? _mobileDownload()
-              : _relatedWorksPanel(),
+  Widget _mobilePlaybackPanel({bool sheet = false, bool sidebar = false}) =>
+      Theme(
+        data: PlayerStyle.panelTheme,
+        child: ColoredBox(
+          color: Colors.white,
+          child: SafeArea(
+            top: false,
+            child: PlayerDetailsPanel(
+              detail: widget.detail,
+              sidebar: sidebar,
+              repository: widget.repository,
+              currentSeason: _currentSeason,
+              tab: _mobileTab,
+              onTab: (tab) {
+                setState(() => _mobileTab = tab);
+                if (tab == 3) _refreshSeasonsIfNeeded();
+              },
+              followed: _followed,
+              favoriteBusy: _favoriteBusy,
+              onFavorite: _toggleFavorite,
+              onClose: sheet ? _closeDetailsSheet : null,
+              onDownload:
+                  widget.repository.supportsDownloads &&
+                      widget.store.canDownload
+                  ? () => setState(() => _mobileTab = 2)
+                  : null,
+              child: _mobileTab == 0
+                  ? _episodePanel(sidebar: sidebar)
+                  : _mobileTab == 1
+                  ? _mobileSynopsis()
+                  : _mobileTab == 2
+                  ? _mobileDownload()
+                  : _relatedWorksPanel(sidebar: sidebar),
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
-  Widget _relatedWorksPanel() {
+  Widget _relatedWorksPanel({bool sidebar = false}) {
     if (widget.localOnly ||
         widget.mediaId != null ||
         !widget.repository.supportsOfficialAccount ||
@@ -2918,8 +2930,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final colors = Theme.of(context).colorScheme;
-        final scale = (constraints.maxWidth / 393).clamp(.8, 1.25);
-        final inset = 18 * scale;
+        final scale = (constraints.maxWidth / 393).clamp(.75, .9);
+        const inset = 12.0;
         return ColoredBox(
           color: colors.surface,
           child: ListView(
@@ -2929,14 +2941,24 @@ class _PlayerScreenState extends State<PlayerScreen>
                 children: [
                   Expanded(
                     child: Text(
-                      _currentSeason > 0 ? '按官方季号排列' : '当前季号待确认',
+                      sidebar && _currentSeason > 0
+                          ? ''
+                          : _currentSeason > 0
+                          ? '按官方季号排列'
+                          : '当前季号待确认',
                       style: TextStyle(
                         color: colors.onSurfaceVariant,
-                        fontSize: 12,
+                        fontSize: 11,
                       ),
                     ),
                   ),
                   TextButton.icon(
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 32),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
                     onPressed: _seasonsLoading ? null : _loadSeasons,
                     icon: const Icon(Icons.refresh, size: 16),
                     label: const Text('刷新'),
@@ -2962,14 +2984,14 @@ class _PlayerScreenState extends State<PlayerScreen>
               for (final group in groups)
                 if (group.$2.isNotEmpty) ...[
                   Padding(
-                    padding: const EdgeInsets.only(top: 14, bottom: 2),
+                    padding: const EdgeInsets.only(top: 8, bottom: 2),
                     child: Row(
                       children: [
                         Expanded(
                           child: Text(
                             group.$1,
                             style: const TextStyle(
-                              fontSize: 17,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -3014,6 +3036,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         repository: widget.repository,
         heading: label,
         scale: scale,
+        compact: true,
         expandToContent: true,
         footer: Text(
           '正在播放',
@@ -3031,6 +3054,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       playLabel: '播放',
       bottomInset: false,
       listCard: true,
+      compactCard: true,
       scale: scale,
       repository: widget.repository,
       store: widget.store,
@@ -3045,7 +3069,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       builder: (context) {
         final colors = Theme.of(context).colorScheme;
         return ListView(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 20),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
           children: [
             if (drama.category.isNotEmpty || drama.releaseLabel != '状态未知')
               Text(
@@ -3063,7 +3087,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                 children: [
                   for (final tag in drama.tags.take(12))
                     Chip(
-                      label: Text(tag),
+                      label: Text(tag, style: const TextStyle(fontSize: 12)),
                       visualDensity: VisualDensity.compact,
                     ),
                 ],
@@ -3072,7 +3096,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             const SizedBox(height: 12),
             Text(
               drama.description.trim().isEmpty ? '暂无简介' : drama.description,
-              style: const TextStyle(fontSize: 15, height: 1.7),
+              style: const TextStyle(fontSize: 13, height: 1.5),
             ),
             if (drama.onlineDate.isNotEmpty ||
                 drama.heat.isNotEmpty ||
@@ -3193,7 +3217,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _episodePanel() => PlayerEpisodePicker(
+  Widget _episodePanel({bool sidebar = false}) => PlayerEpisodePicker(
+    sidebar: sidebar,
     episodes: widget.detail.episodes,
     currentIndex: _index,
     playedNumbers: widget.store.playedEpisodes(widget.detail.drama.id),

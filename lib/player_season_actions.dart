@@ -20,6 +20,7 @@ class PlayerSeasonActions extends StatefulWidget {
     this.bottomInset = true,
     this.playLabel = '播放下一季',
     this.listCard = false,
+    this.compactCard = false,
     this.scale = 1,
     this.showReservation = true,
   });
@@ -32,6 +33,7 @@ class PlayerSeasonActions extends StatefulWidget {
   final bool bottomInset;
   final String playLabel;
   final bool listCard;
+  final bool compactCard;
   final double scale;
   final bool showReservation;
 
@@ -210,6 +212,7 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
         repository: widget.repository,
         heading: widget.label,
         scale: widget.scale,
+        compact: widget.compactCard,
         publishText: season.publishText.isNotEmpty
             ? season.publishText
             : season.playable

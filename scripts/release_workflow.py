@@ -115,7 +115,7 @@ def prepare():
             'url': base + urllib.parse.quote(name, safe=''),
             'size': target.stat().st_size, 'sha256': file_hash(target),
         })
-    notes = f'野果 {version}\n\nAndroid arm64：APK 使用固定 temp 发布证书，可覆盖安装。\n播放失败日志自动持久化并轮转，记录完整阶段、播放器状态、重试及网络环境，重启后仍可排查。\n本次包含上下滑切集跟手效果、横向视频上移、收藏数量万亿换算、细进度条与弹幕按钮左对齐、弹幕细体缩小与去重、逐集续播与全自动历史同步。右下角投屏入口已移除，各集独立记录进度，切回时优先续播；上传期间的紧急保存会在当前同步结束后立即处理。每集播完、切集、暂停和退出时自动上传，登录前本机记录自动补传；进入我的或恢复前台自动更新，失败保留重试。移除单独的同步、获取和上传按钮，仅显示同步状态；上传经延迟回读确认，并保留视频身份用于续播。补齐官方用户资料刷新，正确显示昵称、头像和红果号，资料更新失败保留现有显示。\n已使用真实账号在本机及 Android 手机上验证历史读取，真实上传记录经独立 API 回读，并确认在红果官方 App 中显示正确集数。100103 本轮实测未复现，已增加只读请求的有限重试与明确错误定位。真机连续播放间隔与折叠屏体验仍待完整验收。\n'
+    notes = f'野果 {version}\n\nAndroid arm64：使用固定 temp 发布证书，可覆盖安装。\n\n本次更新：\n- 竖屏底部播放面板缩小标题、页签和集数字号，减少封面、选集网格与收藏区留白，普通手机选集最多排 6 列。\n- 横屏右侧隐藏当前剧封面、重复季数和大收藏底栏，标题栏保留小收藏按钮及数量，增加列表可见空间。\n- 缩小系列剧卡片，精简重复分类；放大字体时自适应调整列数，保留当前集定位。\n\n验证：静态分析零问题，172 项 Flutter 测试通过；本地正式签名构建、应用版本 / 构建号、arm64 架构和 16 KiB 对齐核对通过。本轮手机未连接，真实设备外观与触控效果仍待验收。\n'
     tags = subprocess.check_output(['git', 'tag', '--list', 'app-v*'], cwd=ROOT, text=True).splitlines()
     previous = [(tuple(map(int, match.groups())), tag) for tag in tags
                 if (match := TAG_PATTERN.fullmatch(tag)) and tuple(map(int, match.groups())) < version_key(version)]

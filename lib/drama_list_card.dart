@@ -15,6 +15,7 @@ class DramaListCard extends StatelessWidget {
     this.publishText = '',
     this.footer,
     this.expandToContent = false,
+    this.compact = false,
     this.onTap,
   });
 
@@ -26,6 +27,7 @@ class DramaListCard extends StatelessWidget {
   final String publishText;
   final Widget? footer;
   final bool expandToContent;
+  final bool compact;
   final VoidCallback? onTap;
 
   @override
@@ -68,7 +70,7 @@ class DramaListCard extends StatelessWidget {
             fontWeight: FontWeight.w700,
           ),
         ),
-        if (drama.category.trim().isNotEmpty) ...[
+        if (!compact && drama.category.trim().isNotEmpty) ...[
           SizedBox(height: 10 * scale),
           Text(
             drama.category.trim(),
@@ -134,10 +136,12 @@ class DramaListCard extends StatelessWidget {
         },
         onTap: onTap,
         child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 12 * scale),
+          padding: EdgeInsets.symmetric(vertical: (compact ? 8 : 12) * scale),
           child: LayoutBuilder(
             builder: (context, constraints) {
-              final coverWidth = (constraints.maxWidth * .35).clamp(0.0, 176.0);
+              final coverWidth = compact
+                  ? (constraints.maxWidth * .25).clamp(0.0, 76.0)
+                  : (constraints.maxWidth * .35).clamp(0.0, 176.0);
               final coverHeight = coverWidth / .72;
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
