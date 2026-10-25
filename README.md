@@ -223,6 +223,7 @@ python3 scripts/sync_source.py --check
 - 保留 `0.2.108+115` 的紧凑播放面板，递增版本与构建号以运行完整云端发布链路；现有正式版本不覆盖附件，不使用同版本跳过或仅同步后台代替构建与发布验收。
 - [Actions 40161624541](https://github.com/3egirlsdream/hongguo/actions/runs/40161624541) 已完成且总结果 `success`，版本检查、Android 构建、Release 发布和后台同步四个作业均为 `success`，未跳过构建或发布。源码提交为 `046eef25d9769658c28c1bd04d3b724509527a9c`。
 - Actions 固定证书核对及新增的 16 KiB APK 对齐检查均成功；[正式 Release](https://github.com/3egirlsdream/hongguo/releases/tag/app-v0.2.109-116) 已公开为 Latest，APK、`update.json` 和 `SHA256SUMS.txt` 三个附件齐全。独立回读更新后台确认 `Yeguo`、数字版本 `0.2.109`、完整清单 `0.2.109+116`、附件大小及 SHA-256 与公开 Release 一致。
+- 已完整下载公开 APK 并核对所有 SHA256SUMS，包名、versionCode `2116`、arm64 架构、固定证书及 16 KiB 对齐均通过。APK 为 `30,153,003` 字节，SHA-256 为 `a2dbf1c92606cc1ad13be908140af1b661018b96ce8400a08fc0bd03e51a792b`。
 - 本轮不新增业务功能；此前静态分析与 172 项 Flutter 测试已通过，真实设备外观及触控验收状态不因云端发布成功而改变。
 
 ### `0.2.108+115`
