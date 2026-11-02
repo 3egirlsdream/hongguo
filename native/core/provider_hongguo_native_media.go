@@ -31,7 +31,52 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		}
 		failures = append(failures, err)
 	}
+	media, err := downloader.resolveHongguoRegisteredGuestMedia(ctx, videoID)
+	if err == nil {
+		return media, nil
+	}
+	failures = append(failures, err)
 	return providerMedia{}, errors.Join(failures...)
+}
+
+func (downloader *Downloader) resolveHongguoRegisteredGuestMedia(ctx context.Context, videoID string) (providerMedia, error) {
+	client := downloader.hongguoClient()
+	client.playbackGuestMu.Lock()
+	defer client.playbackGuestMu.Unlock()
+	for attempt := 0; attempt < 2; attempt++ {
+		session := client.playbackGuest
+		if !session.Registered {
+			identity, err := hgNewIdentity()
+			if err != nil {
+				return providerMedia{}, err
+			}
+			session.Device = identity
+		}
+		guest := hgNewAccountHTTP(downloader, session)
+		if err := guest.register(ctx); err != nil {
+			return providerMedia{}, err
+		}
+		client.playbackGuest = hgCloneSession(guest.session)
+		result, err := guest.json(ctx, "/novel/player/video_model/v1/", http.MethodPost, nil, map[string]any{
+			"video_id": videoID, "content_type": 1,
+			"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
+		}, false)
+		if errors.Is(err, errHGEmptyResponse) {
+			client.playbackGuest = hgAccountSession{}
+			if attempt == 0 && ctx.Err() == nil {
+				continue
+			}
+		}
+		if err != nil {
+			return providerMedia{}, err
+		}
+		model, err := hongguoVideoModel(nestedMap(result, "data"))
+		if err != nil {
+			return providerMedia{}, err
+		}
+		return selectHongguoAppMedia(model)
+	}
+	return providerMedia{}, errHGEmptyResponse
 }
 
 func (downloader *Downloader) resolveHongguoAppMediaEndpoint(ctx context.Context, videoID string, batch bool) (media providerMedia, err error) {

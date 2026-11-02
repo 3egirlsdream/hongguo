@@ -72,6 +72,9 @@ func hgDecodeObject(b []byte) (map[string]any, error) {
 	}
 	return o, nil
 }
+
+var errHGEmptyResponse = errors.New("红果账号响应为空或读取失败")
+
 func hgReadResponse(r *http.Response) ([]byte, error) {
 	defer r.Body.Close()
 	if r.StatusCode != 200 {
@@ -79,6 +82,9 @@ func hgReadResponse(r *http.Response) ([]byte, error) {
 	}
 	b, e := io.ReadAll(io.LimitReader(r.Body, 4<<20+1))
 	if e != nil || len(b) > 4<<20 || len(b) == 0 {
+		if e == nil && len(b) == 0 {
+			return nil, errHGEmptyResponse
+		}
 		return nil, errors.New("红果账号响应为空或读取失败")
 	}
 	return b, nil

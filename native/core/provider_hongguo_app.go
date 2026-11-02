@@ -39,18 +39,20 @@ type hongguoCatalogState struct {
 }
 
 type hongguoAppClient struct {
-	mu             sync.Mutex
-	catalogMu      sync.Mutex
-	baseURL        string
-	state          hongguoCatalogState
-	details        map[string]hongguoDetailEntry
-	pending        map[string]*hongguoDetailCall
-	searches       map[string]hongguoSearchEntry
-	searchPending  map[string]*hongguoSearchCall
-	suggestions    map[string]hongguoSuggestionEntry
-	suggestPending map[string]*hongguoSuggestionCall
-	danmaku        map[string]hongguoDanmakuCacheEntry
-	danmakuPending map[string]*hongguoDanmakuCall
+	mu              sync.Mutex
+	playbackGuestMu sync.Mutex
+	playbackGuest   hgAccountSession
+	catalogMu       sync.Mutex
+	baseURL         string
+	state           hongguoCatalogState
+	details         map[string]hongguoDetailEntry
+	pending         map[string]*hongguoDetailCall
+	searches        map[string]hongguoSearchEntry
+	searchPending   map[string]*hongguoSearchCall
+	suggestions     map[string]hongguoSuggestionEntry
+	suggestPending  map[string]*hongguoSuggestionCall
+	danmaku         map[string]hongguoDanmakuCacheEntry
+	danmakuPending  map[string]*hongguoDanmakuCall
 }
 
 func (downloader *Downloader) hongguoClient() *hongguoAppClient {

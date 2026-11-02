@@ -56,6 +56,39 @@ func TestHongguoPublicWebPlayback(t *testing.T) {
 	}
 }
 
+func TestHongguoRegisteredGuestPlayback(t *testing.T) {
+	registrations, requests := 0, 0
+	d := &Downloader{cfg: defaultConfig()}
+	d.client = &http.Client{Transport: hongguoPlaybackTestTransport(func(r *http.Request) (*http.Response, error) {
+		switch r.URL.Path {
+		case "/service/2/device_register/":
+			registrations++
+			return hongguoPlaybackTestResponse(r, `{"device_id_str":"1234567890123456","install_id_str":"1234567890123457"}`), nil
+		case "/novel/player/video_model/v1/":
+			requests++
+			if r.URL.Query().Get("device_id") != "1234567890123456" || r.Header.Get("X-Medusa") == "" || r.Header.Get("X-Tt-Token") != "" {
+				t.Fatal("registered guest identity or request signature is incorrect")
+			}
+			if requests == 2 {
+				return hongguoPlaybackTestResponse(r, ""), nil
+			}
+			return hongguoPlaybackTestResponse(r, `{"code":0,"data":{"video_model":{"video_list":[{"main_url":"https://example.test/video.mp4"}]}}}`), nil
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+			return nil, nil
+		}
+	})}
+	for i := 0; i < 2; i++ {
+		media, err := d.resolveHongguoRegisteredGuestMedia(context.Background(), "22")
+		if err != nil || media.URL != "https://example.test/video.mp4" {
+			t.Fatalf("media=%v err=%v", media, err)
+		}
+	}
+	if registrations != 2 || requests != 3 {
+		t.Fatalf("registrations=%d requests=%d", registrations, requests)
+	}
+}
+
 func TestHongguoBatchPlaybackSession(t *testing.T) {
 	for _, authenticated := range []bool{false, true} {
 		t.Run(fmt.Sprint(authenticated), func(t *testing.T) {

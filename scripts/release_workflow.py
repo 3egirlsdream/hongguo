@@ -115,7 +115,7 @@ def prepare():
             'url': base + urllib.parse.quote(name, safe=''),
             'size': target.stat().st_size, 'sha256': file_hash(target),
         })
-    notes = f'野果 {version}\n\nAndroid arm64：使用固定 temp 发布证书，可覆盖安装。\n\n本次更新：\n- 系列剧与关联剧卡片缩小播放按钮和文字间距，右侧内容限制在海报高度内，按钮底边与海报对齐；兼容窄侧栏、长标题及放大字体。\n- 移除详情面板底部的收藏按钮、数量和整块占位，为简介、选集、系列剧及下载内容增加显示区域。\n\n验证：静态分析零问题，176 项 Flutter 测试通过；正式安装包由 GitHub Actions 构建，并检查固定发布证书和 16 KiB 对齐。真实设备外观与触控效果仍待验收。\n'
+    notes = f'野果 {version}\n\nAndroid arm64：使用固定 temp 发布证书，可覆盖安装。\n\n本次更新：\n- 修复红果播放接口返回空响应时部分剧集无法播放的问题；原有线路失败后使用注册游客设备取流，并在空响应时最多更新一次身份。\n\n验证：本地正式签名包已在 Android 手机上覆盖安装；此前失败的第 2 集和手动切换的第 3 集均开始播放，播放器报告 1080×1920。相关播放解析和游客身份恢复测试通过；更多剧集及网络环境尚待验证。GitHub Actions 构建时检查发布证书和 16 KiB 对齐。\n'
     tags = subprocess.check_output(['git', 'tag', '--list', 'app-v*'], cwd=ROOT, text=True).splitlines()
     previous = [(tuple(map(int, match.groups())), tag) for tag in tags
                 if (match := TAG_PATTERN.fullmatch(tag)) and tuple(map(int, match.groups())) < version_key(version)]
