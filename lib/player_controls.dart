@@ -27,6 +27,8 @@ class PlayerControls extends StatefulWidget {
     required this.speed,
     required this.qualityLabel,
     required this.onFocusSurface,
+    required this.locked,
+    required this.onLockChanged,
     this.showDanmaku = false,
     this.danmakuEnabled = false,
     this.danmakuStatus = '',
@@ -38,6 +40,7 @@ class PlayerControls extends StatefulWidget {
     this.onDanmaku,
     this.onRetryDanmaku,
     this.onPush,
+    this.onSettings,
   });
 
   final Player player;
@@ -56,6 +59,8 @@ class PlayerControls extends StatefulWidget {
   final double speed;
   final String qualityLabel;
   final VoidCallback onFocusSurface;
+  final bool locked;
+  final ValueChanged<bool> onLockChanged;
   final bool showDanmaku;
   final bool danmakuEnabled;
   final String danmakuStatus;
@@ -67,6 +72,7 @@ class PlayerControls extends StatefulWidget {
   final Future<void> Function()? onDanmaku;
   final Future<void> Function()? onRetryDanmaku;
   final Future<void> Function()? onPush;
+  final Future<void> Function()? onSettings;
 
   @override
   State<PlayerControls> createState() => _PlayerControlsState();
@@ -79,6 +85,8 @@ class _PlayerControlsState extends State<PlayerControls> {
   bool _suppressAutoPlaybackStart = false;
   bool _lastPlaying = false;
   double? _seekValue;
+  bool get _locked => widget.locked;
+  double _doubleTapX = .5;
 
   @override
   void initState() {
@@ -126,6 +134,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     if (widget.enabled != oldWidget.enabled ||
         widget.panelOpen != oldWidget.panelOpen ||
         widget.fullscreen != oldWidget.fullscreen ||
+        widget.locked != oldWidget.locked ||
         widget.showOnPlaybackReady != oldWidget.showOnPlaybackReady) {
       _seekValue = null;
       if (widget.showOnPlaybackReady) {
@@ -153,6 +162,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   void _scheduleHide() {
     _hideTimer?.cancel();
     if (!widget.enabled ||
+        _locked ||
         widget.panelOpen ||
         !widget.player.state.playing ||
         _seekValue != null) {
@@ -177,6 +187,10 @@ class _PlayerControlsState extends State<PlayerControls> {
   }
 
   void _tap() {
+    if (_locked) {
+      setState(() => _visible = true);
+      return;
+    }
     if (widget.interactions.suppressTap) return;
     widget.onFocusSurface();
     setState(() => _visible = !_visible);
@@ -205,7 +219,7 @@ class _PlayerControlsState extends State<PlayerControls> {
     final duration = state.duration.inMilliseconds / 1000;
     final position = state.position.inMilliseconds / 1000;
     final buffered = state.buffer.inMilliseconds / 1000;
-    final visible = _visible || widget.panelOpen;
+    final visible = _visible || widget.panelOpen || _locked;
     return MouseRegion(
       onHover: (_) => _show(),
       cursor: visible ? SystemMouseCursors.basic : SystemMouseCursors.none,
@@ -213,9 +227,21 @@ class _PlayerControlsState extends State<PlayerControls> {
         builder: (context, constraints) => GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: _tap,
+          onDoubleTapDown: (details) {
+            _doubleTapX = constraints.maxWidth <= 0
+                ? .5
+                : details.localPosition.dx / constraints.maxWidth;
+          },
           onDoubleTap: () {
             if (!widget.enabled || widget.interactions.suppressTap) return;
-            widget.onTogglePlayback();
+            if (_locked) return;
+            if (_doubleTapX < .3) {
+              widget.interactions.seek(-10);
+            } else if (_doubleTapX > .7) {
+              widget.interactions.seek(10);
+            } else {
+              widget.onTogglePlayback();
+            }
             _show();
           },
           child: Stack(
@@ -226,6 +252,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                 behavior: HitTestBehavior.opaque,
                 onPointerDown: (event) {
                   widget.onFocusSurface();
+                  if (_locked) return;
                   widget.interactions.pointerDown(
                     event,
                     swipeEnabled: true,
@@ -233,7 +260,9 @@ class _PlayerControlsState extends State<PlayerControls> {
                     height: constraints.maxHeight,
                   );
                 },
-                onPointerMove: widget.interactions.pointerMove,
+                onPointerMove: (event) {
+                  if (!_locked) widget.interactions.pointerMove(event);
+                },
                 onPointerUp: widget.interactions.pointerUp,
                 onPointerCancel: widget.interactions.pointerCancel,
                 child: const SizedBox.expand(),
@@ -252,7 +281,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
-                        if (!widget.immersive)
+                        if (!widget.immersive && !_locked)
                           const IgnorePointer(
                             child: DecoratedBox(
                               decoration: BoxDecoration(
@@ -269,14 +298,28 @@ class _PlayerControlsState extends State<PlayerControls> {
                               ),
                             ),
                           ),
-                        _controlsChrome(
-                          constraints.biggest,
-                          playing: state.playing,
-                          buffering: state.buffering,
-                          duration: duration,
-                          position: position,
-                          buffered: buffered,
-                        ),
+                        if (_locked)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: IconButton(
+                              key: const ValueKey('player-unlock'),
+                              tooltip: '解锁播放控件',
+                              onPressed: () => widget.onLockChanged(false),
+                              icon: const Icon(
+                                Icons.lock_open_rounded,
+                                color: Colors.white,
+                              ),
+                            ),
+                          )
+                        else
+                          _controlsChrome(
+                            constraints.biggest,
+                            playing: state.playing,
+                            buffering: state.buffering,
+                            duration: duration,
+                            position: position,
+                            buffered: buffered,
+                          ),
                       ],
                     ),
                   ),
@@ -304,22 +347,48 @@ class _PlayerControlsState extends State<PlayerControls> {
           0,
           widget.raisedVideo ? -PlayerStyle.landscapeLift(viewport.height) : 0,
         ),
-        child: Center(
-          child: widget.enabled && !buffering
-              ? IconButton(
-                  key: const ValueKey('player-playback-toggle'),
-                  tooltip: playing ? '暂停播放' : '开始播放',
-                  onPressed: () {
-                    widget.onTogglePlayback();
-                    _show();
-                  },
-                  iconSize: 64,
-                  color: Colors.white,
-                  icon: Icon(
-                    playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+        child: Stack(
+          children: [
+            if (widget.enabled && !buffering)
+              Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _seekButton(-10),
+                    IconButton(
+                      key: const ValueKey('player-playback-toggle'),
+                      tooltip: playing ? '暂停播放' : '开始播放',
+                      onPressed: () {
+                        widget.onTogglePlayback();
+                        _show();
+                      },
+                      iconSize: 64,
+                      color: Colors.white,
+                      icon: Icon(
+                        playing
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
+                      ),
+                    ),
+                    _seekButton(10),
+                  ],
+                ),
+              ),
+            if (widget.enabled)
+              Positioned(
+                top: 56,
+                left: 8,
+                child: IconButton(
+                  key: const ValueKey('player-lock'),
+                  tooltip: '锁定播放控件',
+                  onPressed: _lock,
+                  icon: const Icon(
+                    Icons.lock_outline_rounded,
+                    color: Colors.white,
                   ),
-                )
-              : const SizedBox.shrink(),
+                ),
+              ),
+          ],
         ),
       );
     }
@@ -343,7 +412,16 @@ class _PlayerControlsState extends State<PlayerControls> {
               Positioned.fill(
                 child: Align(
                   alignment: const Alignment(0, -.05),
-                  child: _centerPlayback(playing, centerSize),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _seekButton(-10),
+                      const SizedBox(width: 12),
+                      _centerPlayback(playing, centerSize),
+                      const SizedBox(width: 12),
+                      _seekButton(10),
+                    ],
+                  ),
                 ),
               ),
             Positioned(
@@ -408,7 +486,33 @@ class _PlayerControlsState extends State<PlayerControls> {
       ),
       if (widget.onPush != null)
         _lanPushTool(const ValueKey('fullscreen-lan-push')),
+      if (widget.enabled)
+        IconButton(
+          key: const ValueKey('player-lock'),
+          tooltip: '锁定画面手势',
+          onPressed: _lock,
+          icon: const Icon(Icons.lock_outline_rounded),
+        ),
     ],
+  );
+
+  void _lock() {
+    _hideTimer?.cancel();
+    widget.onLockChanged(true);
+  }
+
+  Widget _seekButton(int seconds) => IconButton(
+    key: ValueKey(seconds < 0 ? 'player-rewind' : 'player-forward'),
+    tooltip: seconds < 0 ? '后退 10 秒' : '快进 10 秒',
+    onPressed: () {
+      widget.interactions.seek(seconds);
+      _show();
+    },
+    color: Colors.white,
+    iconSize: 36,
+    icon: Icon(
+      seconds < 0 ? Icons.replay_10_rounded : Icons.forward_10_rounded,
+    ),
   );
 
   Widget _centerPlayback(bool playing, double size) => Tooltip(
@@ -663,6 +767,15 @@ class _PlayerControlsState extends State<PlayerControls> {
             onPressed: widget.enabled ? () => _panel(widget.onQuality) : null,
             compact: compact,
           ),
+          if (widget.onSettings != null) ...[
+            SizedBox(width: compact ? 2 : 10),
+            _chromeButton(
+              key: const ValueKey('player-settings'),
+              tooltip: '播放设置',
+              onPressed: () => _panel(widget.onSettings!),
+              child: const Icon(Icons.settings_rounded, size: 24),
+            ),
+          ],
           if (!widget.fullscreen) ...[
             SizedBox(width: compact ? 2 : 10),
             _chromeButton(
@@ -768,7 +881,11 @@ class _PlayerControlsState extends State<PlayerControls> {
             child: Text(
               feedback,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ),

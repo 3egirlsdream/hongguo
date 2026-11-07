@@ -69,9 +69,11 @@ class DanmakuOverlay extends StatefulWidget {
     super.key,
     required this.controller,
     required this.aspectRatio,
+    this.fillViewport = false,
   });
   final DanmakuController controller;
   final double aspectRatio;
+  final bool fillViewport;
 
   @override
   State<DanmakuOverlay> createState() => _DanmakuOverlayState();
@@ -95,14 +97,12 @@ class _DanmakuOverlayState extends State<DanmakuOverlay> {
           final aspect = widget.aspectRatio.isFinite && widget.aspectRatio > 0
               ? widget.aspectRatio
               : 16 / 9;
-          final width = math.min(
-            constraints.maxWidth,
-            constraints.maxHeight * aspect,
-          );
-          final height = math.min(
-            constraints.maxHeight,
-            constraints.maxWidth / aspect,
-          );
+          final width = widget.fillViewport
+              ? constraints.maxWidth
+              : math.min(constraints.maxWidth, constraints.maxHeight * aspect);
+          final height = widget.fillViewport
+              ? constraints.maxHeight
+              : math.min(constraints.maxHeight, constraints.maxWidth / aspect);
           final fontSize = width < 600 ? 14.0 : 18.0;
           final scaler = MediaQuery.textScalerOf(context);
           final rowHeight = scaler.scale(fontSize) * 1.5;

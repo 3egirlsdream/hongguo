@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:media_kit/media_kit.dart';
 
 import 'models.dart';
 import 'episode_browser.dart';
@@ -31,6 +33,10 @@ class PlayerMenu extends StatefulWidget {
     this.onRetryDanmaku,
     this.preloadStatus = '',
     this.onPictureInPicture,
+    this.player,
+    this.sleepTimerMinutes = 0,
+    this.onSleepTimer,
+    this.onToggleMute,
   });
 
   final PlayerMenuSection section;
@@ -51,6 +57,10 @@ class PlayerMenu extends StatefulWidget {
   final Future<void> Function(PlaybackPreferences) onPreferences;
   final Future<void> Function() onFavorite;
   final VoidCallback? onPictureInPicture;
+  final Player? player;
+  final int sleepTimerMinutes;
+  final ValueChanged<int>? onSleepTimer;
+  final VoidCallback? onToggleMute;
 
   @override
   State<PlayerMenu> createState() => _PlayerMenuState();
@@ -59,6 +69,45 @@ class PlayerMenu extends StatefulWidget {
 class _PlayerMenuState extends State<PlayerMenu> {
   bool _busy = false;
   String? _error;
+  final List<StreamSubscription<dynamic>> _trackSubscriptions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.player != null) {
+      final streams = widget.player!.stream;
+      for (final stream in [streams.tracks, streams.track, streams.volume]) {
+        _trackSubscriptions.add(
+          stream.listen((_) {
+            if (mounted) setState(() {});
+          }),
+        );
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final subscription in _trackSubscriptions) {
+      subscription.cancel();
+    }
+    super.dispose();
+  }
+
+  Future<void> _changeTrack(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+    } catch (_) {
+      if (mounted) setState(() => _error = '切换音轨或字幕失败，请重试。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _run(Future<void> Function() action) async {
     if (_busy) return;
@@ -161,7 +210,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (widget.onPictureInPicture != null) ...[
+        if (all && widget.onPictureInPicture != null) ...[
           OutlinedButton.icon(
             key: const ValueKey('player-picture-in-picture'),
             onPressed: _busy ? null : widget.onPictureInPicture,
@@ -234,6 +283,60 @@ class _PlayerMenuState extends State<PlayerMenu> {
               ),
             ),
           const SizedBox(height: 20),
+        ],
+        if (all && widget.player != null) ...[_mediaTracks(helperStyle)],
+        if (all) ...[
+          const Text('画面比例'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final fit in PlaybackFit.values)
+                ChoiceChip(
+                  label: Text(switch (fit) {
+                    PlaybackFit.contain => '适应屏幕',
+                    PlaybackFit.cover => '裁切铺满',
+                    PlaybackFit.fill => '拉伸铺满',
+                  }),
+                  selected: preferences.fit == fit,
+                  onSelected: _busy
+                      ? null
+                      : (_) => _run(
+                          () => widget.onPreferences(
+                            preferences.copyWith(fit: fit),
+                          ),
+                        ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (widget.player != null && widget.onToggleMute != null)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('静音'),
+              value: widget.player!.state.volume == 0,
+              onChanged: _busy ? null : (_) => widget.onToggleMute!(),
+            ),
+          if (widget.onSleepTimer != null) ...[
+            const Text('定时暂停'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final minutes in [0, 15, 30, 60, 90])
+                  ChoiceChip(
+                    label: Text(minutes == 0 ? '关闭' : '$minutes 分钟'),
+                    selected: widget.sleepTimerMinutes == minutes,
+                    onSelected: _busy
+                        ? null
+                        : (_) => widget.onSleepTimer!(minutes),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 20),
+          ],
         ],
         if (all && widget.showDanmaku) ...[
           SwitchListTile.adaptive(
@@ -318,12 +421,91 @@ class _PlayerMenuState extends State<PlayerMenu> {
           ),
           const SizedBox(height: 20),
           Text(
-            '画面中央上下滑切集，左侧调音量、右侧调亮度；长按临时 3 倍速，松开恢复。轻点显示或隐藏控件，双击播放或暂停；全屏时后退退出全屏。',
+            '中央上下滑切集，左侧上下滑调音量，右侧上下滑调亮度。横滑预览进度，松手跳转。长按临时 3 倍速，松手恢复。轻点显示控件，左右双击跳转 10 秒，中央双击播放或暂停。',
             style: helperStyle.copyWith(height: 1.6),
           ),
         ],
       ],
     );
+  }
+
+  Widget _mediaTracks(TextStyle helperStyle) {
+    final player = widget.player!;
+    final audio = player.state.tracks.audio
+        .where((track) => track.id != 'no')
+        .toList();
+    final subtitles = player.state.tracks.subtitle;
+    final hasAudioOptions = audio.any((track) => track.id != 'auto');
+    final hasSubtitles = subtitles.any(
+      (track) => track.id != 'auto' && track.id != 'no',
+    );
+    if (!hasAudioOptions && !hasSubtitles) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Text('当前视频没有可切换的音轨或字幕。', style: helperStyle),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (hasAudioOptions) ...[
+          const Text('音轨'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final track in audio)
+                ChoiceChip(
+                  key: ValueKey('player-audio-${track.id}'),
+                  label: Text(
+                    _trackLabel(track.id, track.title, track.language),
+                  ),
+                  selected: player.state.track.audio == track,
+                  onSelected: _busy
+                      ? null
+                      : (_) => _changeTrack(() => player.setAudioTrack(track)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+        if (hasSubtitles) ...[
+          const Text('字幕'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final track in subtitles)
+                ChoiceChip(
+                  key: ValueKey('player-subtitle-${track.id}'),
+                  label: Text(
+                    _trackLabel(track.id, track.title, track.language),
+                  ),
+                  selected: player.state.track.subtitle == track,
+                  onSelected: _busy
+                      ? null
+                      : (_) =>
+                            _changeTrack(() => player.setSubtitleTrack(track)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ],
+    );
+  }
+
+  String _trackLabel(String id, String? title, String? language) {
+    if (id == 'auto') return '自动';
+    if (id == 'no') return '关闭';
+    final parts = [title, language]
+        .whereType<String>()
+        .where((part) => part.trim().isNotEmpty)
+        .toSet()
+        .toList();
+    return parts.isEmpty ? '轨道 $id' : parts.join(' · ');
   }
 }
 

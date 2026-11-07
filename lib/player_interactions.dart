@@ -9,7 +9,7 @@ import 'package:media_kit/media_kit.dart';
 import 'app_layout.dart';
 import 'widgets.dart';
 
-enum SwipeAction { none, volume, brightness, episode }
+enum SwipeAction { none, volume, brightness, episode, seek }
 
 class GestureHudState {
   const GestureHudState({this.type = SwipeAction.none, this.value = 0.0});
@@ -72,6 +72,10 @@ class PlayerInteractions extends ChangeNotifier {
   String _feedback = '';
   DateTime _ignoreTapUntil = DateTime(2000);
   SwipeAction _swipeAction = SwipeAction.none;
+  bool _swipeDecided = false;
+  Duration? _seekPreview;
+  int _seekOriginMs = 0;
+  double _viewWidth = 0;
   GestureHudState _hudState = const GestureHudState();
   double _brightness = 0.5;
   double _initialBrightness = 0.5;
@@ -182,6 +186,8 @@ class PlayerInteractions extends ChangeNotifier {
     _pointer = null;
     _origin = null;
     _lastPosition = null;
+    _seekPreview = null;
+    _held = false;
     _resetEpisodeDrag();
     _endHold(silent: true);
     if (_hudState.type != SwipeAction.none) _scheduleDismissHud();
@@ -206,8 +212,11 @@ class PlayerInteractions extends ChangeNotifier {
     _swipeEnabled = swipeEnabled && event.kind == PointerDeviceKind.touch;
     _swipeThreshold = math.max(30, math.min(80, height * .08));
     _viewHeight = height;
+    _viewWidth = width;
     _moved = _held = false;
     _swipeAction = SwipeAction.none;
+    _swipeDecided = false;
+    _seekOriginMs = player.state.position.inMilliseconds;
 
     _initialBrightness = _brightness;
     _initialVolume = player.state.volume.clamp(0.0, 100.0);
@@ -250,14 +259,32 @@ class PlayerInteractions extends ChangeNotifier {
       _moved = true;
       _endHold();
     }
-    if (!_swipeEnabled || !_moved || _viewHeight <= 0) return;
+    if (!_swipeEnabled || !_moved || _held || _viewHeight <= 0) return;
+
+    if (!_swipeDecided) {
+      if (diff.dx.abs() > diff.dy.abs() * 1.5) {
+        _swipeAction = player.state.duration > Duration.zero && _viewWidth > 0
+            ? SwipeAction.seek
+            : SwipeAction.none;
+      } else if (diff.dy.abs() <= diff.dx.abs() * 1.5) {
+        return;
+      }
+      _swipeDecided = true;
+    }
+
+    if (_swipeAction == SwipeAction.seek) {
+      final durationMs = player.state.duration.inMilliseconds;
+      final spanMs = durationMs.clamp(0, 120000);
+      final target = (_seekOriginMs + (diff.dx / _viewWidth * spanMs).round())
+          .clamp(0, durationMs);
+      _seekPreview = Duration(milliseconds: target);
+      hint('跳转至 ${formatPosition(target / 1000)}', persistent: true);
+      return;
+    }
 
     final dy = _origin!.dy - event.localPosition.dy; // 向上滑动为增加，向下滑动为减少
     final deltaRatio = dy / (_viewHeight * 0.6);
-    if (_swipeAction == SwipeAction.episode &&
-        !_held &&
-        (_episodeDragging ||
-            diff.dy.abs() > 12 && diff.dy.abs() > diff.dx.abs() * 1.5)) {
+    if (_swipeAction == SwipeAction.episode) {
       final direction = diff.dy < 0 ? 1 : -1;
       final canMove = canEpisode?.call(direction) ?? true;
       final offset = (diff.dy * (canMove ? 1 : .22)).clamp(
@@ -271,21 +298,19 @@ class PlayerInteractions extends ChangeNotifier {
       }
     }
 
-    if (!_held && diff.dy.abs() > 12 && diff.dy.abs() > diff.dx.abs() * 1.5) {
-      if (_swipeAction == SwipeAction.volume) {
-        final volume = (_initialVolume + deltaRatio * 100).clamp(0.0, 100.0);
-        unawaited(
-          player.setVolume(volume).catchError((Object _) {
-            hint('音量调整失败，请重试');
-          }),
-        );
-        if (volume > 0) _unmutedVolume = volume;
-        _showHud(SwipeAction.volume, volume / 100);
-      } else if (_swipeAction == SwipeAction.brightness) {
-        _brightness = (_initialBrightness + deltaRatio).clamp(0.01, 1.0);
-        AppDevice.setBrightness(_brightness);
-        _showHud(SwipeAction.brightness, _brightness);
-      }
+    if (_swipeAction == SwipeAction.volume) {
+      final volume = (_initialVolume + deltaRatio * 100).clamp(0.0, 100.0);
+      unawaited(
+        player.setVolume(volume).catchError((Object _) {
+          hint('音量调整失败，请重试');
+        }),
+      );
+      if (volume > 0) _unmutedVolume = volume;
+      _showHud(SwipeAction.volume, volume / 100);
+    } else if (_swipeAction == SwipeAction.brightness) {
+      _brightness = (_initialBrightness + deltaRatio).clamp(0.01, 1.0);
+      AppDevice.setBrightness(_brightness);
+      _showHud(SwipeAction.brightness, _brightness);
     }
   }
 
@@ -313,7 +338,12 @@ class PlayerInteractions extends ChangeNotifier {
         (delta.dy.abs() >= _swipeThreshold || isFling);
     _resetEpisodeDrag();
 
-    if (_swipeAction == SwipeAction.episode &&
+    final seekPreview = _seekPreview;
+    _seekPreview = null;
+    if (seekPreview != null && available()) {
+      _commitSeek(seekPreview);
+      hint('跳转至 ${formatPosition(seekPreview.inMilliseconds / 1000)}');
+    } else if (_swipeAction == SwipeAction.episode &&
         _swipeEnabled &&
         !_held &&
         _moved &&
@@ -329,11 +359,12 @@ class PlayerInteractions extends ChangeNotifier {
     }
     _pointer = null;
     _origin = null;
+    _held = false;
     _endHold();
   }
 
   void pointerCancel(PointerCancelEvent event) {
-    _pointers.remove(event.pointer);
+    if (!_pointers.remove(event.pointer)) return;
     cancel();
     _ignoreTapUntil = DateTime.now().add(const Duration(milliseconds: 600));
     if (_pointers.isEmpty) _cancelUntilRelease = false;
@@ -360,8 +391,16 @@ class PlayerInteractions extends ChangeNotifier {
     _endHold();
     final target = (player.state.position.inMilliseconds + seconds * 1000)
         .clamp(0, player.state.duration.inMilliseconds);
-    unawaited((onSeek ?? player.seek)(Duration(milliseconds: target)));
+    _commitSeek(Duration(milliseconds: target));
     hint('${seconds > 0 ? '快进至' : '后退至'} ${formatPosition(target / 1000)}');
+  }
+
+  void _commitSeek(Duration target) {
+    unawaited(
+      (onSeek ?? player.seek)(target).catchError((Object _) {
+        hint('跳转失败，请重试');
+      }),
+    );
   }
 
   void changeVolume(double delta) {
@@ -373,12 +412,20 @@ class PlayerInteractions extends ChangeNotifier {
   }
 
   void toggleMute() {
-    if (!available()) return;
+    if (_disposed) return;
     final current = player.state.volume;
     if (current > 0) _unmutedVolume = current;
     final target = current > 0 ? 0.0 : _unmutedVolume;
-    unawaited(player.setVolume(target));
-    hint(target == 0 ? '已静音' : '音量 ${target.round()}%');
+    unawaited(
+      player
+          .setVolume(target)
+          .then((_) {
+            hint(target == 0 ? '已静音' : '音量 ${target.round()}%');
+          })
+          .catchError((Object _) {
+            hint('音量调整失败，请重试');
+          }),
+    );
   }
 
   KeyEventResult key(KeyEvent event) {

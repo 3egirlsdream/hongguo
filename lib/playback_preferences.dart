@@ -1,4 +1,6 @@
-const playbackSpeeds = [.5, .75, 1.0, 1.25, 1.5, 2.0, 3.0];
+const playbackSpeeds = [.25, .5, .75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+enum PlaybackFit { contain, cover, fill }
 
 class PlaybackPreferences {
   const PlaybackPreferences({
@@ -7,6 +9,7 @@ class PlaybackPreferences {
     this.autoAdvance = true,
     this.danmaku = true,
     this.preload = true,
+    this.fit = PlaybackFit.contain,
   });
 
   final double speed;
@@ -14,6 +17,7 @@ class PlaybackPreferences {
   final bool autoAdvance;
   final bool danmaku;
   final bool preload;
+  final PlaybackFit fit;
 
   PlaybackPreferences copyWith({
     double? speed,
@@ -21,12 +25,14 @@ class PlaybackPreferences {
     bool? autoAdvance,
     bool? danmaku,
     bool? preload,
+    PlaybackFit? fit,
   }) => PlaybackPreferences(
     speed: speed ?? this.speed,
     quality: quality ?? this.quality,
     autoAdvance: autoAdvance ?? this.autoAdvance,
     danmaku: danmaku ?? this.danmaku,
     preload: preload ?? this.preload,
+    fit: fit ?? this.fit,
   );
 
   Map<String, dynamic> toJson() => {
@@ -35,6 +41,7 @@ class PlaybackPreferences {
     'autoAdvance': autoAdvance,
     'danmaku': danmaku,
     'preload': preload,
+    if (fit != PlaybackFit.contain) 'fit': fit.name,
   };
 
   factory PlaybackPreferences.fromJson(Map<String, dynamic> value) {
@@ -52,6 +59,10 @@ class PlaybackPreferences {
       autoAdvance: autoAdvance,
       danmaku: danmaku,
       preload: preload,
+      fit: PlaybackFit.values.firstWhere(
+        (fit) => fit.name == value['fit'],
+        orElse: () => PlaybackFit.contain,
+      ),
     );
   }
 }

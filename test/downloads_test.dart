@@ -268,6 +268,10 @@ void main() {
     expect(find.text('下载选集'), findsOneWidget);
     expect(find.byKey(const ValueKey('download-episode-1')), findsOneWidget);
     expect(find.text('清空'), findsOneWidget);
+    expect(find.text('已选 1'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('download-episode-2')));
+    await tester.pumpAndSettle();
+    expect(find.text('已选 2'), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('download-quality')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('720P').last);

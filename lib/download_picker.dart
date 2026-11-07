@@ -16,11 +16,13 @@ class DownloadPicker extends StatefulWidget {
     required this.detail,
     this.preferences = const DownloadPreferences(),
     this.embedded = false,
+    this.initialEpisodeNumber,
     this.onSubmit,
   });
   final DramaDetail detail;
   final DownloadPreferences preferences;
   final bool embedded;
+  final int? initialEpisodeNumber;
   final Future<void> Function(DownloadSelection selection)? onSubmit;
 
   @override
@@ -28,11 +30,16 @@ class DownloadPicker extends StatefulWidget {
 }
 
 class _DownloadPickerState extends State<DownloadPicker> {
-  late final _selected = widget.detail.episodes
-      .where((episode) => widget.preferences.includeVip || !episode.vip)
-      .take(500)
-      .map((episode) => episode.number)
-      .toSet();
+  late final _selected = widget.initialEpisodeNumber == null
+      ? widget.detail.episodes
+            .where((episode) => widget.preferences.includeVip || !episode.vip)
+            .take(500)
+            .map((episode) => episode.number)
+            .toSet()
+      : widget.detail.episodes
+            .where((episode) => episode.number == widget.initialEpisodeNumber)
+            .map((episode) => episode.number)
+            .toSet();
   late int _quality = widget.preferences.quality;
   bool _submitting = false;
 

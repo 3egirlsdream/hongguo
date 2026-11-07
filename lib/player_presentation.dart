@@ -619,45 +619,66 @@ class _PlayerTimelineState extends State<PlayerTimeline> {
     final duration = widget.player.state.duration.inMilliseconds / 1000;
     final max = duration > 0 ? duration : 1.0;
     final active = widget.enabled && duration > 0;
+    final elapsed =
+        (_value ?? widget.player.state.position.inMilliseconds / 1000).clamp(
+          0.0,
+          max,
+        );
+    const timeStyle = TextStyle(
+      color: Colors.white70,
+      fontSize: 11,
+      fontFeatures: [FontFeature.tabularFigures()],
+    );
     return Tooltip(
       message:
           '${formatPosition(_value ?? widget.player.state.position.inMilliseconds / 1000)} / ${formatPosition(duration)}',
-      child: SliderTheme(
-        data: SliderTheme.of(context).copyWith(
-          padding: EdgeInsets.zero,
-          trackHeight: 2,
-          activeTrackColor: PlayerStyle.accent,
-          thumbColor: Colors.white,
-          inactiveTrackColor: Colors.white.withValues(alpha: .13),
-          secondaryActiveTrackColor: Colors.white.withValues(alpha: .24),
-          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 3),
-          overlayShape: const RoundSliderOverlayShape(overlayRadius: 11),
-        ),
-        child: Slider(
-          key: const ValueKey('player-progress'),
-          padding: EdgeInsets.zero,
-          min: 0,
-          max: max,
-          value: (_value ?? widget.player.state.position.inMilliseconds / 1000)
-              .clamp(0.0, max),
-          secondaryTrackValue:
-              (widget.player.state.buffer.inMilliseconds / 1000).clamp(
-                0.0,
-                max,
+      child: Row(
+        children: [
+          Text(formatPosition(elapsed), style: timeStyle),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                padding: EdgeInsets.zero,
+                trackHeight: 2,
+                activeTrackColor: PlayerStyle.accent,
+                thumbColor: Colors.white,
+                inactiveTrackColor: Colors.white.withValues(alpha: .13),
+                secondaryActiveTrackColor: Colors.white.withValues(alpha: .24),
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 3),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 11),
               ),
-          semanticFormatterCallback: formatPosition,
-          onChanged: active ? (value) => setState(() => _value = value) : null,
-          onChangeEnd: active
-              ? (value) {
-                  unawaited(
-                    widget.onSeek(
-                      Duration(milliseconds: (value * 1000).round()),
+              child: Slider(
+                key: const ValueKey('player-progress'),
+                padding: EdgeInsets.zero,
+                min: 0,
+                max: max,
+                value: elapsed,
+                secondaryTrackValue:
+                    (widget.player.state.buffer.inMilliseconds / 1000).clamp(
+                      0.0,
+                      max,
                     ),
-                  );
-                  setState(() => _value = null);
-                }
-              : null,
-        ),
+                semanticFormatterCallback: formatPosition,
+                onChanged: active
+                    ? (value) => setState(() => _value = value)
+                    : null,
+                onChangeEnd: active
+                    ? (value) {
+                        unawaited(
+                          widget.onSeek(
+                            Duration(milliseconds: (value * 1000).round()),
+                          ),
+                        );
+                        setState(() => _value = null);
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(formatPosition(duration), style: timeStyle),
+        ],
       ),
     );
   }

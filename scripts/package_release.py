@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -34,7 +35,10 @@ for abi in options.abi or ['arm64-v8a', 'armeabi-v7a', 'x86_64']:
     source = root / 'build' / 'app' / 'outputs' / 'flutter-apk' / f'app-{abi}-release.apk'
     if not source.is_file():
         raise SystemExit('缺少 APK：' + str(source))
-    badging = subprocess.check_output([str(aapt), 'dump', 'badging', str(source)], text=True)
+    with tempfile.TemporaryDirectory(prefix='yeguo-package-') as temporary:
+        accessible_source = Path(temporary) / source.name
+        shutil.copy2(source, accessible_source)
+        badging = subprocess.check_output([str(aapt), 'dump', 'badging', str(accessible_source)], text=True)
     if (f"versionName='{version_name}'" not in badging or
             f"versionCode='{version_code}'" not in badging or
             "name='com.duanju.duanju_app'" not in badging or
@@ -43,7 +47,8 @@ for abi in options.abi or ['arm64-v8a', 'armeabi-v7a', 'x86_64']:
     with zipfile.ZipFile(source) as archive:
         names = set(archive.namelist())
         required = [f'lib/{abi}/{library}' for library in
-                    ['libduanju_core.so', 'libflutter.so', 'libapp.so', 'libmpv.so', 'libffmpegkit.so']]
+                    ['libduanju_core.so', 'libflutter.so', 'libapp.so', 'libmpv.so',
+                     'libmediakitandroidhelper.so', 'libffmpegkit.so']]
         missing = set(required) - names
         if missing:
             raise SystemExit('APK 缺少原生库：' + ', '.join(sorted(missing)))

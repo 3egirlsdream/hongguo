@@ -133,6 +133,10 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _detailsSheetOpen = false;
   bool _favoriteBusy = false;
   bool _autoAdvance = true;
+  bool _controlsLocked = false;
+  PlaybackFit _fit = PlaybackFit.contain;
+  Timer? _sleepTimer;
+  int _sleepTimerMinutes = 0;
   bool? _systemFullscreen;
   Orientation? _lastOrientation;
   bool _closed = false;
@@ -179,6 +183,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     autoAdvance: _autoAdvance,
     danmaku: _danmakuEnabled,
     preload: _preloadEnabled,
+    fit: _fit,
   );
   String get _qualityLabel => _plan?.local == true
       ? '本地原画'
@@ -226,6 +231,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     _speed = preferences.speed;
     _requestedQuality = preferences.quality;
     _autoAdvance = preferences.autoAdvance;
+    _fit = preferences.fit;
     _danmakuEnabled = preferences.danmaku;
     _preloadEnabled = preferences.preload;
     _loader = PlaybackLoader(widget.repository);
@@ -317,7 +323,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               _player.state.position < duration - const Duration(seconds: 2)) {
             _recordPlaybackEvent('premature_end');
             _queueRecovery();
-          } else if (_autoAdvance &&
+          } else if (_playIntent &&
+              _autoAdvance &&
               _index + 1 < widget.detail.episodes.length) {
             if (_foreground && !_panelOpen) {
               _play(_index + 1, showControlsOnReady: false);
@@ -454,6 +461,8 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
     if (!_closed &&
         (widget.store.profileEpoch != _profileEpoch || widget.store.locked)) {
+      _sleepTimer?.cancel();
+      _sleepTimerMinutes = 0;
       _preloader.clear();
       _handoffOwned = false;
       _playIntent = false;
@@ -1295,6 +1304,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     final ticket = ++_generation;
+    if (recoveryAction == null) _playIntent = playWhenReady;
     final automaticNext =
         !showControlsOnReady &&
         index == _index + 1 &&
@@ -1359,7 +1369,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _health.reset();
     if (recoveryAction == null) {
       _recovery.reset();
-      _playIntent = playWhenReady;
     }
     var seekPosition = position ?? 0.0;
     _resumePosition = seekPosition;
@@ -1681,6 +1690,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       _speed = nextPreferences.speed;
       _requestedQuality = nextPreferences.quality;
       _autoAdvance = nextPreferences.autoAdvance;
+      _fit = nextPreferences.fit;
       _danmakuEnabled = nextPreferences.danmaku;
       _preloadEnabled = nextPreferences.preload;
     });
@@ -1784,6 +1794,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           builder: (_, _) => Theme(
             data: menuTheme,
             child: PlayerMenu(
+              player: _player,
               section: section,
               episodes: widget.detail.episodes,
               currentIndex: _index,
@@ -1803,6 +1814,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ? () => Navigator.pop(menuContext, -1)
                   : null,
               onPreferences: _setPreferences,
+              sleepTimerMinutes: _sleepTimerMinutes,
+              onSleepTimer: _setSleepTimer,
+              onToggleMute: !_loading && _error == null
+                  ? _interactions.toggleMute
+                  : null,
               showDanmaku: widget.detail.drama.source == 'hongguo',
               danmakuStatus: _danmaku.status,
               onRetryDanmaku: _danmaku.canRetry ? _danmaku.retry : null,
@@ -1834,6 +1850,35 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
+  void _setSleepTimer(int minutes) {
+    _sleepTimer?.cancel();
+    _sleepTimerMinutes = minutes;
+    if (minutes > 0) {
+      _sleepTimer = Timer(Duration(minutes: minutes), () {
+        if (_closed || !mounted) return;
+        _sleepTimerMinutes = 0;
+        _playIntent = false;
+        _advanceOnResume = false;
+        _handoffOwned = false;
+        widget.handoff?.fail('定时暂停');
+        _interactions.cancel();
+        _menuRevision.value++;
+        _checkpoint();
+        _health.reset();
+        unawaited(
+          _serialize(() async {
+            if (_closed || _playIntent) return;
+            await _player.pause();
+            _notice('定时暂停已生效');
+          }).catchError((Object _) => _notice('定时暂停失败')),
+        );
+        unawaited(_saveProgress(flush: true));
+        _syncDanmaku();
+      });
+    }
+    _menuRevision.value++;
+  }
+
   Future<void> _seekTo(Duration target) async {
     if (_closed || _loading || _error != null) return;
     _handoffOwned = false;
@@ -1859,13 +1904,20 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _back() {
-    if (_showFullscreen) {
+    if (_controlsLocked) {
+      _setControlsLocked(false);
+    } else if (_showFullscreen) {
       _rotate();
     } else if (_detailsSheetOpen) {
       _closeDetailsSheet();
     } else {
       Navigator.of(context).maybePop();
     }
+  }
+
+  void _setControlsLocked(bool locked) {
+    _interactions.cancel();
+    setState(() => _controlsLocked = locked);
   }
 
   @override
@@ -1879,6 +1931,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       ),
     );
     _closed = true;
+    _sleepTimer?.cancel();
     _seasonsGeneration++;
     _seasonsRetryTimer?.cancel();
     LanController.current?.detachPlayback(_lanIdentity);
@@ -2143,11 +2196,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     final fullscreen = _showFullscreen;
     final pictureInPicture = _pictureInPictureVisible;
     return PopScope(
-      canPop: !fullscreen && !_detailsSheetOpen,
+      canPop: !fullscreen && !_detailsSheetOpen && !_controlsLocked,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           _leavingPlayback = true;
           unawaited(PlaybackContinuity.clear(_continuityOwner));
+        } else if (_controlsLocked) {
+          _setControlsLocked(false);
         } else if (fullscreen) {
           _rotate();
         } else if (_detailsSheetOpen) {
@@ -2162,7 +2217,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         child: Focus(
           focusNode: _playerFocus,
           onKeyEvent: (_, event) {
-            if (_panelOpen ||
+            if (_controlsLocked ||
+                _panelOpen ||
                 _detailsSheetOpen ||
                 !_playerFocus.hasPrimaryFocus ||
                 !(ModalRoute.of(context)?.isCurrent ?? true)) {
@@ -2184,6 +2240,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                             (constraints.maxWidth >= 840 ||
                                 constraints.maxWidth >
                                     constraints.maxHeight * 1.3);
+                        if (wide && _controlsLocked) {
+                          return _videoPane(context);
+                        }
                         if (wide) {
                           return Row(
                             children: [
@@ -2294,7 +2353,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             bottom: _detailsSheetOpen ? sheetHeight : 0,
             child: _videoPane(context, immersive: true),
           ),
-          if (!_detailsSheetOpen) ...[
+          if (!_detailsSheetOpen && !_controlsLocked) ...[
             Positioned(top: 0, left: 0, right: 0, child: _portraitHeader()),
             if (landscapeVideo && !short)
               Positioned(
@@ -2331,7 +2390,7 @@ class _PlayerScreenState extends State<PlayerScreen>
               bottom: short ? 100 : 122,
               child: _portraitActions(compact: short),
             ),
-          ] else ...[
+          ] else if (_detailsSheetOpen) ...[
             Positioned(
               top: 0,
               left: 0,
@@ -2679,6 +2738,8 @@ class _PlayerScreenState extends State<PlayerScreen>
             onFullscreen: _rotate,
             onBack: _back,
             onFocusSurface: _playerFocus.requestFocus,
+            locked: _controlsLocked,
+            onLockChanged: _setControlsLocked,
             onSeek: _seekTo,
             speed: _speed,
             qualityLabel: _qualityLabel,
@@ -2694,6 +2755,7 @@ class _PlayerScreenState extends State<PlayerScreen>
             },
             onSpeed: () => _openPanel(PlayerMenuSection.speed),
             onQuality: () => _openPanel(PlayerMenuSection.quality),
+            onSettings: () => _openPanel(PlayerMenuSection.settings),
             onDanmaku: widget.detail.drama.source == 'hongguo'
                 ? _toggleDanmaku
                 : null,
@@ -2710,14 +2772,22 @@ class _PlayerScreenState extends State<PlayerScreen>
         else
           Video(
             controller: _video!,
-            fit: BoxFit.contain,
+            fit: switch (_fit) {
+              PlaybackFit.contain => BoxFit.contain,
+              PlaybackFit.cover => BoxFit.cover,
+              PlaybackFit.fill => BoxFit.fill,
+            },
             fill: immersive ? PlayerStyle.background : Colors.black,
             controls: (_) => const SizedBox.shrink(),
             pauseUponEnteringBackgroundMode: false,
             resumeUponEnteringForegroundMode: false,
           ),
         if (!hideOverlayForPictureInPicture)
-          DanmakuOverlay(controller: _danmaku, aspectRatio: _aspectRatio),
+          DanmakuOverlay(
+            controller: _danmaku,
+            aspectRatio: _aspectRatio,
+            fillViewport: _fit != PlaybackFit.contain,
+          ),
       ],
     );
     return KeyedSubtree(
@@ -3212,6 +3282,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       detail: widget.detail,
       preferences: widget.store.downloadPreferences,
       embedded: true,
+      initialEpisodeNumber: widget.detail.episodes[_index].number,
       onSubmit: _submitDownloadSelection,
     );
   }

@@ -62,6 +62,50 @@ void main() {
     expect(tester.takeException(), isNull);
   }
 
+  testWidgets('horizontal scrub commits on release and cancel discards it', (
+    tester,
+  ) async {
+    final (repository, player) = await mount(tester);
+    final initial = player.state.position;
+    final scrub = await tester.startGesture(origin(tester, y: .32));
+    await scrub.moveBy(const Offset(80, 4));
+    await tester.pump();
+    expect(player.state.position, initial);
+    expect(offset(tester), 0);
+    await scrub.up();
+    await tick(tester);
+    final committed = player.state.position;
+    expect(committed, greaterThan(initial));
+    expect(repository.requestedEpisodes, [1]);
+
+    final cancelled = await tester.startGesture(origin(tester, y: .32));
+    await cancelled.moveBy(const Offset(-75, 0));
+    await cancelled.cancel();
+    await tick(tester);
+    expect(player.state.position, committed);
+    expect(repository.requestedEpisodes, [1]);
+    await close(tester);
+  });
+
+  testWidgets('screen lock blocks episode swipes until unlocked', (
+    tester,
+  ) async {
+    final (repository, _) = await mount(tester);
+    await tester.tap(find.byKey(const ValueKey('player-lock')));
+    await tick(tester);
+    expect(find.byKey(const ValueKey('player-more')), findsNothing);
+    await tester.dragFrom(origin(tester), const Offset(0, -170));
+    await tick(tester);
+    expect(repository.requestedEpisodes, [1]);
+
+    await tester.tap(find.byKey(const ValueKey('player-unlock')));
+    await tick(tester);
+    await tester.dragFrom(origin(tester), const Offset(0, -170));
+    await tick(tester);
+    expect(repository.requestedEpisodes, [1, 2]);
+    await close(tester);
+  });
+
   testWidgets(
     'video follows a central drag while controls and hit surface stay fixed; short drag springs back',
     (tester) async {
