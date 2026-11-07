@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
+
 import 'core_bridge.dart';
 import 'follow_state.dart';
 import 'local_store.dart';
@@ -65,7 +67,7 @@ Future<void> openPlaybackDirectly(
         'vip_confirmation',
         () => showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => AppDialog(
             title: const Text('这是一集 VIP 内容'),
             content: const Text('部分内容可能仅提供试看或限制播放。'),
             actions: [

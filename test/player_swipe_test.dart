@@ -18,8 +18,12 @@ void main() {
   Future<(RouteRepository, ScriptedPlayer)> mount(
     WidgetTester tester, {
     int index = 0,
+    Size size = const Size(390, 844),
+    double safeTop = 0,
   }) async {
-    tester.view.physicalSize = const Size(390, 844);
+    tester.view.physicalSize = size;
+    tester.view.padding = FakeViewPadding(top: safeTop);
+    tester.view.viewPadding = FakeViewPadding(top: safeTop);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     SharedPreferences.setMockInitialValues({});
@@ -60,6 +64,52 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tick(tester);
     expect(tester.takeException(), isNull);
+  }
+
+  for (final size in [const Size(360, 800), const Size(390, 844)]) {
+    testWidgets('portrait lock avoids back button with status bar at $size', (
+      tester,
+    ) async {
+      await mount(tester, size: size, safeTop: 44);
+      final lock = tester.getRect(find.byKey(const ValueKey('player-lock')));
+      final back = tester.getRect(find.byKey(const ValueKey('player-back')));
+      expect(lock.overlaps(back), isFalse);
+      await tester.tap(find.byKey(const ValueKey('player-lock')));
+      await tick(tester);
+      expect(find.byKey(const ValueKey('player-unlock')), findsOneWidget);
+      expect(tester.getRect(find.byKey(const ValueKey('player-unlock'))), lock);
+      await close(tester);
+    });
+  }
+
+  for (final size in [const Size(390, 844), const Size(844, 390)]) {
+    for (final x in [.15, .5, .85]) {
+      testWidgets(
+        'double tap at $x toggles playback without seeking at $size',
+        (tester) async {
+          final (_, player) = await mount(tester, size: size);
+          final position = player.state.position;
+          final playing = player.state.playing;
+          final point = origin(tester, x: x, y: .35);
+          await tester.tapAt(point);
+          await tester.pump(const Duration(milliseconds: 80));
+          await tester.tapAt(point);
+          await tick(tester);
+          expect(player.state.playing, !playing);
+          expect(player.state.position, position);
+          expect(find.byKey(const ValueKey('player-rewind')), findsNothing);
+          expect(find.byKey(const ValueKey('player-forward')), findsNothing);
+          await tester.pump(const Duration(milliseconds: 350));
+          await tester.tapAt(point);
+          await tester.pump(const Duration(milliseconds: 80));
+          await tester.tapAt(point);
+          await tick(tester);
+          expect(player.state.playing, playing);
+          expect(player.state.position, position);
+          await close(tester);
+        },
+      );
+    }
   }
 
   testWidgets('horizontal scrub commits on release and cancel discards it', (

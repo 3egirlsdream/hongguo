@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import 'app_design.dart';
+
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
@@ -47,7 +50,7 @@ class _DetailScreenState extends State<DetailScreen> {
   int _generation = 0;
   int _episodePage = 0;
   bool _expandedDescription = false;
-  bool _episodesExpanded = false;
+  bool _episodesExpanded = true;
   final _episodeAnchor = GlobalKey();
   final _detailScroll = ScrollController();
   bool _initialActionHandled = false;
@@ -260,7 +263,7 @@ class _DetailScreenState extends State<DetailScreen> {
       if (detail.episodes[index].vip) {
         final accepted = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => AppDialog(
             title: const Text('这是一集 VIP 内容'),
             content: const Text('部分内容可能仅提供试看或限制播放。'),
             actions: [
@@ -350,7 +353,7 @@ class _DetailScreenState extends State<DetailScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(drama.title, overflow: TextOverflow.ellipsis),
+          title: const Text('剧集详情'),
           actions: [
             RefreshAction(
               loading: _loading,
@@ -383,7 +386,7 @@ class _DetailScreenState extends State<DetailScreen> {
                             360.0,
                           ),
                           child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(20),
+                            padding: const EdgeInsets.all(16),
                             child: _overview(drama),
                           ),
                         ),
@@ -418,7 +421,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     slivers: [
                       SliverToBoxAdapter(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                           child: _overview(drama),
                         ),
                       ),
@@ -448,7 +451,7 @@ class _DetailScreenState extends State<DetailScreen> {
                             ),
                           ),
                           SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                             sliver: SliverGrid(
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
@@ -503,7 +506,7 @@ class _DetailScreenState extends State<DetailScreen> {
                     children: [
                       if (widget.repository.supportsDownloads &&
                           widget.store.canDownload) ...[
-                        IconButton.filledTonal(
+                        IconButton(
                           tooltip: '下载选集',
                           onPressed: allowed && !_loading && episodes.isNotEmpty
                               ? _download
@@ -573,7 +576,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final colors = Theme.of(context).colorScheme;
     final current = currentNumber == null ? '' : ' · 当前第 $currentNumber 集';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       child: Material(
         color: colors.surfaceContainer,
         borderRadius: BorderRadius.circular(8),
@@ -796,7 +799,7 @@ class _DetailScreenState extends State<DetailScreen> {
     final colors = Theme.of(context).colorScheme;
     final notices = widget.store.following(drama.id)?.seriesSeasons ?? const {};
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 8),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
+
 import 'catalog_sort.dart';
 import 'core_bridge.dart';
 import 'drama_actions.dart';
@@ -103,21 +105,20 @@ class _SavedLibraryState extends State<SavedLibrary> {
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => AppSheet(
+        title: widget.filterOptions != null
+            ? '筛选预约'
+            : widget.history
+            ? '筛选观看记录'
+            : '筛选追剧',
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: Text(
-                widget.filterOptions != null
-                    ? '筛选预约'
-                    : widget.history
-                    ? '筛选观看记录'
-                    : '筛选追剧',
-              ),
-            ),
             for (final filter in _filters)
               ListTile(
+                contentPadding: EdgeInsets.zero,
                 title: Text(filter.$2),
                 selected: _selectedFilter == filter.$1,
                 trailing: _selectedFilter == filter.$1
@@ -173,7 +174,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
     final epoch = widget.store.profileEpoch;
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('清空观看记录？'),
         content: const Text('仅清空本机观看记录，账号云端记录会保留。追剧状态和手动已看标记不变。'),
         actions: [
@@ -254,7 +255,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         onTap: () => _editing
             ? _actions(drama)
             : widget.history
@@ -266,7 +267,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
@@ -376,22 +377,16 @@ class _SavedLibraryState extends State<SavedLibrary> {
                         vertical: 6,
                       ),
                       labelPadding: EdgeInsets.zero,
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      visualDensity: VisualDensity.compact,
-                      backgroundColor:
-                          Theme.of(context).brightness == Brightness.dark
-                          ? colors.surfaceContainerLow
-                          : const Color(0xFFF7F7F7),
-                      selectedColor:
-                          Theme.of(context).brightness == Brightness.dark
-                          ? const Color(0xFF4A3020)
-                          : const Color(0xFFFFF1E3),
+                      materialTapTargetSize: MaterialTapTargetSize.padded,
+                      visualDensity: VisualDensity.standard,
+                      backgroundColor: colors.surfaceContainer,
+                      selectedColor: colors.primaryContainer,
                       labelStyle: TextStyle(
-                        fontSize: 14,
-                        height: 1.2,
+                        fontSize: 12,
+                        height: 1.3,
                         color: _selectedFilter == filter.$1
-                            ? const Color(0xFFF47925)
-                            : colors.onSurfaceVariant.withValues(alpha: .7),
+                            ? colors.onPrimaryContainer
+                            : colors.onSurfaceVariant,
                       ),
                       selected: _selectedFilter == filter.$1,
                       onSelected: (_) => _selectFilter(filter.$1),
@@ -412,7 +407,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
           TextButton(
             style: TextButton.styleFrom(
               foregroundColor: colors.onSurface,
-              minimumSize: const Size(40, 34),
+              minimumSize: const Size(48, 48),
               padding: const EdgeInsets.symmetric(horizontal: 6),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               textStyle: const TextStyle(
@@ -447,7 +442,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
                 const PopupMenuItem(value: 'clear', child: Text('清空本机历史')),
             ],
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
               child: Text(
                 _editing ? '完成' : '编辑',
                 style: TextStyle(
@@ -502,7 +497,7 @@ class _SavedLibraryState extends State<SavedLibrary> {
       final header = [
         if (!widget.compact)
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
             child: Row(
               children: [
                 Expanded(
@@ -611,12 +606,10 @@ class _SavedLibraryState extends State<SavedLibrary> {
       return LayoutBuilder(
         builder: (context, constraints) {
           final padding = constraints.maxWidth < 600 ? 16.0 : 24.0;
-          final columns = constraints.maxWidth < 340
-              ? 2
-              : ((constraints.maxWidth - 2 * padding) / 180).floor().clamp(
-                  3,
-                  6,
-                );
+          final columns = dramaGridColumns(
+            context,
+            constraints.maxWidth - 2 * padding,
+          );
           final tileWidth =
               (constraints.maxWidth -
                   2 * padding -

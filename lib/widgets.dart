@@ -88,7 +88,7 @@ class DramaCover extends StatelessWidget {
     super.key,
     required this.drama,
     required this.repository,
-    this.radius = 14,
+    this.radius = 8,
     this.showOverlay = true,
     this.fit = BoxFit.cover,
   });
@@ -113,7 +113,7 @@ class DramaCover extends StatelessWidget {
       child: Center(
         child: Icon(
           Icons.movie_creation_outlined,
-          size: 40,
+          size: 28,
           color: colors.onSurfaceVariant,
         ),
       ),
@@ -427,7 +427,7 @@ class DramaTile extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 height: 1.3,
                 fontSize: 14,
               ),
@@ -460,7 +460,7 @@ class DramaTile extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress ?? onMore,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(8),
         child: content,
       ),
     );
@@ -484,18 +484,23 @@ class StatusPanel extends StatelessWidget {
   final String action;
   final Widget? secondaryAction;
   @override
-  Widget build(BuildContext context) => Center(
+  Widget build(BuildContext context) => Align(
+    alignment: const Alignment(0, -.35),
     child: SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 56, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 20),
+          Icon(
+            icon,
+            size: 44,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 14),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleLarge,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
           if (message.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -525,13 +530,20 @@ class StatusPanel extends StatelessWidget {
   );
 }
 
+int dramaGridColumns(BuildContext context, double width) {
+  final readableWidth = MediaQuery.textScalerOf(context).scale(14) * 6.5;
+  final minimum = width < 600 ? 104.0 : 156.0;
+  final itemWidth = readableWidth > minimum ? readableWidth : minimum;
+  return (width / itemWidth).floor().clamp(2, width < 600 ? 3 : 6);
+}
+
 SliverGridDelegate dramaGridDelegate(BuildContext context, double width) {
-  final columns = width < 600 ? 3 : (width / 180).floor().clamp(4, 9);
-  final spacing = width < 600 ? 10.0 : 18.0;
+  final columns = dramaGridColumns(context, width);
+  final spacing = width < 600 ? 12.0 : 16.0;
   final tileWidth = (width - (columns - 1) * spacing) / columns;
   return SliverGridDelegateWithFixedCrossAxisCount(
     crossAxisCount: columns,
-    mainAxisSpacing: 22,
+    mainAxisSpacing: 16,
     crossAxisSpacing: spacing,
     mainAxisExtent: DramaTile.extentFor(context, tileWidth),
   );

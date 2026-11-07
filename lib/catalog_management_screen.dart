@@ -169,7 +169,7 @@ class _CatalogManagementScreenState extends State<CatalogManagementScreen> {
         appBar: AppBar(title: const Text('内容管理')),
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960),
+            constraints: const BoxConstraints(maxWidth: 680),
             child: RefreshIndicator(
               onRefresh: _refresh,
               child: ListView(

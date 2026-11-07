@@ -4,7 +4,10 @@ import 'models.dart';
 class PlaybackLoader {
   PlaybackLoader(this.repository);
 
+  static final _owners = Expando<PlaybackLoader>('foreground-playback-owner');
+
   final AppRepository repository;
+  bool get _ownsPlayback => identical(_owners[repository], this);
   int _generation = 0;
   bool _closed = false;
 
@@ -39,19 +42,20 @@ class PlaybackLoader {
       return null;
     }
     final generation = ++_generation;
+    _owners[repository] = this;
     try {
       await repository.cancelPlayback();
-      if (_closed || generation != _generation) {
+      if (_closed || generation != _generation || !_ownsPlayback) {
         return null;
       }
       final plan = await resolve();
-      if (_closed || generation != _generation) {
+      if (_closed || generation != _generation || !_ownsPlayback) {
         await repository.release(plan.session);
         return null;
       }
       return plan;
     } catch (_) {
-      if (_closed || generation != _generation) {
+      if (_closed || generation != _generation || !_ownsPlayback) {
         return null;
       }
       rethrow;
@@ -59,8 +63,12 @@ class PlaybackLoader {
   }
 
   Future<void> close() async {
+    if (_closed) return;
     _closed = true;
     _generation++;
-    await repository.cancelPlayback();
+    if (_ownsPlayback) {
+      _owners[repository] = null;
+      await repository.cancelPlayback();
+    }
   }
 }

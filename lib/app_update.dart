@@ -123,9 +123,10 @@ class AppUpdateService extends ChangeNotifier {
       installedVersion = '${info['version']}+${info['build']}';
       AppVersion(installedVersion);
       canInstall = info['canInstall'] == true;
-    } catch (error) {
+      message = null;
+    } catch (_) {
       installedVersion = '';
-      message = '无法读取当前版本：$error';
+      message = '无法读取当前版本，请重新打开此页面重试';
       canInstall = false;
     }
     notifyListeners();

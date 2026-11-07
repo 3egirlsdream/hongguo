@@ -38,7 +38,7 @@ class DramaListCard extends StatelessWidget {
     ].join(' · ');
     final secondaryStyle = TextStyle(
       color: colors.onSurfaceVariant,
-      fontSize: (compact ? 11 : 14) * scale,
+      fontSize: (compact ? 11 : 12) * scale,
       height: 1.3,
     );
     final information = Column(
@@ -51,25 +51,25 @@ class DramaListCard extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: colors.primary,
-            fontSize: (compact ? 12 : 15) * scale,
+            fontSize: 12 * scale,
             height: 1.3,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        SizedBox(height: (compact ? 4 : 8) * scale),
+        SizedBox(height: (compact ? 4 : 5) * scale),
         Text(
           drama.title,
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: colors.onSurface,
-            fontSize: (compact ? 14 : 18) * scale,
+            fontSize: (compact ? 14 : 16) * scale,
             height: 1.25,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.w600,
           ),
         ),
         if (!compact && drama.category.trim().isNotEmpty) ...[
-          SizedBox(height: 10 * scale),
+          SizedBox(height: 6 * scale),
           Text(
             drama.category.trim(),
             maxLines: 1,
@@ -109,7 +109,7 @@ class DramaListCard extends StatelessWidget {
                       TextSpan(
                         text: ' 热度',
                         style: TextStyle(
-                          fontSize: 14 * scale,
+                          fontSize: 12 * scale,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -119,9 +119,9 @@ class DramaListCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: colors.primary,
-                  fontSize: 24 * scale,
+                  fontSize: 16 * scale,
                   height: 1.2,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w600,
                 ),
               ));
 
@@ -139,7 +139,7 @@ class DramaListCard extends StatelessWidget {
             builder: (context, constraints) {
               final coverWidth = compact
                   ? (constraints.maxWidth * .25).clamp(0.0, 76.0)
-                  : (constraints.maxWidth * .35).clamp(0.0, 176.0);
+                  : (constraints.maxWidth * .28).clamp(0.0, 96.0);
               final coverHeight = coverWidth / .72;
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,7 +150,7 @@ class DramaListCard extends StatelessWidget {
                     child: DramaCover(
                       drama: drama,
                       repository: repository,
-                      radius: 3 * scale,
+                      radius: 6 * scale,
                       showOverlay: false,
                       fit: BoxFit.cover,
                     ),
@@ -191,40 +191,17 @@ class DramaListCard extends StatelessWidget {
                               ),
                             ),
                           )
-                        : SizedBox(
-                            height: coverHeight,
-                            child: ClipRect(
-                              child: Stack(
-                                children: [
-                                  Positioned(
-                                    top: 3 * scale,
-                                    left: 0,
-                                    right: 0,
-                                    bottom: (bottom == null ? 0 : 43) * scale,
-                                    child: ClipRect(
-                                      child: OverflowBox(
-                                        alignment: Alignment.topLeft,
-                                        minHeight: 0,
-                                        maxHeight: double.infinity,
-                                        child: information,
-                                      ),
-                                    ),
-                                  ),
-                                  if (bottom != null)
-                                    Positioned(
-                                      left: 0,
-                                      right: 0,
-                                      bottom: 5 * scale,
-                                      height: 32 * scale,
-                                      child: ClipRect(
-                                        child: Align(
-                                          alignment: Alignment.centerLeft,
-                                          child: bottom,
-                                        ),
-                                      ),
-                                    ),
+                        : ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: coverHeight),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                information,
+                                if (bottom != null) ...[
+                                  SizedBox(height: 8 * scale),
+                                  bottom,
                                 ],
-                              ),
+                              ],
                             ),
                           ),
                   ),

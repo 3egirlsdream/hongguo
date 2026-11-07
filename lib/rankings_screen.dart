@@ -20,29 +20,7 @@ class RankingsScreen extends StatefulWidget {
   final bool embedded;
   final bool active;
 
-  static ThemeData themeOf(BuildContext context) {
-    final theme = Theme.of(context);
-    final dark = theme.brightness == Brightness.dark;
-    final colors = theme.colorScheme.copyWith(
-      primary: dark ? const Color(0xFFFF8875) : const Color(0xFFBD321F),
-      surface: dark ? theme.colorScheme.surface : const Color(0xFFFAFAF9),
-      onSurface: dark ? theme.colorScheme.onSurface : const Color(0xFF111116),
-      onSurfaceVariant: dark
-          ? theme.colorScheme.onSurfaceVariant
-          : const Color(0xFF666666),
-      outlineVariant: dark
-          ? theme.colorScheme.outlineVariant
-          : const Color(0xFFE4E4E4),
-    );
-    return theme.copyWith(
-      colorScheme: colors,
-      scaffoldBackgroundColor: colors.surface,
-      textTheme: theme.textTheme.apply(
-        bodyColor: colors.onSurface,
-        displayColor: colors.onSurface,
-      ),
-    );
-  }
+  static ThemeData themeOf(BuildContext context) => Theme.of(context);
 
   @override
   State<RankingsScreen> createState() => _RankingsScreenState();
@@ -200,12 +178,13 @@ class _RankingsScreenState extends State<RankingsScreen> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final colors = Theme.of(context).colorScheme;
-          final scale = (constraints.maxWidth / 393).clamp(.8, 1.25);
-          final inset = 19 * scale;
+          const scale = 1.0;
+          const inset = 16.0;
           return Scaffold(
+            backgroundColor: colors.surface,
             appBar: AppBar(
               automaticallyImplyLeading: !widget.embedded,
-              toolbarHeight: 72 * scale,
+              toolbarHeight: 56,
               titleSpacing: inset,
               backgroundColor: colors.surface,
               foregroundColor: colors.onSurface,
@@ -215,9 +194,9 @@ class _RankingsScreenState extends State<RankingsScreen> {
               title: Text(
                 '排行榜',
                 style: TextStyle(
-                  fontSize: 28 * scale,
+                  fontSize: 18,
                   height: 1.25,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                   color: colors.onSurface,
                 ),
               ),
@@ -448,7 +427,7 @@ class _RankingTabs extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return SizedBox(
-      height: 35 * scale,
+      height: 48 * scale,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final tabWidth =

@@ -32,7 +32,7 @@ class AppUpdateBridge(private val activity: Activity, engine: FlutterEngine) {
                         }
                         result.success(mapOf(
                             "version" to info.versionName,
-                            "build" to (code - 2000).toString(),
+                            "build" to (if (activity.packageName.endsWith(".debug")) code else code - 2000).toString(),
                             "canInstall" to (activity.packageName == "com.duanju.duanju_app")
                         ))
                     }

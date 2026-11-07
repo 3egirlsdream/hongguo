@@ -17,19 +17,8 @@ abstract final class PlayerStyle {
   static double landscapeLift(double height) =>
       (height * .045).clamp(0.0, 36.0);
 
-  static ThemeData get panelTheme => AppTheme.light.copyWith(
-    colorScheme: AppTheme.light.colorScheme.copyWith(
-      primary: accent,
-      onPrimary: Colors.white,
-      primaryContainer: const Color(0xFFFFF0E2),
-      onPrimaryContainer: const Color(0xFFB84F00),
-      surface: Colors.white,
-      surfaceContainer: const Color(0xFFF6F6F6),
-      onSurface: const Color(0xFF181818),
-      onSurfaceVariant: const Color(0xFF999999),
-    ),
-    scaffoldBackgroundColor: Colors.white,
-  );
+  static ThemeData get panelTheme =>
+      AppTheme.light.copyWith(scaffoldBackgroundColor: Colors.white);
 }
 
 String playerFavoriteCount(String raw) {

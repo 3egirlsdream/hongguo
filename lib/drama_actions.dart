@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
+
 import 'follow_state.dart';
 import 'core_bridge.dart';
 import 'library_account_actions.dart';
@@ -51,11 +53,12 @@ Future<void> showDramaActions(
   ];
   final choice = await showDialog<String>(
     context: context,
-    builder: (context) => SimpleDialog(
+    builder: (context) => AppChoiceDialog(
       title: Text(drama.title, maxLines: 2, overflow: TextOverflow.ellipsis),
       children: [
         for (final entry in choices.indexed)
           SimpleDialogOption(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             onPressed: () => Navigator.pop(context, entry.$2.$1),
             child: Row(
               children: [
@@ -68,7 +71,7 @@ Future<void> showDramaActions(
             ),
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 10, 24, 8),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
           child: Text(
             '手动标记已看会保留真实播放进度。',
             style: Theme.of(context).textTheme.bodySmall,
@@ -132,17 +135,20 @@ class DramaActionButton extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) => IconButton.filledTonal(
+  Widget build(BuildContext context) => IconButton(
     key: ValueKey('drama-actions-${drama.id}'),
     tooltip: '${drama.title} · 更多操作',
     onPressed: onPressed,
-    icon: const Icon(Icons.more_horiz_rounded, size: 20),
+    icon: const Icon(
+      Icons.more_horiz_rounded,
+      size: 22,
+      shadows: [Shadow(color: Colors.black, blurRadius: 4)],
+    ),
     style: IconButton.styleFrom(
-      backgroundColor: Colors.black.withValues(alpha: .64),
       foregroundColor: Colors.white,
-      minimumSize: const Size(40, 40),
+      minimumSize: const Size(48, 48),
       padding: const EdgeInsets.all(8),
-      visualDensity: VisualDensity.compact,
+      visualDensity: VisualDensity.standard,
     ),
   );
 }

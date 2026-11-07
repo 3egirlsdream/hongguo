@@ -26,3 +26,5 @@ venv/
 !.env.template
 *.p12
 *.pfx
+
+.local/

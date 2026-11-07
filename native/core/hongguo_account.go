@@ -64,20 +64,21 @@ type hgAccountInput struct {
 	Watch           hgOfficialWatch `json:"watch"`
 }
 type hgOfficialAccount struct {
-	mu           sync.Mutex
-	operation    sync.Mutex
-	dir          string
-	downloader   *Downloader
-	disk         hgAccountDisk
-	attempt      *hgLoginAttempt
-	generation   uint64
-	cancel       context.CancelFunc
-	retry        time.Time
-	busy         bool
-	loginError   string
-	syncError    string
-	profileError string
-	library      hgOfficialLibrary
+	mu                   sync.Mutex
+	operation            sync.Mutex
+	reservationOperation sync.Mutex
+	dir                  string
+	downloader           *Downloader
+	disk                 hgAccountDisk
+	attempt              *hgLoginAttempt
+	generation           uint64
+	cancel               context.CancelFunc
+	retry                time.Time
+	busy                 bool
+	loginError           string
+	syncError            string
+	profileError         string
+	library              hgOfficialLibrary
 }
 
 var hgLocalProfileID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)

@@ -58,6 +58,7 @@ class AppFailure implements Exception {
 
 abstract class AppRepository {
   final accountStatus = ValueNotifier<Map<String, dynamic>>({});
+  final accountReservations = ValueNotifier<Map<String, bool>>({});
   final accountSyncMessage = ValueNotifier<String>('');
   final accountFavorites = ValueNotifier<Set<String>>({});
   bool get accountFavoritesLoaded => true;
@@ -236,6 +237,7 @@ class NativeRepository extends AppRepository {
       'logout',
       'queueProgress',
       'seasons',
+      'reserve',
     }.contains(command)) {
       return request();
     }
@@ -271,6 +273,7 @@ class NativeRepository extends AppRepository {
         _accountUID = uid;
         _favoritesLoaded = false;
         accountFavorites.value = {};
+        accountReservations.value = {};
       }
       final previous = accountStatus.value;
       if (result['loggedIn'] == true &&
@@ -294,7 +297,12 @@ class NativeRepository extends AppRepository {
       }
     }
     if (_accountEpoch == access?.profileEpoch && input['uid'] == _accountUID) {
-      if (command == 'favorites') {
+      if (command == 'reserve' && result['confirmed'] == true) {
+        accountReservations.value = {
+          ...accountReservations.value,
+          '${input['uid']}/${input['id']}': result['reserved'] == true,
+        };
+      } else if (command == 'favorites') {
         _favoritesLoaded = true;
         final ids = {
           for (final row in result['items'] as List? ?? [])

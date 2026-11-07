@@ -2,6 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+
+import 'app_design.dart';
+import 'widgets.dart';
+
 import 'package:flutter/services.dart';
 
 import 'core_bridge.dart';
@@ -115,7 +119,7 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
   Future<void> _remove(LocalMediaItem item) async {
     final yes = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('删除此媒体文件？'),
         content: const Text('将删除此成品文件。已单独保存的原分集不受影响。'),
         actions: [
@@ -173,7 +177,7 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
             ),
             if (library.busy)
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Column(
                   children: [
                     LinearProgressIndicator(
@@ -201,7 +205,11 @@ class _LocalMediaScreenState extends State<LocalMediaScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : items.isEmpty
-                  ? const Center(child: Text('本地成品会显示在这里，可直接播放和续播。'))
+                  ? const StatusPanel(
+                      icon: Icons.video_library_outlined,
+                      title: '还没有本地视频',
+                      message: '下载剧集后，可在这里合并、播放和续播。',
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                       itemCount: items.length,

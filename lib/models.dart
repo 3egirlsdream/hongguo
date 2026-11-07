@@ -187,6 +187,7 @@ class DramaSeason {
     required this.playable,
     required this.reservable,
     this.publishText = '',
+    this.reserved,
     this.next = false,
     this.label = '',
   });
@@ -195,6 +196,7 @@ class DramaSeason {
   final bool next;
   final bool playable;
   final bool reservable;
+  final bool? reserved;
   final String publishText;
   final String label;
   factory DramaSeason.fromJson(Map<String, dynamic> json) => DramaSeason(
@@ -203,6 +205,7 @@ class DramaSeason {
     next: json['next'] == true,
     playable: json['playable'] == true,
     reservable: json['reservable'] == true,
+    reserved: json['reserved'] as bool?,
     publishText: json['publishText'] as String? ?? '',
     label: json['label'] as String? ?? '',
   );

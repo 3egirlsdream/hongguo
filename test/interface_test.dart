@@ -45,10 +45,19 @@ void main() {
         await tester.pumpAndSettle();
         final menu = find.byKey(const ValueKey('download-queue-actions'));
         final local = find.byKey(const ValueKey('download-local-media'));
-        expect(
-          tester.getCenter(menu).dy,
-          closeTo(tester.getCenter(local).dy, 1),
-        );
+        if (layout.$1.width >= 360) {
+          expect(
+            tester.getCenter(menu).dy,
+            closeTo(tester.getCenter(local).dy, 1),
+          );
+        } else {
+          expect(local, findsNothing);
+          await tester.tap(menu);
+          await tester.pumpAndSettle();
+          expect(find.text('本地媒体与合并'), findsOneWidget);
+          tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+          await tester.pumpAndSettle();
+        }
         await tester.tap(find.text('短标题'));
         await tester.pumpAndSettle();
         expect(

@@ -159,6 +159,9 @@ func (c *hgAccountHTTP) reservationPage(ctx context.Context, mode string, offset
 	return result, nil
 }
 func (a *hgOfficialAccount) reservations(ctx context.Context, command string, input hgAccountInput) (any, error) {
+	if command == "reserve" {
+		return a.reserve(ctx, input)
+	}
 	if e := a.requireOwner(input.UID); e != nil {
 		return nil, e
 	}
@@ -180,6 +183,25 @@ func (a *hgOfficialAccount) reservations(ctx context.Context, command string, in
 		}
 		return result, nil
 	}
+	return nil, errors.New("无效的预约操作")
+}
+
+func (a *hgOfficialAccount) reserve(ctx context.Context, input hgAccountInput) (any, error) {
+	if !a.reservationOperation.TryLock() {
+		return nil, errors.New("预约正在提交，请稍候")
+	}
+	defer a.reservationOperation.Unlock()
+	if e := a.requireOwner(input.UID); e != nil {
+		return nil, e
+	}
+	a.mu.Lock()
+	if a.disk.Profile == nil || a.disk.Profile.UID != input.UID {
+		a.mu.Unlock()
+		return nil, errors.New("红果账号已变更，请重新预约")
+	}
+	c := hgNewAccountHTTP(a.downloader, hgCloneSession(a.disk.Session))
+	g := a.generation
+	a.mu.Unlock()
 	if !hgValidID(input.ID) {
 		return nil, errors.New("预约剧集身份无效")
 	}
@@ -187,39 +209,15 @@ func (a *hgOfficialAccount) reservations(ctx context.Context, command string, in
 	if input.Reserved {
 		op = 1
 	}
-	_, e = c.json(ctx, "/reading/bookapi/search/uncover_subscribe/v", http.MethodPost, nil, map[string]any{"item_id": json.Number(input.ID), "item_type": 1, "op_type": op, "wish_list_all_del": 0, "shark_param": map[string]any{"enter_from": "BulletActivity", "previous_page": "MainFragmentActivity", "page_list": "MainFragmentActivity,BulletActivity"}}, true)
+	_, e := c.json(ctx, "/reading/bookapi/search/uncover_subscribe/v", http.MethodPost, nil, map[string]any{"item_id": json.Number(input.ID), "item_type": 1, "op_type": op, "wish_list_all_del": 0, "shark_param": map[string]any{"enter_from": "BulletActivity", "previous_page": "MainFragmentActivity", "page_list": "MainFragmentActivity,BulletActivity"}}, true)
 	if e != nil {
 		return nil, e
 	}
-	found := false
-	for _, mode := range []string{"online", "upcoming"} {
-		offset := 0
-		cursor := ""
-		for page := 0; page < 100; page++ {
-			result, e := c.reservationPage(ctx, mode, offset, cursor, false, nil)
-			if e != nil {
-				return nil, errors.New("预约请求已发送，但暂不能确认是否生效，请刷新官方预约列表")
-			}
-			for _, row := range result["items"].([]hgReservation) {
-				if row.ID == input.ID {
-					found = true
-				}
-			}
-			if !result["hasMore"].(bool) {
-				break
-			}
-			if page == 99 {
-				return nil, errors.New("官方预约列表尚未读完，暂不能确认是否生效")
-			}
-			offset = result["offset"].(int)
-			cursor = result["cursor"].(string)
-		}
+	a.mu.Lock()
+	current := ctx.Err() == nil && a.generation == g && a.disk.Profile != nil && a.disk.Profile.UID == input.UID
+	a.mu.Unlock()
+	if !current {
+		return nil, errors.New("账号已变更，请刷新预约状态")
 	}
-	if e = a.persistClient(ctx, c, g); e != nil {
-		return nil, e
-	}
-	if found != input.Reserved {
-		return nil, errors.New("红果官方列表尚未确认预约状态，请稍后刷新")
-	}
-	return map[string]any{"id": input.ID, "reserved": found, "confirmed": true}, nil
+	return map[string]any{"id": input.ID, "reserved": input.Reserved, "confirmed": true}, nil
 }

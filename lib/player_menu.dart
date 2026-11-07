@@ -137,12 +137,23 @@ class _PlayerMenuState extends State<PlayerMenu> {
     };
     return Dialog(
       key: const ValueKey('player-menu'),
+      constraints: const BoxConstraints(maxWidth: 560),
       alignment: landscape ? Alignment.centerRight : Alignment.bottomCenter,
       insetPadding: const EdgeInsets.all(12),
       backgroundColor: colors.surface,
       child: SizedBox(
-        width: landscape ? math.min(440, size.width * .6) : 600,
-        height: landscape ? size.height : size.height * .72,
+        width: landscape ? math.min(400, size.width * .48) : 560,
+        height: switch (widget.section) {
+          PlayerMenuSection.speed => math.min(
+            size.height - 48,
+            300 * MediaQuery.textScalerOf(context).scale(14) / 14,
+          ),
+          PlayerMenuSection.quality => math.min(
+            size.height - 48,
+            220 * MediaQuery.textScalerOf(context).scale(14) / 14,
+          ),
+          _ => landscape ? size.height - 24 : size.height * .72,
+        },
         child: Column(
           children: [
             Padding(
@@ -220,8 +231,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           const SizedBox(height: 16),
         ],
         if (all || widget.section == PlayerMenuSection.speed) ...[
-          const Text('倍速'),
-          const SizedBox(height: 8),
+          if (all) ...[const Text('倍速'), const SizedBox(height: 8)],
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -244,7 +254,7 @@ class _PlayerMenuState extends State<PlayerMenu> {
           const SizedBox(height: 20),
         ],
         if (all || widget.section == PlayerMenuSection.quality) ...[
-          const Text('清晰度'),
+          if (all) const Text('清晰度'),
           const SizedBox(height: 8),
           Text(
             widget.local

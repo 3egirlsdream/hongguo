@@ -58,6 +58,7 @@ type hongguoOfficialSeason struct {
 	Next        bool        `json:"next"`
 	Playable    bool        `json:"playable"`
 	Reservable  bool        `json:"reservable"`
+	Reserved    *bool       `json:"reserved,omitempty"`
 	PublishText string      `json:"publishText"`
 	Label       string      `json:"label"`
 }
@@ -119,7 +120,13 @@ func parseHongguoOfficialSeasons(result map[string]any, current nativeDrama, cur
 				response.CurrentSeason = number
 			}
 			publish := hongguoPublishText(time.Now(), row)
-			work := hongguoOfficialSeason{Drama: drama, Number: number, Playable: playable, Reservable: reservable, PublishText: publish, Label: label}
+			var reserved *bool
+			if value, exists := row["online_subscribed"]; exists {
+				if state, err := hgPageFlag(value); err == nil {
+					reserved = &state
+				}
+			}
+			work := hongguoOfficialSeason{Reserved: reserved, Drama: drama, Number: number, Playable: playable, Reservable: reservable, PublishText: publish, Label: label}
 			response.RelatedWorks = append(response.RelatedWorks, work)
 			if number > 0 {
 				response.Seasons = append(response.Seasons, work)

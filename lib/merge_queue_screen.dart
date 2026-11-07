@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
+
 import 'core_bridge.dart';
 import 'local_store.dart';
 import 'media_library.dart';
@@ -71,11 +73,11 @@ class _MergeQueueScreenState extends State<MergeQueueScreen> {
       final accepted = await showDialog<bool>(
         context: context,
         builder: (context) => StatefulBuilder(
-          builder: (context, change) => AlertDialog(
+          builder: (context, change) => AppDialog(
             title: const Text('选择要合并的剧'),
             content: SizedBox(
               width: 520,
-              height: MediaQuery.sizeOf(context).height * .6,
+              height: MediaQuery.sizeOf(context).height * .4,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

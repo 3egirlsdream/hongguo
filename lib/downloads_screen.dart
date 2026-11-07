@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+import 'app_design.dart';
+
 import 'package:flutter/services.dart';
 
 import 'core_bridge.dart';
@@ -130,7 +133,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
       final completed = jobs.where((job) => job.completed).length;
       final accepted = await showDialog<bool>(
         context: context,
-        builder: (context) => AlertDialog(
+        builder: (context) => AppDialog(
           title: Text(completed > 0 ? '删除所选视频？' : '取消所选下载？'),
           content: Text(
             '共 ${jobs.length} 项${completed > 0 ? '，包含 $completed 个已下载视频' : ''}，文件也会删除。\n需要保留视频时，请选择“清理任务，保留视频”。',
@@ -275,7 +278,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, change) => AlertDialog(
+        builder: (context, change) => AppDialog(
           title: const Text('筛选下载合集'),
           content: SizedBox(
             width: 420,
@@ -384,33 +387,45 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         onPressed: () => setState(() => _selecting = true),
         icon: const Icon(Icons.checklist_rounded),
       ),
-      IconButton(
-        key: const ValueKey('download-local-media'),
-        tooltip: '本地媒体与合并',
-        onPressed: () => Navigator.push(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => LocalMediaScreen(
-              repository: widget.repository,
-              store: widget.store,
+      if (MediaQuery.sizeOf(context).width >= 360)
+        IconButton(
+          key: const ValueKey('download-local-media'),
+          tooltip: '本地媒体与合并',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => LocalMediaScreen(
+                repository: widget.repository,
+                store: widget.store,
+              ),
             ),
           ),
+          icon: const Icon(Icons.video_library_outlined),
         ),
-        icon: const Icon(Icons.video_library_outlined),
-      ),
     ],
     PopupMenuButton<String>(
       key: const ValueKey('download-queue-actions'),
       tooltip: '队列操作',
       enabled: !_busy,
       onSelected: (value) {
-        if (value == 'refresh') {
+        if (value == 'local') {
+          Navigator.push(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => LocalMediaScreen(
+                repository: widget.repository,
+                store: widget.store,
+              ),
+            ),
+          );
+        } else if (value == 'refresh') {
           _refresh();
         } else {
           _batch(value, _jobs);
         }
       },
       itemBuilder: (_) => const [
+        PopupMenuItem(value: 'local', child: Text('本地媒体与合并')),
         PopupMenuItem(value: 'pause', child: Text('全部暂停')),
         PopupMenuItem(value: 'resume', child: Text('全部继续')),
         PopupMenuItem(value: 'archive', child: Text('清理已完成任务，保留视频')),
@@ -620,7 +635,7 @@ class _DownloadsScreenState extends State<DownloadsScreen> {
         if (_expanded.contains(collection.drama.id)) ...collection.jobs,
       ],
     ];
-    final title = _selecting ? '已选 ${_selected.length} 项' : '下载合集';
+    final title = _selecting ? '已选 ${_selected.length} 项' : '下载';
     final actions = _titleActions(collections);
     final body = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

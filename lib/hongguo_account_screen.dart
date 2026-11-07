@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'app_design.dart';
+
 import 'package:flutter/services.dart';
 
 import 'core_bridge.dart';
@@ -489,7 +492,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   Future<void> _logout() async {
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('退出账号？'),
         content: const Text('本机观看记录和待同步进度会保留，再次登录此账号后可继续同步。'),
         actions: [
@@ -773,40 +776,78 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: AccountAvatar(url: '${p['avatarUrl'] ?? ''}'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  AccountAvatar(url: '${p['avatarUrl'] ?? ''}'),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          p['name'] as String? ?? '用户',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '红果号 ${p['publicId'] ?? p['uid']}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            p['name'] as String? ?? '用户',
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
-          Text('${p['phone'] ?? ''} · 红果号 ${p['publicId'] ?? p['uid']}'),
           if ((_status['profileError'] as String? ?? '').isNotEmpty)
             Text('资料更新暂未完成：${_status['profileError']}'),
           const SizedBox(height: 16),
-          ValueListenableBuilder<String>(
-            valueListenable: widget.repository.accountSyncMessage,
-            builder: (context, message, _) =>
-                Text(message.isEmpty ? '观看历史自动同步已开启' : message),
+          AppSection(
+            title: '观看记录同步',
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ValueListenableBuilder<String>(
+                      valueListenable: widget.repository.accountSyncMessage,
+                      builder: (context, message, _) =>
+                          Text(message.isEmpty ? '观看历史自动同步已开启' : message),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '待上传 ${intValue(_status['pending'])} 条进度',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '最近同步：${(DateTime.tryParse('${_status['lastSync']}')?.year ?? 0) >= 2000 ? DateTime.parse('${_status['lastSync']}').toLocal().toString() : '尚未同步'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if ((_status['syncError'] as String? ?? '').isNotEmpty)
+                      Text(
+                        _status['syncError'] as String,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
           ),
-          Text('待上传 ${intValue(_status['pending'])} 条进度'),
-          Text(
-            '最近同步：${(DateTime.tryParse('${_status['lastSync']}')?.year ?? 0) >= 2000 ? DateTime.parse('${_status['lastSync']}').toLocal().toString() : '尚未同步'}',
-          ),
-          if ((_status['syncError'] as String? ?? '').isNotEmpty)
-            Text(
-              _status['syncError'] as String,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          const SizedBox(height: 16),
           TextButton(
             onPressed: _busy ? null : _logout,
             child: const Text('退出账号'),
           ),
-          const Text(
-            '观看历史全自动同步。每集播完、切集或退出播放时自动上传，登录前的本机历史自动补传；未成功的记录保留并自动重试。删除本机记录不会删除云端历史。',
+          Text(
+            '观看历史全自动同步。每集播完、切集或退出播放时自动上传，未成功的记录会自动重试。删除本机记录不会删除云端历史。',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
         ],
       );
@@ -833,7 +874,10 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(verified ? '短信验证已通过' : '账号需要短信验证'),
+          Text(
+            verified ? '短信验证已通过' : '账号需要短信验证',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
           if (!verified) ...[
             const SizedBox(height: 8),
             const Text('请用登录手机号向以下号码发送本次指定的短信。发送后返回此页，将自动检查并完成登录。'),
@@ -866,10 +910,10 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       children: [
         const Text(
           '账号登录',
-          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
         ),
         const SizedBox(height: 8),
-        const Text('使用中国大陆手机号和短信验证码。官方会话与当前本地用户独立绑定。'),
+        const Text('使用手机号登录，同步追剧、观看历史和预约。'),
         const SizedBox(height: 16),
         TextField(
           controller: _phone,
@@ -930,25 +974,21 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     final accepted = await showModalBottomSheet<bool>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(drama.title, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text(date),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _busy || _loading
-                    ? null
-                    : () => Navigator.pop(context, true),
-                child: Text(row['reserved'] == true ? '取消预约' : '预约'),
-              ),
-            ],
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => AppSheet(
+        title: drama.title,
+        actions: [
+          FilledButton(
+            onPressed: _busy || _loading
+                ? null
+                : () => Navigator.pop(context, true),
+            child: Text(row['reserved'] == true ? '取消预约' : '预约'),
           ),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(date, style: Theme.of(context).textTheme.bodyMedium),
         ),
       ),
     );
@@ -1045,7 +1085,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   Widget build(BuildContext context) {
     final content = Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
+        constraints: BoxConstraints(maxWidth: widget.collections ? 960 : 680),
         child: !_active
             ? const Center(child: Text('本地用户已变更，请返回后重新打开。'))
             : AnimatedBuilder(
@@ -1071,8 +1111,18 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
                     Expanded(
                       child: !widget.collections
                           ? ListView(
-                              padding: const EdgeInsets.all(20),
-                              children: [_account()],
+                              padding: const EdgeInsets.all(16),
+                              children: [
+                                if (_logged)
+                                  _account()
+                                else
+                                  Card(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(16),
+                                      child: _account(),
+                                    ),
+                                  ),
+                              ],
                             )
                           : _tabs.index <= 1
                           ? _savedCollections()
@@ -1145,18 +1195,18 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       isScrollable: true,
       tabAlignment: TabAlignment.start,
       dividerColor: widget.embedded ? Colors.transparent : null,
-      indicator: widget.embedded ? const BoxDecoration() : null,
+
       labelColor: widget.embedded
-          ? Theme.of(context).colorScheme.onSurface
+          ? Theme.of(context).colorScheme.primary
           : null,
       unselectedLabelColor: widget.embedded
           ? Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: .7)
           : null,
       labelStyle: widget.embedded
-          ? const TextStyle(fontSize: 17, fontWeight: FontWeight.w500)
+          ? const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)
           : null,
       unselectedLabelStyle: widget.embedded
-          ? const TextStyle(fontSize: 17, fontWeight: FontWeight.w400)
+          ? const TextStyle(fontSize: 14, fontWeight: FontWeight.w400)
           : null,
       labelPadding: widget.embedded
           ? const EdgeInsets.symmetric(horizontal: 10)

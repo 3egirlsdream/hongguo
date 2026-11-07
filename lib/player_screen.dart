@@ -2174,6 +2174,8 @@ class _PlayerScreenState extends State<PlayerScreen>
               initialIndex: 0,
               repository: widget.repository,
               store: widget.store,
+              playerFactory: widget.playerFactory,
+              videoBuilder: widget.videoBuilder,
             ),
           ),
         ),

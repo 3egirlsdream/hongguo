@@ -65,10 +65,9 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (context, constraints) {
           final selecting = _selection.value;
           final wide = constraints.maxWidth >= 840;
-          final rankingActive = _tab == _rankingsTab;
           final appearance = widget.store.themeAppearance;
-          final blurredBars = appearance.blurBars && !wide && !rankingActive;
-          final floatingBar = appearance.floatingBar && !wide && !rankingActive;
+          final blurredBars = appearance.blurBars && !wide;
+          final floatingBar = appearance.floatingBar && !wide;
           final pages = <Widget>[
             RecommendationsScreen(
               key: ValueKey('recommendations-${widget.store.profileEpoch}'),
@@ -76,6 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
               store: widget.store,
               embedded: true,
               active: _tab == _homeTab,
+              onSearch: () => _changeTab(_searchTab),
             ),
             if (_visitedTabs.contains(_rankingsTab))
               RankingsScreen(
@@ -120,6 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           );
           final scaffold = Scaffold(
+            backgroundColor: Theme.of(context).colorScheme.surface,
             extendBody: floatingBar || blurredBars,
             body: SafeArea(
               bottom: false,
@@ -132,8 +133,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       labelType: NavigationRailLabelType.all,
                       destinations: const [
                         NavigationRailDestination(
-                          icon: Icon(Icons.explore_outlined),
-                          selectedIcon: Icon(Icons.explore),
+                          icon: Icon(Icons.home_outlined),
+                          selectedIcon: Icon(Icons.home_rounded),
                           label: Text('首页'),
                         ),
                         NavigationRailDestination(
@@ -161,33 +162,22 @@ class _HomeScreenState extends State<HomeScreen> {
             bottomNavigationBar: wide || selecting
                 ? null
                 : Theme(
-                    data: rankingActive
-                        ? RankingsScreen.themeOf(context)
-                        : Theme.of(context),
+                    data: Theme.of(context),
                     child: AppBottomNavigation(
                       selectedIndex: _tab,
                       onDestinationSelected: _changeTab,
-                      showSelectionDot: rankingActive,
                       floating: floatingBar,
                       blurred: blurredBars,
                       liquidGlass: floatingBar && appearance.liquidGlass,
                       destinations: [
                         NavigationDestination(
-                          icon: Icon(
-                            rankingActive
-                                ? Icons.home_outlined
-                                : Icons.explore_outlined,
-                          ),
-                          selectedIcon: const Icon(Icons.explore),
+                          icon: Icon(Icons.home_outlined),
+                          selectedIcon: const Icon(Icons.home_rounded),
                           label: '首页',
                         ),
                         NavigationDestination(
                           icon: const Icon(Icons.leaderboard_outlined),
-                          selectedIcon: Icon(
-                            rankingActive
-                                ? Icons.bar_chart_rounded
-                                : Icons.leaderboard_rounded,
-                          ),
+                          selectedIcon: Icon(Icons.leaderboard_rounded),
                           label: '排行榜',
                         ),
                         const NavigationDestination(

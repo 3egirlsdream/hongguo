@@ -43,11 +43,9 @@ class EpisodeButton extends StatelessWidget {
           color: current
               ? Theme.of(context).colorScheme.primary
               : Theme.of(context).colorScheme.outlineVariant,
-          width: compact ? 1.2 : 2,
+          width: 1,
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(compact ? 8 : 14),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
       child: Center(
         child: Row(
@@ -67,7 +65,7 @@ class EpisodeButton extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: compact ? 14 : 20,
+                  fontSize: compact ? 14 : 16,
                   color: played && !current
                       ? Theme.of(context).colorScheme.primary
                       : null,

@@ -104,96 +104,66 @@ class _MyScreenState extends State<MyScreen> {
   void _settings() =>
       _page(SettingsScreen(repository: widget.repository, store: widget.store));
 
-  Widget _stat(String value, String label, VoidCallback onTap) => SizedBox(
-    width: 60,
+  Widget _stat(String value, String label, VoidCallback onTap) => Expanded(
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: (MediaQuery.textScalerOf(context).scale(12) * 3 + 4).clamp(
-              40.0,
-              60.0,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                height: 1.2,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 18,
-                    height: 1.2,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.2,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
+            const SizedBox(height: 6),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ],
         ),
       ),
     ),
   );
 
-  Widget _shortcut(String title, String subtitle, VoidCallback action) =>
-      SizedBox(
-        width: 80,
-        child: Material(
-          color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(10),
-            onTap: action,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 56),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 11,
-                  vertical: 9,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.1,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        height: 1.1,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+  Widget _shortcut(
+    IconData icon,
+    String title,
+    String subtitle,
+    VoidCallback action,
+  ) => Expanded(
+    child: Tooltip(
+      message: '$title，$subtitle',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: action,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 22,
+                color: Theme.of(context).colorScheme.primary,
               ),
-            ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.onSurface),
+              ),
+            ],
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> _copyUID(String uid) async {
     await Clipboard.setData(ClipboardData(text: uid));
@@ -227,27 +197,14 @@ class _MyScreenState extends State<MyScreen> {
               headerSliverBuilder: (context, innerScrolled) => [
                 SliverToBoxAdapter(
                   child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: dark
-                          ? null
-                          : const LinearGradient(
-                              begin: Alignment.topRight,
-                              end: Alignment.bottomLeft,
-                              colors: [
-                                Color(0xFFE8F6F2),
-                                Color(0xFFF8F7F3),
-                                Color(0xFFF6F6F6),
-                              ],
-                              stops: [0, .35, .7],
-                            ),
-                    ),
+                    decoration: BoxDecoration(color: colors.surface),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           SizedBox(
-                            height: 44,
+                            height: 48,
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.end,
                               children: [
@@ -263,7 +220,7 @@ class _MyScreenState extends State<MyScreen> {
                                     dark
                                         ? Icons.light_mode_outlined
                                         : Icons.dark_mode_outlined,
-                                    size: 25,
+                                    size: 22,
                                   ),
                                   color: colors.onSurface,
                                 ),
@@ -275,7 +232,7 @@ class _MyScreenState extends State<MyScreen> {
                                   color: colors.onSurface,
                                   icon: const Icon(
                                     Icons.settings_outlined,
-                                    size: 25,
+                                    size: 22,
                                   ),
                                 ),
                               ],
@@ -307,7 +264,7 @@ class _MyScreenState extends State<MyScreen> {
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontSize: 20,
+                                          fontSize: 18,
                                           height: 1.25,
                                           fontWeight: FontWeight.w500,
                                           color: colors.onSurface,
@@ -338,8 +295,8 @@ class _MyScreenState extends State<MyScreen> {
                                               visualDensity:
                                                   VisualDensity.compact,
                                               constraints: const BoxConstraints(
-                                                minWidth: 28,
-                                                minHeight: 28,
+                                                minWidth: 48,
+                                                minHeight: 48,
                                               ),
                                               padding: const EdgeInsets.all(4),
                                               color: colors.onSurfaceVariant,
@@ -353,10 +310,17 @@ class _MyScreenState extends State<MyScreen> {
                                     ],
                                   ),
                                 ),
+                                TextButton(
+                                  onPressed: _accountPage,
+                                  child: Text(
+                                    logged ? '账号管理' : '立即登录',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           Row(
                             children: [
                               _stat(
@@ -374,58 +338,42 @@ class _MyScreenState extends State<MyScreen> {
                                 '已看完',
                                 () => _library(1),
                               ),
-                              const Spacer(),
-                              TextButton(
-                                onPressed: _accountPage,
-                                style: TextButton.styleFrom(
-                                  backgroundColor: dark
-                                      ? colors.surfaceContainer
-                                      : const Color(0xFFEFEFEF),
-                                  foregroundColor: colors.onSurface,
-                                  minimumSize: const Size(0, 30),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  textStyle: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(9),
-                                  ),
-                                ),
-                                child: Text(logged ? '账号管理' : '立即登录'),
-                              ),
                             ],
                           ),
                           const SizedBox(height: 16),
-                          SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              spacing: 8,
-                              children: [
-                                if (widget.store.canDownload)
-                                  _shortcut(
-                                    '下载',
-                                    '离线观看',
-                                    () => _page(
-                                      DownloadsScreen(
-                                        repository: widget.repository,
-                                        store: widget.store,
-                                      ),
+                          Row(
+                            children: [
+                              if (widget.store.canDownload)
+                                _shortcut(
+                                  Icons.download_outlined,
+                                  '下载',
+                                  '离线观看',
+                                  () => _page(
+                                    DownloadsScreen(
+                                      repository: widget.repository,
+                                      store: widget.store,
                                     ),
                                   ),
-                                _shortcut(
-                                  '追更',
-                                  '${widget.store.favorites.where((d) => widget.store.following(d.id)?.hasUpdates == true).length}部更新',
-                                  () => _library(0),
                                 ),
-                                _shortcut('预约', '待看新剧', () => _library(2)),
-                                _shortcut('上新', '即将上线', () => _library(3)),
-                                _shortcut('榜单', '热门好剧', widget.onRankings),
-                              ],
-                            ),
+                              _shortcut(
+                                Icons.bookmark_border_rounded,
+                                '追更',
+                                '查看更新',
+                                () => _library(0),
+                              ),
+                              _shortcut(
+                                Icons.notifications_none_rounded,
+                                '预约',
+                                '待看新剧',
+                                () => _library(2),
+                              ),
+                              _shortcut(
+                                Icons.calendar_today_outlined,
+                                '上新',
+                                '即将上线',
+                                () => _library(3),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -433,9 +381,11 @@ class _MyScreenState extends State<MyScreen> {
                   ),
                 ),
               ],
-              body: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(28),
+              body: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: colors.outlineVariant, width: .5),
+                  ),
                 ),
                 child: Material(
                   color: colors.surface,

@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 
 export 'app_build.dart';
 
-const appVersion = '0.2.111';
+const appVersion = '0.2.123';
 
 class AppDevice {
   const AppDevice({

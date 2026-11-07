@@ -80,10 +80,17 @@ void main() {
     await tester.tapAt(right);
     await tester.pump(const Duration(milliseconds: 80));
     await tester.tapAt(right);
-    await until(
-      () => player.state.position >= before + const Duration(seconds: 8),
-      'double tap forward',
+    await until(() => !player.state.playing, 'double tap pause');
+
+    expect(
+      (player.state.position - before).inMilliseconds.abs(),
+      lessThan(1500),
     );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tapAt(right);
+    await tester.pump(const Duration(milliseconds: 80));
+    await tester.tapAt(right);
+    await until(() => player.state.playing, 'double tap resume');
 
     await tester.fling(find.byType(Video), const Offset(0, -180), 900);
     await until(() => repository.resolved.last == 2, 'swipe next episode');

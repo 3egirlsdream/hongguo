@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'core_bridge.dart';
 import 'app_theme.dart';
+import 'app_design.dart';
 import 'local_store.dart';
 import 'profiles_screen.dart';
 import 'app_build.dart';
@@ -72,7 +73,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (!mounted) return;
         final accepted = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => AppDialog(
             title: const Text('恢复备份？'),
             content: Text(
               '包含 ${(data['profiles'] as List).length} 个用户。将替换本机的用户、追剧、观看记录和偏好设置；已下载视频保留。恢复后使用备份内的管理员密码登录。',
@@ -119,40 +120,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     onTap: _busy ? null : action,
   );
 
-  Widget _section(String title, List<Widget> rows) => Padding(
-    padding: const EdgeInsets.only(bottom: 24),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-          child: Semantics(
-            header: true,
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ),
-        Card(
-          margin: EdgeInsets.zero,
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            children: [
-              for (var index = 0; index < rows.length; index++) ...[
-                if (index > 0)
-                  const Divider(height: 1, indent: 56, endIndent: 16),
-                rows[index],
-              ],
-            ],
-          ),
-        ),
-      ],
-    ),
-  );
+  Widget _section(String title, List<Widget> rows) =>
+      AppSection(title: title, children: rows);
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -165,7 +134,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           top: false,
           child: Center(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 720),
+              constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
               child: ListView(
                 key: const PageStorageKey('settings-list'),
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
@@ -343,11 +312,12 @@ class _StorageScreenState extends State<StorageScreen> {
     if (!mounted) return;
     final parent = await showDialog<String>(
       context: context,
-      builder: (context) => SimpleDialog(
+      builder: (context) => AppChoiceDialog(
         title: const Text('选择下载位置'),
         children: [
           for (final entry in directories.entries)
             SimpleDialogOption(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               onPressed: () => Navigator.pop(context, entry.key),
               child: Text(entry.value),
             ),
@@ -357,7 +327,7 @@ class _StorageScreenState extends State<StorageScreen> {
     if (parent == null || !mounted) return;
     final yes = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('迁移已下载内容？'),
         content: Text(
           '将视频及本地成品迁移到：\n$parent\n\n下载会先暂停，复制成功后清理旧目录。请保证目标有足够空间，并在完成后继续下载。',
@@ -396,32 +366,61 @@ class _StorageScreenState extends State<StorageScreen> {
       appBar: AppBar(title: const Text('下载目录与空间')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             children: [
               if (_info != null) ...[
+                AppSection(
+                  title: '存储用量',
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.storage_outlined),
+                      title: Text(
+                        storageSize((_info!['bytes'] as num?)?.toInt() ?? 0),
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      subtitle: Text(
+                        '${_info!['files'] ?? 0} 个文件 · 可用 ${storageSize((_info!['free'] as num?)?.toInt() ?? -1)}',
+                      ),
+                    ),
+                  ],
+                ),
+                AppSection(
+                  title: '下载位置',
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.folder_outlined),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: SelectableText(
+                              _info!['directory'] as String? ?? '',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '复制路径',
+                            onPressed: () => Clipboard.setData(
+                              ClipboardData(
+                                text: _info!['directory'] as String? ?? '',
+                              ),
+                            ),
+                            icon: const Icon(Icons.copy_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
                 Text(
-                  '已使用 ${storageSize((_info!['bytes'] as num?)?.toInt() ?? 0)}',
-                  style: Theme.of(context).textTheme.headlineSmall,
+                  '删除不需要的下载分集或本地成品可释放空间。',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '剩余 ${storageSize((_info!['free'] as num?)?.toInt() ?? -1)} · ${_info!['files'] ?? 0} 个文件',
-                ),
-                const SizedBox(height: 24),
-                const Text('当前下载目录'),
-                const SizedBox(height: 8),
-                SelectableText(_info!['directory'] as String? ?? ''),
-                TextButton.icon(
-                  onPressed: () => Clipboard.setData(
-                    ClipboardData(text: _info!['directory'] as String? ?? ''),
-                  ),
-                  icon: const Icon(Icons.copy),
-                  label: const Text('复制路径'),
-                ),
-                const SizedBox(height: 20),
-                const Text('在下载页删除不需要的分集，在本地媒体页删除不需要的成品，可释放空间。'),
+                const SizedBox(height: 16),
               ],
               if (_busy || (_info == null && _error == null))
                 const Padding(

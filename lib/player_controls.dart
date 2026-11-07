@@ -81,12 +81,14 @@ class PlayerControls extends StatefulWidget {
 class _PlayerControlsState extends State<PlayerControls> {
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _hideTimer;
+  Timer? _clockTimer;
+  DateTime? _lastSurfaceTap;
+  Offset? _lastSurfacePosition;
   bool _visible = true;
   bool _suppressAutoPlaybackStart = false;
   bool _lastPlaying = false;
   double? _seekValue;
   bool get _locked => widget.locked;
-  double _doubleTapX = .5;
 
   @override
   void initState() {
@@ -125,6 +127,9 @@ class _PlayerControlsState extends State<PlayerControls> {
         }
       }),
     );
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && widget.fullscreen && _visible) setState(() {});
+    });
     _scheduleHide();
   }
 
@@ -186,13 +191,25 @@ class _PlayerControlsState extends State<PlayerControls> {
     _scheduleHide();
   }
 
-  void _tap() {
+  void _tap(Offset position) {
     if (_locked) {
       setState(() => _visible = true);
       return;
     }
     if (widget.interactions.suppressTap) return;
     widget.onFocusSurface();
+    final now = DateTime.now();
+    if (_lastSurfaceTap != null &&
+        _lastSurfacePosition != null &&
+        (position - _lastSurfacePosition!).distance < 48 &&
+        now.difference(_lastSurfaceTap!) < const Duration(milliseconds: 300)) {
+      _lastSurfaceTap = null;
+      if (widget.enabled) widget.onTogglePlayback();
+      _show();
+      return;
+    }
+    _lastSurfaceTap = now;
+    _lastSurfacePosition = position;
     setState(() => _visible = !_visible);
     _scheduleHide();
   }
@@ -207,6 +224,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   @override
   void dispose() {
     _hideTimer?.cancel();
+    _clockTimer?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
@@ -226,24 +244,7 @@ class _PlayerControlsState extends State<PlayerControls> {
       child: LayoutBuilder(
         builder: (context, constraints) => GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: _tap,
-          onDoubleTapDown: (details) {
-            _doubleTapX = constraints.maxWidth <= 0
-                ? .5
-                : details.localPosition.dx / constraints.maxWidth;
-          },
-          onDoubleTap: () {
-            if (!widget.enabled || widget.interactions.suppressTap) return;
-            if (_locked) return;
-            if (_doubleTapX < .3) {
-              widget.interactions.seek(-10);
-            } else if (_doubleTapX > .7) {
-              widget.interactions.seek(10);
-            } else {
-              widget.onTogglePlayback();
-            }
-            _show();
-          },
+          onTapUp: (details) => _tap(details.localPosition),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -275,9 +276,8 @@ class _PlayerControlsState extends State<PlayerControls> {
                 ignoring: !visible,
                 child: ExcludeFocus(
                   excluding: !visible,
-                  child: AnimatedOpacity(
+                  child: Opacity(
                     opacity: visible ? 1 : 0,
-                    duration: const Duration(milliseconds: 180),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
@@ -320,6 +320,19 @@ class _PlayerControlsState extends State<PlayerControls> {
                             position: position,
                             buffered: buffered,
                           ),
+                        if (!_locked && widget.immersive && widget.enabled)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: IconButton(
+                              key: const ValueKey('player-lock'),
+                              tooltip: '锁定播放控件',
+                              onPressed: _lock,
+                              icon: const Icon(
+                                Icons.lock_outline_rounded,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -354,7 +367,6 @@ class _PlayerControlsState extends State<PlayerControls> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _seekButton(-10),
                     IconButton(
                       key: const ValueKey('player-playback-toggle'),
                       tooltip: playing ? '暂停播放' : '开始播放',
@@ -370,22 +382,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                             : Icons.play_arrow_rounded,
                       ),
                     ),
-                    _seekButton(10),
                   ],
-                ),
-              ),
-            if (widget.enabled)
-              Positioned(
-                top: 56,
-                left: 8,
-                child: IconButton(
-                  key: const ValueKey('player-lock'),
-                  tooltip: '锁定播放控件',
-                  onPressed: _lock,
-                  icon: const Icon(
-                    Icons.lock_outline_rounded,
-                    color: Colors.white,
-                  ),
                 ),
               ),
           ],
@@ -414,13 +411,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                   alignment: const Alignment(0, -.05),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _seekButton(-10),
-                      const SizedBox(width: 12),
-                      _centerPlayback(playing, centerSize),
-                      const SizedBox(width: 12),
-                      _seekButton(10),
-                    ],
+                    children: [_centerPlayback(playing, centerSize)],
                   ),
                 ),
               ),
@@ -484,6 +475,14 @@ class _PlayerControlsState extends State<PlayerControls> {
           ),
         ),
       ),
+      if (widget.fullscreen) ...[
+        Text(
+          '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}',
+          key: const ValueKey('player-system-time'),
+          style: const TextStyle(color: Colors.white, fontSize: 14),
+        ),
+        const SizedBox(width: 12),
+      ],
       if (widget.onPush != null)
         _lanPushTool(const ValueKey('fullscreen-lan-push')),
       if (widget.enabled)
@@ -501,34 +500,16 @@ class _PlayerControlsState extends State<PlayerControls> {
     widget.onLockChanged(true);
   }
 
-  Widget _seekButton(int seconds) => IconButton(
-    key: ValueKey(seconds < 0 ? 'player-rewind' : 'player-forward'),
-    tooltip: seconds < 0 ? '后退 10 秒' : '快进 10 秒',
-    onPressed: () {
-      widget.interactions.seek(seconds);
-      _show();
-    },
-    color: Colors.white,
-    iconSize: 36,
-    icon: Icon(
-      seconds < 0 ? Icons.replay_10_rounded : Icons.forward_10_rounded,
-    ),
-  );
-
   Widget _centerPlayback(bool playing, double size) => Tooltip(
     message: playing ? '暂停播放' : '开始播放',
     child: Semantics(
       button: true,
       label: playing ? '暂停播放' : '开始播放',
       child: Material(
-        color: Colors.black.withValues(alpha: .55),
-        shape: CircleBorder(
-          side: BorderSide(color: Colors.white.withValues(alpha: .2)),
-        ),
+        color: Colors.transparent,
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           key: const ValueKey('player-playback-toggle'),
-          customBorder: const CircleBorder(),
           onTap: () {
             widget.onTogglePlayback();
             _show();
@@ -750,6 +731,17 @@ class _PlayerControlsState extends State<PlayerControls> {
         children: [
           if (widget.showDanmaku) ...[
             _danmakuTool(),
+            SizedBox(width: compact ? 2 : 10),
+          ],
+          if (widget.fullscreen) ...[
+            _chromeButton(
+              key: const ValueKey('player-fullscreen-episodes'),
+              tooltip: '选集',
+              onPressed: widget.enabled
+                  ? () => _panel(widget.onEpisodes)
+                  : null,
+              child: const Text('选集'),
+            ),
             SizedBox(width: compact ? 2 : 10),
           ],
           _dropdownTool(

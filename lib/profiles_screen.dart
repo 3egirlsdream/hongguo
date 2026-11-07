@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
+
 import 'local_profiles.dart';
 import 'local_store.dart';
 import 'app_build.dart';
@@ -51,7 +53,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         if (!mounted) return;
         final accepted = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (context) => AppDialog(
             title: const Text('从备份恢复用户与记录？'),
             content: const Text(
               '将使用这份备份替换损坏的用户配置、追剧、观看记录和偏好。建议先导出原始配置；已下载视频保留。',
@@ -143,9 +145,9 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
       appBar: AppBar(title: Text(widget.locked ? '解锁$appName' : '用户管理')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             children: [
               if (widget.store.configurationError != null) ...[
                 Text('需要恢复本地配置', style: Theme.of(context).textTheme.titleLarge),
@@ -173,7 +175,10 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
-                const Text('各用户的追剧和观看记录独立保存，下载文件由本机共享。'),
+                Text(
+                  '各用户的追剧和观看记录独立保存，下载文件由本机共享。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
                 if (!widget.store.locked && widget.store.profile.admin) ...[
                   const SizedBox(height: 12),
                   SwitchListTile(
@@ -273,7 +278,7 @@ class _PasswordDialogState extends State<_PasswordDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => AppDialog(
     title: Text('登录 ${widget.name}'),
     content: TextField(
       controller: _pin,
@@ -346,7 +351,7 @@ class _ProfileEditorState extends State<ProfileEditor> {
   Future<void> _delete() async {
     final yes = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('删除此用户？'),
         content: const Text('会同时删除该用户的追剧和观看记录。下载文件会保留。'),
         actions: [
@@ -375,9 +380,9 @@ class _ProfileEditorState extends State<ProfileEditor> {
     appBar: AppBar(title: Text(widget.profile == null ? '添加用户' : '编辑用户')),
     body: Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
+        constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           children: [
             TextField(
               controller: _name,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app_build.dart';
+import 'app_design.dart';
 import 'app_update.dart';
 
 class AboutScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class _AboutScreenState extends State<AboutScreen> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('打开链接失败：$error')));
+            .showSnackBar(const SnackBar(content: Text('暂时无法打开链接，请稍后重试')));
       }
     }
   }
@@ -35,53 +36,75 @@ class _AboutScreenState extends State<AboutScreen> {
     appBar: AppBar(title: const Text('关于$appName')),
     body: Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 720),
+        constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
         child: AnimatedBuilder(
           animation: updates,
           builder: (context, _) => ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              const ListTile(
-                leading: Icon(Icons.play_circle_outline_rounded, size: 40),
-                title: Text(appName),
-                subtitle: Text('开发与维护：3egirlsdream'),
-              ),
-              ListTile(
-                title: const Text('当前版本'),
-                subtitle: SelectableText(
-                  updates.installedVersion.isEmpty
-                      ? '正在读取…'
-                      : updates.installedVersion,
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.play_circle_outline_rounded,
+                      size: 36,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    title: Text(
+                      appName,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          updates.installedVersion.isEmpty
+                              ? updates.message == null
+                                    ? '正在读取版本…'
+                                    : '版本读取失败'
+                              : updates.installedVersion,
+                        ),
+                        const SizedBox(height: 4),
+                        const Text('开发与维护：3egirlsdream'),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.person_outline_rounded),
-                title: const Text('开发者主页'),
-                subtitle: const Text(developerUrl),
-                trailing: const Icon(Icons.open_in_new_rounded),
-                onTap: () => _open(developerUrl),
+              const SizedBox(height: 10),
+              Card(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.person_outline_rounded),
+                      title: const Text('开发者主页'),
+                      subtitle: const Text('3egirlsdream'),
+                      trailing: const Icon(Icons.open_in_new_rounded),
+                      onTap: () => _open(developerUrl),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.code_rounded),
+                      title: const Text('软件源码仓库'),
+                      subtitle: const Text('GitHub · hongguo'),
+                      trailing: const Icon(Icons.open_in_new_rounded),
+                      onTap: () => _open(appRepositoryUrl),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.download_outlined),
+                      title: const Text('下载最新版本'),
+                      subtitle: const Text('查看最新版本与更新内容'),
+                      trailing: const Icon(Icons.open_in_new_rounded),
+                      onTap: () => _open(appDownloadUrl),
+                    ),
+                  ],
+                ),
               ),
-              ListTile(
-                leading: const Icon(Icons.code_rounded),
-                title: const Text('软件源码仓库'),
-                subtitle: const Text(appRepositoryUrl),
-                trailing: const Icon(Icons.open_in_new_rounded),
-                onTap: () => _open(appRepositoryUrl),
-              ),
-              ListTile(
-                leading: const Icon(Icons.download_outlined),
-                title: const Text('下载最新版本'),
-                subtitle: const Text('始终打开最新 Release'),
-                trailing: const Icon(Icons.open_in_new_rounded),
-                onTap: () => _open(appDownloadUrl),
-              ),
-              const Divider(),
+              const SizedBox(height: 10),
               ListTile(
                 leading: const Icon(Icons.system_update_alt_rounded),
                 title: const Text('检查更新'),
-                subtitle: Text(
-                  updates.checking ? '正在查询最新版本…' : '从版本后台获取版本和下载地址',
-                ),
+                subtitle: Text(updates.checking ? '正在查询最新版本…' : '查询可用的新版本'),
                 onTap: updates.busy ? null : updates.check,
               ),
               if (updates.checking) const LinearProgressIndicator(),
@@ -138,12 +161,14 @@ class _AboutScreenState extends State<AboutScreen> {
                     ),
                   ),
                 ),
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  '当前发布 Android arm64 安装包。下载后自动打开系统安装界面；首次需允许安装此来源的应用，并确认安装。',
+              if (updates.installPermissionRequired)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '请允许安装此来源的应用，再继续安装。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
-              ),
             ],
           ),
         ),

@@ -16,11 +16,13 @@ class RecommendationsScreen extends StatefulWidget {
     required this.store,
     this.embedded = false,
     this.active = true,
+    this.onSearch,
   });
   final AppRepository repository;
   final LocalStore store;
   final bool embedded;
   final bool active;
+  final VoidCallback? onSearch;
 
   @override
   State<RecommendationsScreen> createState() => _RecommendationsScreenState();
@@ -211,21 +213,70 @@ class _RecommendationsScreenState extends State<RecommendationsScreen> {
     );
     final content = Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 8, 4),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '为你推荐',
-                  style: Theme.of(context).textTheme.headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w700),
-                ),
+        if (widget.embedded)
+          ColoredBox(
+            color: Theme.of(context).colorScheme.surface,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 4, 8),
+              child: Row(
+                children: [
+                  Text(
+                    '野果',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Material(
+                      color: Theme.of(context).colorScheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(24),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: widget.onSearch,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.search_rounded,
+                                size: 20,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '搜索好剧',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  refresh,
+                ],
               ),
-              refresh,
-            ],
+            ),
           ),
-        ),
+        if (widget.embedded)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '为你推荐',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+          ),
         if (_loading && _items.isNotEmpty)
           const LinearProgressIndicator(minHeight: 2),
         if (_error != null && _items.isNotEmpty)

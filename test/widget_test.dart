@@ -37,7 +37,11 @@ void main() {
       expect(find.text('会员测试剧'), findsNothing);
       expect(repository.detailCalls, 1);
       if (size.width < 960) {
+        expect(find.byKey(const ValueKey('episode-2')), findsOneWidget);
         await tester.ensureVisible(find.text('选集 · 2 集'));
+        await tester.tap(find.text('选集 · 2 集'));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('episode-2')), findsNothing);
         await tester.tap(find.text('选集 · 2 集'));
         await tester.pumpAndSettle();
         await tester.ensureVisible(find.byKey(const ValueKey('episode-2')));

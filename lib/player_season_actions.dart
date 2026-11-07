@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'core_bridge.dart';
 import 'drama_list_card.dart';
-import 'hongguo_account_screen.dart';
 import 'local_store.dart';
 import 'models.dart';
 
@@ -51,16 +50,27 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
   void initState() {
     super.initState();
     widget.repository.accountStatus.addListener(_accountChanged);
+    widget.repository.accountReservations.addListener(_reservationChanged);
     unawaited(_refresh());
   }
 
   @override
   void didUpdateWidget(PlayerSeasonActions oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.season.drama.id != oldWidget.season.drama.id) {
+    if (widget.season.drama.id != oldWidget.season.drama.id ||
+        widget.season.reserved != oldWidget.season.reserved) {
       _reserved = null;
       unawaited(_refresh());
     }
+  }
+
+  void _reservationChanged() {
+    if (!mounted) return;
+    final state = widget
+        .repository
+        .accountReservations
+        .value['$_uid/${widget.season.drama.sourceId}'];
+    if (state != null) setState(() => _reserved = state);
   }
 
   void _accountChanged() {
@@ -88,78 +98,53 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
       final uid = (status['profile'] as Map?)?['uid'] as String? ?? '';
       setState(() {
         _uid = uid;
-        _reserved = null;
+        _reserved = widget.season.reserved;
       });
       if (uid.isEmpty) return;
-      var offset = 0;
-      var cursor = '';
-      for (var page = 0; page < 100; page++) {
-        final result = await widget.repository.hongguoAccount('reservations', {
-          'uid': uid,
-          'mode': widget.season.playable ? 'online' : 'upcoming',
-          'offset': offset,
-          'cursor': cursor,
-        });
-        if (!_current(generation, epoch) || _uid != uid) return;
-        final rows = result['items'] as List? ?? const [];
-        if (rows.any(
-          (row) =>
-              (row as Map)['id'].toString() == widget.season.drama.sourceId,
-        )) {
-          setState(() => _reserved = true);
-          return;
-        }
-        if (result['hasMore'] != true) {
-          setState(() => _reserved = false);
-          return;
-        }
-        final next = intValue(result['offset']);
-        final nextCursor = result['cursor'] as String? ?? '';
-        if (next <= offset && nextCursor == cursor) return;
-        offset = next;
-        cursor = nextCursor;
-      }
+      _reservationChanged();
     } catch (_) {}
   }
 
   Future<void> _reserve() async {
     if (_busy) return;
-    if (_uid.isEmpty || _reserved == null) {
-      setState(() => _busy = true);
-      try {
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => HongguoAccountScreen(
-              repository: widget.repository,
-              store: widget.store,
-              initialTab: 2,
-              drama: widget.season.drama,
-            ),
-          ),
-        );
-        if (mounted) await _refresh();
-      } finally {
-        if (mounted) setState(() => _busy = false);
-      }
+    if (_uid.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('请先在「我的」登录红果账号，再返回预约')));
       return;
     }
     final epoch = widget.store.profileEpoch;
     final uid = _uid;
+    final sourceId = widget.season.drama.sourceId;
     final desired = _reserved != true;
     setState(() => _busy = true);
     try {
       final result = await widget.repository.hongguoAccount('reserve', {
         'uid': uid,
-        'id': widget.season.drama.sourceId,
+        'id': sourceId,
         'reserved': desired,
       });
-      if (!mounted || epoch != widget.store.profileEpoch || uid != _uid) return;
+      if (!mounted ||
+          epoch != widget.store.profileEpoch ||
+          uid != _uid ||
+          sourceId != widget.season.drama.sourceId) {
+        return;
+      }
       if (result['confirmed'] != true || result['reserved'] != desired) {
         throw AppFailure('预约状态尚未确认，请刷新后重试');
       }
+      widget.repository.accountReservations.value = {
+        ...widget.repository.accountReservations.value,
+        '$uid/$sourceId': desired,
+      };
       setState(() => _reserved = desired);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(desired ? '已确认预约' : '已确认取消预约')));
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 2),
+          content: Text(desired ? '已预约' : '已取消预约'),
+        ),
+      );
     } catch (error) {
       if (mounted && epoch == widget.store.profileEpoch) {
         ScaffoldMessenger.of(context)
@@ -174,6 +159,7 @@ class _PlayerSeasonActionsState extends State<PlayerSeasonActions> {
   void dispose() {
     _generation++;
     widget.repository.accountStatus.removeListener(_accountChanged);
+    widget.repository.accountReservations.removeListener(_reservationChanged);
     super.dispose();
   }
 

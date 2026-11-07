@@ -115,7 +115,19 @@ def prepare():
             'url': base + urllib.parse.quote(name, safe=''),
             'size': target.stat().st_size, 'sha256': file_hash(target),
         })
-    notes = f'野果 {version}\n\nAndroid arm64：使用固定 temp 发布证书，可覆盖安装。\n\n本次更新：\n- 修复红果播放接口返回空响应时部分剧集无法播放的问题；原有线路失败后使用注册游客设备取流，并在空响应时最多更新一次身份。\n\n验证：本地正式签名包已在 Android 手机上覆盖安装；此前失败的第 2 集和手动切换的第 3 集均开始播放，播放器报告 1080×1920。相关播放解析和游客身份恢复测试通过；更多剧集及网络环境尚待验证。GitHub Actions 构建时检查发布证书和 16 KiB 对齐。\n'
+    notes = (
+        f'野果 {version}\n\n'
+        'Android arm64：沿用正式发布签名，支持覆盖安装。\n\n'
+        '本次更新：\n'
+        '- 统一首页、排行榜、我的、设置、子页面及弹窗的字号、图标和间距，改善内容密度与页面衔接。\n'
+        '- 下一季预约与取消直接在当前页面完成，系列剧同步显示预约状态，减少额外列表查询带来的等待。\n'
+        '- 全屏增加系统时间、选集与倍速入口，点按画面立即显示或隐藏控件，修复竖屏锁定按钮与返回入口重叠。\n'
+        '- 详情默认展开选集，调整连接、手动同步和投屏面板尺寸，改进失败提示。\n'
+        '- 修复换季时旧页面销毁取消新季首集解析；双击统一暂停或继续，移除前后退按钮，横滑调整进度。\n\n'
+        '验证：192 项 Flutter 功能测试及 228 个合成布局检查通过；Android 手机走查 57 种界面状态。'
+        '原生播放器合成视频验证换季首集、横竖屏双击暂停与横滑进度通过。本机正式签名包已覆盖安装，账号登录态保留。平板、外屏、真实设备联机及短信风控流程尚未完成本轮实机验收。'
+        'GitHub Actions 另行核对发布证书和 16 KiB 对齐。\n'
+    )
     tags = subprocess.check_output(['git', 'tag', '--list', 'app-v*'], cwd=ROOT, text=True).splitlines()
     previous = [(tuple(map(int, match.groups())), tag) for tag in tags
                 if (match := TAG_PATTERN.fullmatch(tag)) and tuple(map(int, match.groups())) < version_key(version)]

@@ -20,7 +20,7 @@ SOURCE_FILES = {
     'analysis_options.yaml', 'l10n.yaml', 'flutter_launcher_icons.yaml',
 }
 EXCLUDED_DIRECTORIES = {
-    '.git', '.dart_tool', '.pub-cache', '.gradle', '.cxx', '.kotlin',
+    '.git', '.dart_tool', '.pub-cache', '.gradle', '.cxx', '.kotlin', '.local',
     '.idea', '.vscode', '__pycache__', '.pytest_cache', '.mypy_cache',
     '.ruff_cache', '.cache', '.venv', 'venv', 'build', 'dist', 'coverage',
     'node_modules', 'vendor', 'Pods', 'Carthage', 'DerivedData', '.swiftpm', 'xcuserdata',

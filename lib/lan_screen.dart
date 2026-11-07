@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'app_design.dart';
+
 import 'package:flutter/services.dart';
 
 import 'lan_controller.dart';
@@ -23,6 +26,7 @@ Future<T?> _lanPanel<T>(
       context: context,
       barrierDismissible: dismissible,
       builder: (_) => Dialog(
+        constraints: const BoxConstraints(maxWidth: 620),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(width: 620, height: height, child: child),
       ),
@@ -35,7 +39,7 @@ Future<T?> _lanPanel<T>(
     isDismissible: dismissible,
     enableDrag: dismissible,
     showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 720),
+    constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
     builder: (context) {
       final keyboard = MediaQuery.viewInsetsOf(context).bottom;
       final available = max(
@@ -62,6 +66,7 @@ Future<LanConnection?> chooseLanDevice(
   return _lanPanel<LanConnection>(
     context,
     _LanDevices(controller: controller, change: change),
+    maxHeight: controller.peers.isEmpty ? 440 : 620,
   );
 }
 
@@ -113,7 +118,7 @@ class _LanSyncScreenState extends State<LanSyncScreen> {
     final name = TextEditingController(text: link.deviceName);
     final value = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('设备名称'),
         content: TextField(
           controller: name,
@@ -164,6 +169,9 @@ class _LanSyncScreenState extends State<LanSyncScreen> {
           await _lanPanel<void>(
             context,
             _LanManual(controller: link),
+            maxHeight: (460 * MediaQuery.textScalerOf(context).scale(14) / 14)
+                .clamp(460.0, 640.0)
+                .toDouble(),
             dismissible: false,
           );
         }
@@ -188,7 +196,7 @@ class _LanSyncScreenState extends State<LanSyncScreen> {
         appBar: AppBar(title: const Text('追剧同步')),
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
               children: [
@@ -545,7 +553,7 @@ class _LanDevicesState extends State<_LanDevices> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 12, 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
             child: Row(
               children: [
                 Expanded(
@@ -578,10 +586,10 @@ class _LanDevicesState extends State<_LanDevices> {
                 ),
                 if (peers.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 28),
+                    padding: const EdgeInsets.symmetric(vertical: 20),
                     child: Column(
                       children: [
-                        const Icon(Icons.wifi_find_rounded, size: 48),
+                        const Icon(Icons.wifi_find_rounded, size: 36),
                         const SizedBox(height: 12),
                         Text(link.receiving ? '正在发现同一网络中的设备' : '正在开启设备互联'),
                         const SizedBox(height: 8),
@@ -660,7 +668,7 @@ class _LanDevicesState extends State<_LanDevices> {
                     child: const Text('连接'),
                   ),
                 ],
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -755,7 +763,7 @@ class _LanManualState extends State<_LanManual> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 12, 8),
+              padding: const EdgeInsets.fromLTRB(16, 0, 4, 4),
               child: Row(
                 children: [
                   Expanded(
@@ -921,9 +929,13 @@ class _LanConflicts extends StatelessWidget {
         appBar: AppBar(title: const Text('处理记录冲突')),
         body: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 720),
+            constraints: const BoxConstraints(maxWidth: AppDesign.formWidth),
             child: records.isEmpty
-                ? const Center(child: Text('没有待处理的冲突'))
+                ? const StatusPanel(
+                    icon: Icons.compare_arrows_rounded,
+                    title: '没有待处理的冲突',
+                    message: '两端记录一致时，无需手动处理。',
+                  )
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
                     itemCount: records.length,
@@ -1002,7 +1014,7 @@ class LanPushButton extends StatelessWidget {
             ? '推送'
             : '推送到 ${link.connection!.peer.name}',
         onPressed: onPressed,
-        constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
         padding: EdgeInsets.zero,
         iconSize: 22,
         icon: link.pushing
@@ -1038,7 +1050,9 @@ Future<void> showLanPush(
       stillCurrent: stillCurrent,
       onAccepted: onAccepted,
     ),
-    maxHeight: 560,
+    maxHeight: (380 * MediaQuery.textScalerOf(context).scale(14) / 14)
+        .clamp(380.0, 560.0)
+        .toDouble(),
   );
   if (link.pushing) await link.cancelPush();
 }
@@ -1079,7 +1093,7 @@ class _LanPushPanelState extends State<_LanPushPanel> {
           if (!mounted) return false;
           return await showDialog<bool>(
                 context: context,
-                builder: (context) => AlertDialog(
+                builder: (context) => AppDialog(
                   title: const Text('切换对方正在播放的内容？'),
                   content: Text('对方正在播放“$title”，继续后将接续本机当前分集。'),
                   actions: [
@@ -1113,21 +1127,21 @@ class _LanPushPanelState extends State<_LanPushPanel> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(16),
             child: Text('推送播放', style: Theme.of(context).textTheme.titleLarge),
           ),
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   Icon(
                     _success
                         ? Icons.cast_connected_rounded
                         : Icons.cast_rounded,
-                    size: 64,
+                    size: 44,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   Text(
                     widget.snapshot().drama.title,
                     textAlign: TextAlign.center,
@@ -1138,14 +1152,22 @@ class _LanPushPanelState extends State<_LanPushPanel> {
                     '接收设备 · ${widget.controller.connection?.peer.name ?? '连接已断开'}',
                     textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 16),
                   if (!_done) const LinearProgressIndicator(),
                   const SizedBox(height: 16),
                   Semantics(
                     liveRegion: true,
                     child: Text(
-                      widget.controller.pushMessage,
+                      widget.controller.pushMessage.replaceFirst(
+                        RegExp(r'^(?:Bad state|StateError|Exception):\s*'),
+                        '',
+                      ),
                       textAlign: TextAlign.center,
+                      style: _done && !_success
+                          ? TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            )
+                          : null,
                     ),
                   ),
                   if (!_done)
@@ -1167,7 +1189,13 @@ class _LanPushPanelState extends State<_LanPushPanel> {
                 if (!_done) await widget.controller.cancelPush();
                 if (context.mounted) Navigator.pop(context);
               },
-              child: Text(_done ? '完成' : '取消推送'),
+              child: Text(
+                _done
+                    ? _success
+                          ? '完成'
+                          : '关闭'
+                    : '取消推送',
+              ),
             ),
           ),
         ],

@@ -123,4 +123,64 @@ void main() {
     expect(repository.released, ['late']);
     await loader.close();
   });
+  test(
+    'disposing the previous season cannot cancel the new season resolver',
+    () async {
+      final repository = DeferredRepository();
+      final first = PlaybackLoader(repository);
+      final second = PlaybackLoader(repository);
+      final original = first.load(FixtureRepository.free, episode(1));
+      await tick();
+      repository.pending[1]!.complete(
+        const PlaybackPlan(
+          url: 'https://example.test/first.mp4',
+          session: 'first',
+        ),
+      );
+      await original;
+      final next = second.load(FixtureRepository.free, episode(2));
+      await tick();
+      final beforeDispose = repository.cancellations;
+      await first.close();
+      expect(repository.cancellations, beforeDispose);
+      repository.pending[2]!.complete(
+        const PlaybackPlan(
+          url: 'https://example.test/next.mp4',
+          session: 'next-season-first',
+        ),
+      );
+      expect((await next)?.session, 'next-season-first');
+      await second.close();
+      expect(repository.cancellations, beforeDispose + 1);
+      await second.close();
+      expect(repository.cancellations, beforeDispose + 1);
+    },
+  );
+
+  test('a superseded player releases its late plan without taking playback ownership back', () async {
+    final repository = DeferredRepository();
+    final first = PlaybackLoader(repository);
+    final second = PlaybackLoader(repository);
+    final old = first.load(FixtureRepository.free, episode(1));
+    await tick();
+    final next = second.load(FixtureRepository.free, episode(2));
+    await tick();
+    repository.pending[1]!.complete(
+      const PlaybackPlan(
+        url: 'https://example.test/late.mp4',
+        session: 'old-season-late',
+      ),
+    );
+    expect(await old, isNull);
+    expect(repository.released, ['old-season-late']);
+    await first.close();
+    repository.pending[2]!.complete(
+      const PlaybackPlan(
+        url: 'https://example.test/next.mp4',
+        session: 'new-season',
+      ),
+    );
+    expect((await next)?.session, 'new-season');
+    await second.close();
+  });
 }

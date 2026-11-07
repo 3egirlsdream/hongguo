@@ -1,6 +1,9 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+
+import 'app_design.dart';
+
 import 'package:flutter/services.dart';
 
 import 'models.dart';
@@ -42,7 +45,7 @@ class EpisodeRangeBar extends StatelessWidget {
             }
           }
 
-          return AlertDialog(
+          return AppDialog(
             title: const Text('跳转到指定集数'),
             content: TextField(
               controller: controller,
@@ -361,12 +364,12 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
         1,
         (value, episode) => max(value, episode.number.toString().length),
       );
-      final minimum = max(40.0, scale.scale(14) * digits * .62 + 22);
+      final minimum = max(48.0, scale.scale(14) * digits * .62 + 22);
       final columns = ((constraints.maxWidth - 12) / minimum).floor().clamp(
-        5,
+        3,
         10,
       );
-      final extent = max(34.0, scale.scale(14) + 18);
+      final extent = max(44.0, scale.scale(14) + 18);
       final target = max(
         0,
         widget.episodes.indexWhere(

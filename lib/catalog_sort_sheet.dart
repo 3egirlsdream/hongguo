@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'app_design.dart';
 import 'catalog_sort.dart';
 
 Future<CatalogView?> chooseCatalogView(
@@ -13,22 +14,23 @@ Future<CatalogView?> chooseCatalogView(
   builder: (context) {
     var selected = current;
     return StatefulBuilder(
-      builder: (context, update) => SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          0,
-          20,
-          20 + MediaQuery.viewInsetsOf(context).bottom,
-        ),
+      builder: (context, update) => AppSheet(
+        title: '排序与筛选',
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context, selected),
+            child: const Text('应用'),
+          ),
+        ],
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('排序与筛选', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 16),
+            Text('排序方式', style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              runSpacing: 8,
+              runSpacing: 4,
               children: [
                 for (final sort in CatalogSort.values)
                   ChoiceChip(
@@ -39,12 +41,12 @@ Future<CatalogView?> chooseCatalogView(
                   ),
               ],
             ),
-            const SizedBox(height: 24),
-            const Text('剧集状态'),
+            const SizedBox(height: 16),
+            Text('剧集状态', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
-              runSpacing: 8,
+              runSpacing: 4,
               children: [
                 for (final entry in const {
                   '': '全部',
@@ -61,18 +63,10 @@ Future<CatalogView?> chooseCatalogView(
                   ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
-              '排序和筛选作用于已加载的剧集；缺少排序资料的条目排在最后。',
+              '作用于已加载的剧集，缺少排序资料的条目排在最后。',
               style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.pop(context, selected),
-                child: const Text('应用'),
-              ),
             ),
           ],
         ),
