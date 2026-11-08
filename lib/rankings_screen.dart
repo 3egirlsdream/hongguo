@@ -6,6 +6,7 @@ import 'drama_list_card.dart';
 import 'local_store.dart';
 import 'ranking_models.dart';
 import 'widgets.dart';
+import 'swipe_tabs.dart';
 
 class RankingsScreen extends StatefulWidget {
   const RankingsScreen({
@@ -219,53 +220,45 @@ class _RankingsScreenState extends State<RankingsScreen> {
                 ),
               ],
             ),
-            body: SafeArea(
-              top: false,
-              child: Column(
-                children: [
-                  if (boards.isNotEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: inset),
-                      child: _RankingTabs(
-                        boards: boards,
-                        selected: _board?.id,
-                        scale: scale,
-                        onSelected: _select,
+            body: SwipeTabs(
+              key: const ValueKey('ranking-swipe-tabs'),
+              index: boards.indexWhere((board) => board.id == _board?.id),
+              count: boards.length,
+              onChanged: (index) => _select(boards[index]),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  children: [
+                    if (boards.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: inset),
+                        child: _RankingTabs(
+                          boards: boards,
+                          selected: _board?.id,
+                          scale: scale,
+                          onSelected: _select,
+                        ),
                       ),
-                    ),
-                  if (_board != null)
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(inset, 11 * scale, inset, 0),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _board!.description
-                                      .replaceAll('；', ' · ')
-                                      .replaceAll('。', '')
-                                      .trim(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12 * scale,
-                                    height: 1.35,
-                                    color: colors.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                              if (_updated.trim().isNotEmpty) ...[
-                                SizedBox(width: 10 * scale),
-                                ConstrainedBox(
-                                  constraints: BoxConstraints(
-                                    maxWidth: constraints.maxWidth * .32,
-                                  ),
+                    if (_board != null)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          inset,
+                          11 * scale,
+                          inset,
+                          0,
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
                                   child: Text(
-                                    _updated.trim(),
+                                    _board!.description
+                                        .replaceAll('；', ' · ')
+                                        .replaceAll('。', '')
+                                        .trim(),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.right,
                                     style: TextStyle(
                                       fontSize: 12 * scale,
                                       height: 1.35,
@@ -273,134 +266,156 @@ class _RankingsScreenState extends State<RankingsScreen> {
                                     ),
                                   ),
                                 ),
-                              ],
-                            ],
-                          ),
-                          SizedBox(height: 11 * scale),
-                          Divider(
-                            height: 1,
-                            thickness: .7,
-                            color: colors.outlineVariant,
-                          ),
-                        ],
-                      ),
-                    ),
-                  if (_loading && items.isNotEmpty)
-                    const LinearProgressIndicator(minHeight: 2),
-                  if (_error != null && items.isNotEmpty)
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: inset),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              _error!,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(color: colors.error),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: _loading || _more
-                                ? null
-                                : () => _load(more: _failedMore, force: true),
-                            child: const Text('重试'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  Expanded(
-                    child: _loading && items.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(inset),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const CircularProgressIndicator(),
-                                  if (_board?.source == 'hongguo') ...[
-                                    const SizedBox(height: 16),
-                                    const Text(
-                                      '正在获取榜单，数据未完整返回时会自动重试',
-                                      textAlign: TextAlign.center,
+                                if (_updated.trim().isNotEmpty) ...[
+                                  SizedBox(width: 10 * scale),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: constraints.maxWidth * .32,
                                     ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          )
-                        : items.isEmpty
-                        ? StatusPanel(
-                            title: _error == null ? '暂无榜单内容' : '榜单暂时无法加载',
-                            message: _error ?? '暂无可显示的榜单。',
-                            onRetry: _board == null
-                                ? _initialize
-                                : () => _load(force: true),
-                          )
-                        : RefreshIndicator(
-                            onRefresh: () => _load(force: true),
-                            child: ListView.separated(
-                              key: ValueKey('ranking-${_board!.id}'),
-                              controller: _scroll,
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: EdgeInsets.fromLTRB(
-                                inset,
-                                0,
-                                inset,
-                                16 * scale,
-                              ),
-                              itemCount: items.length + 1,
-                              separatorBuilder: (_, _) => Divider(
-                                height: 1,
-                                thickness: .7,
-                                color: colors.outlineVariant,
-                              ),
-                              itemBuilder: (context, index) {
-                                if (index == items.length) {
-                                  return Center(
-                                    child: _more
-                                        ? const Padding(
-                                            padding: EdgeInsets.all(16),
-                                            child: CircularProgressIndicator(),
-                                          )
-                                        : _hasMore
-                                        ? TextButton(
-                                            onPressed: () => _load(more: true),
-                                            child: const Text('加载更多'),
-                                          )
-                                        : Padding(
-                                            padding: const EdgeInsets.all(16),
-                                            child: Text(
-                                              '已显示全部榜单',
-                                              style: TextStyle(
-                                                color: colors.onSurfaceVariant,
-                                              ),
-                                            ),
-                                          ),
-                                  );
-                                }
-                                final item = items[index];
-                                return _RankingCard(
-                                  key: ValueKey(item.drama.id),
-                                  item: item,
-                                  repository: widget.repository,
-                                  scale: scale,
-                                  onTap: () => Navigator.push<void>(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => DetailScreen(
-                                        drama: item.drama,
-                                        repository: widget.repository,
-                                        store: widget.store,
+                                    child: Text(
+                                      _updated.trim(),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.right,
+                                      style: TextStyle(
+                                        fontSize: 12 * scale,
+                                        height: 1.35,
+                                        color: colors.onSurfaceVariant,
                                       ),
                                     ),
                                   ),
-                                );
-                              },
+                                ],
+                              ],
                             ),
-                          ),
-                  ),
-                ],
+                            SizedBox(height: 11 * scale),
+                            Divider(
+                              height: 1,
+                              thickness: .7,
+                              color: colors.outlineVariant,
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_loading && items.isNotEmpty)
+                      const LinearProgressIndicator(minHeight: 2),
+                    if (_error != null && items.isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: inset),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _error!,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: colors.error),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _loading || _more
+                                  ? null
+                                  : () => _load(more: _failedMore, force: true),
+                              child: const Text('重试'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Expanded(
+                      child: _loading && items.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(inset),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const CircularProgressIndicator(),
+                                    if (_board?.source == 'hongguo') ...[
+                                      const SizedBox(height: 16),
+                                      const Text(
+                                        '正在获取榜单，数据未完整返回时会自动重试',
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            )
+                          : items.isEmpty
+                          ? StatusPanel(
+                              title: _error == null ? '暂无榜单内容' : '榜单暂时无法加载',
+                              message: _error ?? '暂无可显示的榜单。',
+                              onRetry: _board == null
+                                  ? _initialize
+                                  : () => _load(force: true),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: () => _load(force: true),
+                              child: ListView.separated(
+                                key: ValueKey('ranking-${_board!.id}'),
+                                controller: _scroll,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: EdgeInsets.fromLTRB(
+                                  inset,
+                                  0,
+                                  inset,
+                                  16 * scale,
+                                ),
+                                itemCount: items.length + 1,
+                                separatorBuilder: (_, _) => Divider(
+                                  height: 1,
+                                  thickness: .7,
+                                  color: colors.outlineVariant,
+                                ),
+                                itemBuilder: (context, index) {
+                                  if (index == items.length) {
+                                    return Center(
+                                      child: _more
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(16),
+                                              child:
+                                                  CircularProgressIndicator(),
+                                            )
+                                          : _hasMore
+                                          ? TextButton(
+                                              onPressed: () =>
+                                                  _load(more: true),
+                                              child: const Text('加载更多'),
+                                            )
+                                          : Padding(
+                                              padding: const EdgeInsets.all(16),
+                                              child: Text(
+                                                '已显示全部榜单',
+                                                style: TextStyle(
+                                                  color:
+                                                      colors.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ),
+                                    );
+                                  }
+                                  final item = items[index];
+                                  return _RankingCard(
+                                    key: ValueKey(item.drama.id),
+                                    item: item,
+                                    repository: widget.repository,
+                                    scale: scale,
+                                    onTap: () => Navigator.push<void>(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => DetailScreen(
+                                          drama: item.drama,
+                                          repository: widget.repository,
+                                          store: widget.store,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                    ),
+                  ],
+                ),
               ),
             ),
           );

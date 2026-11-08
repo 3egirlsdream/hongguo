@@ -61,6 +61,9 @@ type nativeDrama struct {
 }
 
 type nativeInput struct {
+	PrepareOnly      bool   `json:"prepareOnly"`
+	MediaURL         string `json:"mediaUrl"`
+	MaxBytes         int64  `json:"maxBytes"`
 	TraceID          string `json:"traceId"`
 	trace            *playbackTrace
 	Profile          string                  `json:"profile"`
@@ -361,7 +364,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 		input.trace.downloader = engine.downloader
 		ctx = context.WithValue(ctx, playbackTimingKey{}, input.trace)
 	}
-	if input.Action == "danmaku" || input.Action == "preload" || input.Action == "prepareHandoff" || input.Session != "" && (input.Action == "catalog" || input.Action == "categories" || input.Action == "suggestions" || input.Action == "recommendations" || input.Action == "metadata") {
+	if input.Action == "warmPlayback" || input.Action == "danmaku" || input.Action == "preload" || input.Action == "prepareHandoff" || input.Session != "" && (input.Action == "catalog" || input.Action == "categories" || input.Action == "suggestions" || input.Action == "recommendations" || input.Action == "metadata") {
 		work, finish, err := engine.beginRead(ctx, input)
 		if err != nil {
 			return nil, err
@@ -382,6 +385,8 @@ func nativeDispatch(input nativeInput) (any, error) {
 		return engine.saveResourceSettings(input.Settings)
 	case "controlDownloadBatch":
 		return engine.downloads.controlBatchExpected(ctx, input.JobIDs, input.Command, input.ExpectedVersions)
+	case "warmPlayback":
+		return engine.nativeWarmPlayback(ctx, input)
 	case "preload":
 		return engine.nativePreload(ctx, input)
 	case "prepareHandoff":

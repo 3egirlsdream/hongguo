@@ -52,6 +52,13 @@ android {
         }
     }
 
+    buildTypes.configureEach {
+        if (name == "profile") {
+            applicationIdSuffix = ".profile"
+            signingConfig = signingConfigs.getByName(if (releaseKey.exists()) "release" else "debug")
+        }
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true

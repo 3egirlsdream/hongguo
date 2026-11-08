@@ -193,6 +193,16 @@ class MainActivity : FlutterActivity() {
             .also { channel ->
                 channel.setMethodCallHandler { call, result ->
                     when (call.method) {
+                        "playbackBudget" -> {
+                            val connection = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                            val power = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                            val battery = getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+                            val level = battery.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                            result.success(mapOf(
+                                "metered" to connection.isActiveNetworkMetered,
+                                "restricted" to (power.isPowerSaveMode || (level in 0..20 && !battery.isCharging))
+                            ))
+                        }
                         "deviceInfo" -> {
                             val version = packageManager.getPackageInfo(packageName, 0).versionName
                             result.success(mapOf(

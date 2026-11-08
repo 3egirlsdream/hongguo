@@ -4,12 +4,14 @@ import 'package:flutter/foundation.dart';
 
 import 'core_bridge.dart';
 import 'danmaku_models.dart';
+import 'danmaku_filter.dart';
 import 'models.dart';
 
 class DanmakuController extends ChangeNotifier {
   DanmakuController(this.repository, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
+  static final _owners = Expando<DanmakuController>('danmaku-request-owner');
   final AppRepository repository;
   final DateTime Function() _now;
   final _pages = <int, DanmakuPage>{};
@@ -30,6 +32,16 @@ class DanmakuController extends ChangeNotifier {
   int motionRevision = 0;
   int dataRevision = 0;
   List<DanmakuItem> items = const [];
+  DanmakuKeywordFilter _filter = DanmakuKeywordFilter(const []);
+  void setBlockedKeywords(List<String> keywords) {
+    if (_closed) return;
+    final filter = DanmakuKeywordFilter(keywords);
+    if (listEquals(_filter.keywords, filter.keywords)) return;
+    _filter = filter;
+    _rebuildItems();
+    notifyListeners();
+  }
+
   DateTime? _anchorTime;
   int _anchorPosition = 0;
   double _anchorRate = 1;
@@ -102,6 +114,8 @@ class DanmakuController extends ChangeNotifier {
   }) {
     if (_closed) return;
     final wasVisible = visible, wasMoving = moving;
+    final previousStatus = status;
+    final previousMotion = motionRevision;
     final previousRate = rate;
     final nextPosition = position.inMilliseconds.clamp(0, danmakuMaxDurationMs);
     final nextDuration = duration.inMilliseconds;
@@ -146,7 +160,9 @@ class DanmakuController extends ChangeNotifier {
         previousRate != rate) {
       _resetMotion();
     }
-    notifyListeners();
+    if (previousMotion != motionRevision || previousStatus != status) {
+      notifyListeners();
+    }
     _ensureWindow();
   }
 
@@ -186,7 +202,10 @@ class DanmakuController extends ChangeNotifier {
     _generation++;
     if (_pendingStart != null) {
       _pendingStart = null;
-      unawaited(repository.cancelDanmaku().catchError((Object _) {}));
+      if (identical(_owners[repository], this)) {
+        _owners[repository] = null;
+        unawaited(repository.cancelDanmaku().catchError((Object _) {}));
+      }
     }
   }
 
@@ -226,6 +245,7 @@ class DanmakuController extends ChangeNotifier {
     final plan = _plan!;
     final duration = durationMs;
     _pendingStart = start;
+    _owners[repository] = this;
     notifyListeners();
     try {
       final page = await repository.danmaku(
@@ -233,7 +253,11 @@ class DanmakuController extends ChangeNotifier {
         startMs: start,
         durationMs: duration,
       );
-      if (_closed || ticket != _generation) return;
+      if (_closed ||
+          ticket != _generation ||
+          !identical(_owners[repository], this)) {
+        return;
+      }
       if (page.episodeId != plan.danmakuId ||
           page.startMs != start ||
           page.nextMs <= start ||
@@ -255,7 +279,11 @@ class DanmakuController extends ChangeNotifier {
       }
       _rebuildItems();
     } catch (_) {
-      if (_closed || ticket != _generation) return;
+      if (_closed ||
+          ticket != _generation ||
+          !identical(_owners[repository], this)) {
+        return;
+      }
       _failures[start] = _now().add(const Duration(seconds: 15));
       while (_failures.length > 8) {
         _failures.remove(_failures.keys.first);
@@ -279,7 +307,9 @@ class DanmakuController extends ChangeNotifier {
       }
     }
     final sorted = deduplicateDanmaku(unique.values);
-    items = List.unmodifiable(sorted);
+    items = List.unmodifiable(
+      sorted.where((item) => !_filter.blocks(item.text)),
+    );
     dataRevision++;
   }
 

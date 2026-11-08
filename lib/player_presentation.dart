@@ -10,6 +10,7 @@ import 'catalog_sort.dart';
 import 'models.dart';
 import 'player_interactions.dart';
 import 'widgets.dart';
+import 'swipe_tabs.dart';
 
 abstract final class PlayerStyle {
   static const background = Color(0xFF22211D);
@@ -134,193 +135,202 @@ class _PlayerDetailsPanelState extends State<PlayerDetailsPanel> {
       final drama = widget.detail.drama;
       final colors = Theme.of(context).colorScheme;
       final count = playerFavoriteCount(drama.favoriteCount);
-      return Material(
-        color: colors.surface,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onVerticalDragStart: (_) => _drag = 0,
-              onVerticalDragUpdate: (event) => _drag += event.delta.dy,
-              onVerticalDragEnd: (event) {
-                if (_drag > 48 || (event.primaryVelocity ?? 0) > 250) {
-                  widget.onClose?.call();
-                }
-              },
-              child: Column(
-                children: [
-                  if (widget.onClose != null)
-                    SizedBox(
-                      height: 16,
-                      child: Center(
-                        child: Container(
-                          width: 38,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE5E5E5),
-                            borderRadius: BorderRadius.circular(2),
+      final tabs = [1, 0, 3, if (widget.onDownload != null) 2];
+      return SwipeTabs(
+        key: const ValueKey('player-details-swipe-tabs'),
+        index: tabs.indexOf(widget.tab),
+        count: tabs.length,
+        onChanged: (index) => widget.onTab(tabs[index]),
+        child: Material(
+          color: colors.surface,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragStart: (_) => _drag = 0,
+                onVerticalDragUpdate: (event) => _drag += event.delta.dy,
+                onVerticalDragEnd: (event) {
+                  if (_drag > 48 || (event.primaryVelocity ?? 0) > 250) {
+                    widget.onClose?.call();
+                  }
+                },
+                child: Column(
+                  children: [
+                    if (widget.onClose != null)
+                      SizedBox(
+                        height: 16,
+                        child: Center(
+                          child: Container(
+                            width: 38,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE5E5E5),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 4, 4, 6),
-                    child: Row(
-                      children: [
-                        if (!widget.sidebar)
-                          SizedBox(
-                            width: tiny
-                                ? 28
-                                : compact
-                                ? 30
-                                : 36,
-                            height: tiny
-                                ? 38
-                                : compact
-                                ? 42
-                                : 50,
-                            child: DramaCover(
-                              drama: drama,
-                              repository: widget.repository,
-                              radius: 7,
-                              showOverlay: false,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 4, 4, 6),
+                      child: Row(
+                        children: [
+                          if (!widget.sidebar)
+                            SizedBox(
+                              width: tiny
+                                  ? 28
+                                  : compact
+                                  ? 30
+                                  : 36,
+                              height: tiny
+                                  ? 38
+                                  : compact
+                                  ? 42
+                                  : 50,
+                              child: DramaCover(
+                                drama: drama,
+                                repository: widget.repository,
+                                radius: 7,
+                                showOverlay: false,
+                              ),
                             ),
-                          ),
-                        if (!widget.sidebar) const SizedBox(width: 10),
-                        Expanded(
-                          child: InkWell(
-                            onTap: () => widget.onTab(1),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  drama.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: compact ? 13 : 15,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                if (!tiny && !widget.sidebar) ...[
-                                  const SizedBox(height: 4),
+                          if (!widget.sidebar) const SizedBox(width: 10),
+                          Expanded(
+                            child: InkWell(
+                              onTap: () => widget.onTab(1),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
                                   Text(
-                                    [
-                                      if (widget.currentSeason > 0)
-                                        '第${widget.currentSeason}季',
-                                      '全${widget.detail.episodes.length}集',
-                                    ].join(' · '),
+                                    drama.title,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: colors.onSurfaceVariant,
-                                      fontSize: 12,
+                                      fontSize: compact ? 13 : 15,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
+                                  if (!tiny && !widget.sidebar) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      [
+                                        if (widget.currentSeason > 0)
+                                          '第${widget.currentSeason}季',
+                                        '全${widget.detail.episodes.length}集',
+                                      ].join(' · '),
+                                      style: TextStyle(
+                                        color: colors.onSurfaceVariant,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
                           ),
-                        ),
-                        if (widget.sidebar)
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                key: const ValueKey('player-sidebar-favorite'),
-                                tooltip: widget.followed ? '已收藏' : '收藏',
-                                onPressed: widget.favoriteBusy
-                                    ? null
-                                    : widget.onFavorite,
-                                constraints: const BoxConstraints(
-                                  minWidth: 40,
-                                  minHeight: 40,
-                                ),
-                                padding: const EdgeInsets.all(6),
-                                visualDensity: VisualDensity.compact,
-                                color: widget.followed
-                                    ? PlayerStyle.accent
-                                    : colors.onSurfaceVariant,
-                                icon: Icon(
-                                  widget.followed
-                                      ? Icons.star_rounded
-                                      : Icons.star_border_rounded,
-                                  size: 20,
-                                ),
-                              ),
-                              if (count.isNotEmpty)
-                                Text(
-                                  count,
+                          if (widget.sidebar)
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
                                   key: const ValueKey(
-                                    'player-sidebar-favorite-count',
+                                    'player-sidebar-favorite',
                                   ),
-                                  semanticsLabel: '收藏数 $count',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: colors.onSurfaceVariant,
+                                  tooltip: widget.followed ? '已收藏' : '收藏',
+                                  onPressed: widget.favoriteBusy
+                                      ? null
+                                      : widget.onFavorite,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 40,
+                                    minHeight: 40,
+                                  ),
+                                  padding: const EdgeInsets.all(6),
+                                  visualDensity: VisualDensity.compact,
+                                  color: widget.followed
+                                      ? PlayerStyle.accent
+                                      : colors.onSurfaceVariant,
+                                  icon: Icon(
+                                    widget.followed
+                                        ? Icons.star_rounded
+                                        : Icons.star_border_rounded,
+                                    size: 20,
                                   ),
                                 ),
-                            ],
-                          ),
-                        if (widget.onClose != null)
-                          IconButton(
-                            tooltip: '收起详情面板',
-                            onPressed: widget.onClose,
-                            icon: const Icon(Icons.close_rounded, size: 20),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(
-              height: math.max(
-                36.0,
-                MediaQuery.textScalerOf(context).scale(14) * 1.25 + 10,
-              ),
-              child: Row(
-                children: [
-                  const SizedBox(width: 8),
-                  for (final item in [(1, '简介'), (0, '选集'), (3, '系列剧')])
-                    Expanded(
-                      child: TextButton(
-                        key: ValueKey('player-detail-tab-${item.$1}'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: widget.tab == item.$1
-                              ? colors.onSurface
-                              : colors.onSurfaceVariant,
-                          minimumSize: const Size(0, 36),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          padding: const EdgeInsets.symmetric(horizontal: 4),
-                          textStyle: TextStyle(
-                            fontSize: 14,
-                            fontWeight: widget.tab == item.$1
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                          ),
-                        ),
-                        onPressed: () => widget.onTab(item.$1),
-                        child: Text(
-                          item.$2,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                                if (count.isNotEmpty)
+                                  Text(
+                                    count,
+                                    key: const ValueKey(
+                                      'player-sidebar-favorite-count',
+                                    ),
+                                    semanticsLabel: '收藏数 $count',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          if (widget.onClose != null)
+                            IconButton(
+                              tooltip: '收起详情面板',
+                              onPressed: widget.onClose,
+                              icon: const Icon(Icons.close_rounded, size: 20),
+                            ),
+                        ],
                       ),
                     ),
-                  if (widget.onDownload != null)
-                    IconButton(
-                      tooltip: '下载选集',
-                      color: widget.tab == 2
-                          ? colors.primary
-                          : colors.onSurfaceVariant,
-                      onPressed: widget.onDownload,
-                      icon: const Icon(Icons.download_outlined, size: 22),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            Expanded(child: widget.child),
-          ],
+              SizedBox(
+                height: math.max(
+                  36.0,
+                  MediaQuery.textScalerOf(context).scale(14) * 1.25 + 10,
+                ),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 8),
+                    for (final item in [(1, '简介'), (0, '选集'), (3, '系列剧')])
+                      Expanded(
+                        child: TextButton(
+                          key: ValueKey('player-detail-tab-${item.$1}'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: widget.tab == item.$1
+                                ? colors.onSurface
+                                : colors.onSurfaceVariant,
+                            minimumSize: const Size(0, 36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            textStyle: TextStyle(
+                              fontSize: 14,
+                              fontWeight: widget.tab == item.$1
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                          onPressed: () => widget.onTab(item.$1),
+                          child: Text(
+                            item.$2,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    if (widget.onDownload != null)
+                      IconButton(
+                        tooltip: '下载选集',
+                        color: widget.tab == 2
+                            ? colors.primary
+                            : colors.onSurfaceVariant,
+                        onPressed: widget.onDownload,
+                        icon: const Icon(Icons.download_outlined, size: 22),
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(child: widget.child),
+            ],
+          ),
         ),
       );
     },
@@ -386,41 +396,48 @@ class _PlayerEpisodePickerState extends State<PlayerEpisodePicker> {
             36.0,
             MediaQuery.textScalerOf(context).scale(13) + 16,
           ),
-          child: ListView.builder(
-            controller: _ranges,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            itemCount: (widget.episodes.length / 30).ceil(),
-            itemBuilder: (context, index) {
-              final start = index * 30;
-              final end = math.min(start + 30, widget.episodes.length) - 1;
-              return SizedBox(
-                width: rangeWidth,
-                child: TextButton(
-                  key: ValueKey('player-range-$index'),
-                  onPressed: () => setState(() => _located = start),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    minimumSize: const Size(0, 36),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    foregroundColor: index == range
-                        ? colors.onSurface
-                        : colors.onSurfaceVariant,
-                    textStyle: TextStyle(
-                      fontSize: 13,
-                      fontWeight: index == range
-                          ? FontWeight.w600
-                          : FontWeight.w400,
+          child: SwipeTabs(
+            key: const ValueKey('player-episode-ranges-swipe-tabs'),
+            index: range,
+            count: (widget.episodes.length / 30).ceil(),
+            onChanged: (index) => setState(() => _located = index * 30),
+            child: ListView.builder(
+              physics: const NeverScrollableScrollPhysics(),
+              controller: _ranges,
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              itemCount: (widget.episodes.length / 30).ceil(),
+              itemBuilder: (context, index) {
+                final start = index * 30;
+                final end = math.min(start + 30, widget.episodes.length) - 1;
+                return SizedBox(
+                  width: rangeWidth,
+                  child: TextButton(
+                    key: ValueKey('player-range-$index'),
+                    onPressed: () => setState(() => _located = start),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: index == range
+                          ? colors.onSurface
+                          : colors.onSurfaceVariant,
+                      textStyle: TextStyle(
+                        fontSize: 13,
+                        fontWeight: index == range
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                    child: Text(
+                      '${widget.episodes[start].number}–${widget.episodes[end].number}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  child: Text(
-                    '${widget.episodes[start].number}–${widget.episodes[end].number}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
         Expanded(

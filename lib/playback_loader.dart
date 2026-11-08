@@ -62,6 +62,12 @@ class PlaybackLoader {
     }
   }
 
+  Future<void> interrupt() async {
+    if (_closed) return;
+    _generation++;
+    if (_ownsPlayback) await repository.cancelPlayback();
+  }
+
   Future<void> close() async {
     if (_closed) return;
     _closed = true;

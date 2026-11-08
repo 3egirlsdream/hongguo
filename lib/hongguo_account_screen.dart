@@ -12,6 +12,7 @@ import 'models.dart';
 import 'playback_launch_screen.dart';
 import 'widgets.dart';
 import 'saved_library.dart';
+import 'swipe_tabs.dart';
 import 'detail_screen.dart';
 
 Future<void> openHongguoAccount(
@@ -1083,140 +1084,154 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
 
   @override
   Widget build(BuildContext context) {
-    final content = Center(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: widget.collections ? 960 : 680),
-        child: !_active
-            ? const Center(child: Text('本地用户已变更，请返回后重新打开。'))
-            : AnimatedBuilder(
-                animation: _tabs,
-                builder: (context, _) => Column(
-                  children: [
-                    if (_busy || _loading) const LinearProgressIndicator(),
-                    if (_error != null)
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: SelectableText(
-                          _error!,
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.error,
+    final content = SwipeTabs(
+      key: const ValueKey('account-swipe-tabs'),
+      index: _tabs.index,
+      count: _tabs.length,
+      enabled: widget.collections && _active,
+      onChanged: _tabs.animateTo,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: widget.collections ? 960 : 680),
+          child: !_active
+              ? const Center(child: Text('本地用户已变更，请返回后重新打开。'))
+              : AnimatedBuilder(
+                  animation: _tabs,
+                  builder: (context, _) => Column(
+                    children: [
+                      if (_busy || _loading) const LinearProgressIndicator(),
+                      if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: SelectableText(
+                            _error!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
                           ),
                         ),
-                      ),
-                    if (_message != null)
-                      Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Text(_message!),
-                      ),
-                    Expanded(
-                      child: !widget.collections
-                          ? ListView(
-                              padding: const EdgeInsets.all(16),
-                              children: [
-                                if (_logged)
-                                  _account()
-                                else
-                                  Card(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16),
-                                      child: _account(),
+                      if (_message != null)
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(_message!),
+                        ),
+                      Expanded(
+                        child: !widget.collections
+                            ? ListView(
+                                padding: const EdgeInsets.all(16),
+                                children: [
+                                  if (_logged)
+                                    _account()
+                                  else
+                                    Card(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16),
+                                        child: _account(),
+                                      ),
+                                    ),
+                                ],
+                              )
+                            : _tabs.index <= 1
+                            ? _savedCollections()
+                            : !_logged
+                            ? Center(
+                                child: FilledButton(
+                                  onPressed: _openAccount,
+                                  child: const Text('登录账号查看预约'),
+                                ),
+                              )
+                            : Column(
+                                children: [
+                                  if (widget.drama != null && _tabs.index == 2)
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        Text(widget.drama!.title),
+                                        TextButton(
+                                          onPressed: _busy || _loading
+                                              ? null
+                                              : () => _reserve({
+                                                  'id':
+                                                      widget
+                                                          .drama!
+                                                          .sourceId
+                                                          .isEmpty
+                                                      ? widget.drama!.id
+                                                            .split(':')
+                                                            .last
+                                                      : widget.drama!.sourceId,
+                                                  'reserved': false,
+                                                }),
+                                          child: const Text('预约本剧'),
+                                        ),
+                                        TextButton(
+                                          onPressed: _busy || _loading
+                                              ? null
+                                              : () => _reserve({
+                                                  'id':
+                                                      widget
+                                                          .drama!
+                                                          .sourceId
+                                                          .isEmpty
+                                                      ? widget.drama!.id
+                                                            .split(':')
+                                                            .last
+                                                      : widget.drama!.sourceId,
+                                                  'reserved': true,
+                                                }),
+                                          child: const Text('取消本剧预约'),
+                                        ),
+                                      ],
+                                    ),
+                                  Expanded(
+                                    child: RefreshIndicator(
+                                      onRefresh: _load,
+                                      child: _reservationList(),
                                     ),
                                   ),
-                              ],
-                            )
-                          : _tabs.index <= 1
-                          ? _savedCollections()
-                          : !_logged
-                          ? Center(
-                              child: FilledButton(
-                                onPressed: _openAccount,
-                                child: const Text('登录账号查看预约'),
+                                ],
                               ),
-                            )
-                          : Column(
-                              children: [
-                                if (widget.drama != null && _tabs.index == 2)
-                                  Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      Text(widget.drama!.title),
-                                      TextButton(
-                                        onPressed: _busy || _loading
-                                            ? null
-                                            : () => _reserve({
-                                                'id':
-                                                    widget
-                                                        .drama!
-                                                        .sourceId
-                                                        .isEmpty
-                                                    ? widget.drama!.id
-                                                          .split(':')
-                                                          .last
-                                                    : widget.drama!.sourceId,
-                                                'reserved': false,
-                                              }),
-                                        child: const Text('预约本剧'),
-                                      ),
-                                      TextButton(
-                                        onPressed: _busy || _loading
-                                            ? null
-                                            : () => _reserve({
-                                                'id':
-                                                    widget
-                                                        .drama!
-                                                        .sourceId
-                                                        .isEmpty
-                                                    ? widget.drama!.id
-                                                          .split(':')
-                                                          .last
-                                                    : widget.drama!.sourceId,
-                                                'reserved': true,
-                                              }),
-                                        child: const Text('取消本剧预约'),
-                                      ),
-                                    ],
-                                  ),
-                                Expanded(
-                                  child: RefreshIndicator(
-                                    onRefresh: _load,
-                                    child: _reservationList(),
-                                  ),
-                                ),
-                              ],
-                            ),
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
-    final tabs = TabBar(
-      controller: _tabs,
-      isScrollable: true,
-      tabAlignment: TabAlignment.start,
-      dividerColor: widget.embedded ? Colors.transparent : null,
+    final tabs = SwipeTabs(
+      index: _tabs.index,
+      count: _tabs.length,
+      onChanged: _tabs.animateTo,
+      child: TabBar(
+        physics: const NeverScrollableScrollPhysics(),
+        controller: _tabs,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        dividerColor: widget.embedded ? Colors.transparent : null,
 
-      labelColor: widget.embedded
-          ? Theme.of(context).colorScheme.primary
-          : null,
-      unselectedLabelColor: widget.embedded
-          ? Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: .7)
-          : null,
-      labelStyle: widget.embedded
-          ? const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)
-          : null,
-      unselectedLabelStyle: widget.embedded
-          ? const TextStyle(fontSize: 14, fontWeight: FontWeight.w400)
-          : null,
-      labelPadding: widget.embedded
-          ? const EdgeInsets.symmetric(horizontal: 10)
-          : null,
-      tabs: const [
-        Tab(text: '追剧'),
-        Tab(text: '历史'),
-        Tab(text: '预约'),
-        Tab(text: '上新预约'),
-      ],
+        labelColor: widget.embedded
+            ? Theme.of(context).colorScheme.primary
+            : null,
+        unselectedLabelColor: widget.embedded
+            ? Theme.of(context).colorScheme.onSurfaceVariant
+                  .withValues(alpha: .7)
+            : null,
+        labelStyle: widget.embedded
+            ? const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)
+            : null,
+        unselectedLabelStyle: widget.embedded
+            ? const TextStyle(fontSize: 14, fontWeight: FontWeight.w400)
+            : null,
+        labelPadding: widget.embedded
+            ? const EdgeInsets.symmetric(horizontal: 10)
+            : null,
+        tabs: const [
+          Tab(text: '追剧'),
+          Tab(text: '历史'),
+          Tab(text: '预约'),
+          Tab(text: '上新预约'),
+        ],
+      ),
     );
     if (widget.embedded) {
       return Column(
@@ -1248,7 +1263,12 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.collections ? '我的片单' : '账号与同步'),
-        bottom: widget.collections ? tabs : null,
+        bottom: widget.collections
+            ? PreferredSize(
+                preferredSize: const Size.fromHeight(48),
+                child: tabs,
+              )
+            : null,
       ),
       body: content,
     );

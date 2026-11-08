@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'background_executor.dart';
 import 'local_profiles.dart';
 import 'local_snapshot.dart';
 import 'models.dart';
@@ -15,6 +16,9 @@ import 'hongguo_series.dart';
 import 'lan_sync_models.dart';
 
 part 'local_store_sync.dart';
+
+Map<String, Object> _encodeWatchValues(Map<String, Object> values) =>
+    values.map((key, value) => MapEntry(key, jsonEncode(value)));
 
 class LocalStore extends ChangeNotifier {
   /// [pinHasher] 可注入，便于测试替换掉默认的 isolate 哈希实现。
@@ -615,22 +619,51 @@ class LocalStore extends ChangeNotifier {
       }
       final progress = episodeProgress.values.toList()
         ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-      await _commit({
-        _key('episodeProgress'): jsonEncode(
-          progress.take(5000).map(_episodeProgressJson).toList(),
-        ),
-        _key('playedEpisodes'): jsonEncode(played),
-        _key('history'): jsonEncode(
-          sorted.take(300).map((entry) => entry.toJson()).toList(),
-        ),
+      final raw = <String, Object>{
+        _key('episodeProgress'): progress
+            .take(5000)
+            .map(_episodeProgressJson)
+            .toList(),
+        _key('playedEpisodes'): played,
+        _key('history'): sorted
+            .take(300)
+            .map((entry) => entry.toJson())
+            .toList(),
         if (following != null) ...{
-          _key('followStates'): _encodeFollowStates(states),
-          _key('favorites'): jsonEncode(
-            favorites.values.map((entry) => entry.toJson()).toList(),
+          _key('followStates'): states.map(
+            (key, value) => MapEntry(key, value.toJson()),
           ),
+          _key('favorites'): favorites.values
+              .map((entry) => entry.toJson())
+              .toList(),
         },
-      }, syncUrgent: false);
-      _loadLibrary();
+      };
+      final changes = progress.length > 100
+          ? await BackgroundExecutor.shared.run(_encodeWatchValues, raw)
+          : _encodeWatchValues(raw);
+      if (epoch != _epoch) return;
+      await _commit(changes, syncUrgent: false);
+      _lanDocumentCache = null;
+      _history
+        ..clear()
+        ..addEntries(
+          sorted.take(300).map((entry) => MapEntry(entry.drama.id, entry)),
+        );
+      _episodeProgress
+        ..clear()
+        ..addEntries(
+          progress
+              .take(5000)
+              .map((entry) => MapEntry(_episodeProgressKey(entry), entry)),
+        );
+      if (following != null) {
+        _followStates
+          ..clear()
+          ..addAll(states);
+        _favorites
+          ..clear()
+          ..addAll(favorites);
+      }
       _notify();
     });
   }

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 
 import 'models.dart';
 import 'episode_button.dart';
+import 'swipe_tabs.dart';
 
 const episodePageSize = 50;
 
@@ -215,101 +216,110 @@ class _EpisodeBrowserState extends State<EpisodeBrowser> {
     _page = _page.clamp(0, max(0, (widget.episodes.length - 1) ~/ pageSize));
     final start = _page * pageSize;
     final visible = widget.episodes.skip(start).take(pageSize).toList();
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        EpisodeRangeBar(
-          episodes: widget.episodes,
-          page: _page,
-          title: widget.title,
-          currentNumber: widget.currentNumber,
-          onLocate: (index) => setState(() {
-            _page = index ~/ episodePageSize;
-            _located = widget.episodes[index].number;
-          }),
-        ),
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final digits = visible.fold<int>(
-                1,
-                (value, episode) =>
-                    max(value, episode.number.toString().length),
-              );
-              final scale = MediaQuery.textScalerOf(context);
-              final columns =
-                  ((constraints.maxWidth - (widget.compact ? 8 : 36)) /
-                          max(
-                            widget.compact ? 64 : 82,
-                            scale.scale(widget.compact ? 18 : 20) *
-                                    digits *
-                                    .65 +
-                                (widget.compact ? 28 : 40),
-                          ))
-                      .floor()
-                      .clamp(widget.compact ? 4 : 1, 12);
-              final extent = max(
-                widget.compact ? 46.0 : 56.0,
-                scale.scale(widget.compact ? 18 : 20) +
-                    (widget.compact ? 24 : 30),
-              );
-              final target = max(
-                0,
-                visible.indexWhere(
-                  (episode) =>
-                      episode.number == (_located ?? widget.currentNumber),
-                ),
-              );
-              final layout =
-                  '$_page:$_located:${widget.currentNumber}:$columns:$extent:${constraints.maxHeight}';
-              if (layout != _layout) {
-                _layout = layout;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted || !_scroll.hasClients || _layout != layout) {
-                    return;
-                  }
-                  _scroll.jumpTo(
-                    (18 +
-                            target ~/ columns * (extent + 8) -
-                            constraints.maxHeight / 2 +
-                            extent / 2)
-                        .clamp(0.0, _scroll.position.maxScrollExtent),
-                  );
-                });
-              }
-              return GridView.builder(
-                key: ValueKey('episode-page-$_page-$_located'),
-                controller: _scroll,
-                itemCount: visible.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: columns,
-                  mainAxisExtent: extent,
-                  mainAxisSpacing: widget.compact ? 6 : 8,
-                  crossAxisSpacing: widget.compact ? 6 : 8,
-                ),
-                padding: widget.compact
-                    ? const EdgeInsets.fromLTRB(4, 4, 4, 12)
-                    : const EdgeInsets.fromLTRB(18, 2, 18, 18),
-                itemBuilder: (_, index) {
-                  final episode = visible[index];
-                  return EpisodeButton(
-                    key: ValueKey('${widget.keyPrefix}-${episode.number}'),
-                    number: episode.number,
-                    vip: episode.vip,
-                    played: widget.playedNumbers.contains(episode.number),
-                    showPlaybackState: widget.showPlaybackState,
-                    compact: widget.compact,
-                    current:
-                        widget.selectedNumbers?.contains(episode.number) ??
-                        episode.number == widget.currentNumber,
-                    onPressed: () => widget.onSelected(start + index),
-                  );
-                },
-              );
-            },
+    return SwipeTabs(
+      key: const ValueKey('episode-pages-swipe-tabs'),
+      index: _page,
+      count: (widget.episodes.length / pageSize).ceil(),
+      onChanged: (page) => setState(() {
+        _page = page;
+        _located = null;
+      }),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          EpisodeRangeBar(
+            episodes: widget.episodes,
+            page: _page,
+            title: widget.title,
+            currentNumber: widget.currentNumber,
+            onLocate: (index) => setState(() {
+              _page = index ~/ episodePageSize;
+              _located = widget.episodes[index].number;
+            }),
           ),
-        ),
-      ],
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final digits = visible.fold<int>(
+                  1,
+                  (value, episode) =>
+                      max(value, episode.number.toString().length),
+                );
+                final scale = MediaQuery.textScalerOf(context);
+                final columns =
+                    ((constraints.maxWidth - (widget.compact ? 8 : 36)) /
+                            max(
+                              widget.compact ? 64 : 82,
+                              scale.scale(widget.compact ? 18 : 20) *
+                                      digits *
+                                      .65 +
+                                  (widget.compact ? 28 : 40),
+                            ))
+                        .floor()
+                        .clamp(widget.compact ? 4 : 1, 12);
+                final extent = max(
+                  widget.compact ? 46.0 : 56.0,
+                  scale.scale(widget.compact ? 18 : 20) +
+                      (widget.compact ? 24 : 30),
+                );
+                final target = max(
+                  0,
+                  visible.indexWhere(
+                    (episode) =>
+                        episode.number == (_located ?? widget.currentNumber),
+                  ),
+                );
+                final layout =
+                    '$_page:$_located:${widget.currentNumber}:$columns:$extent:${constraints.maxHeight}';
+                if (layout != _layout) {
+                  _layout = layout;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted || !_scroll.hasClients || _layout != layout) {
+                      return;
+                    }
+                    _scroll.jumpTo(
+                      (18 +
+                              target ~/ columns * (extent + 8) -
+                              constraints.maxHeight / 2 +
+                              extent / 2)
+                          .clamp(0.0, _scroll.position.maxScrollExtent),
+                    );
+                  });
+                }
+                return GridView.builder(
+                  key: ValueKey('episode-page-$_page-$_located'),
+                  controller: _scroll,
+                  itemCount: visible.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    mainAxisExtent: extent,
+                    mainAxisSpacing: widget.compact ? 6 : 8,
+                    crossAxisSpacing: widget.compact ? 6 : 8,
+                  ),
+                  padding: widget.compact
+                      ? const EdgeInsets.fromLTRB(4, 4, 4, 12)
+                      : const EdgeInsets.fromLTRB(18, 2, 18, 18),
+                  itemBuilder: (_, index) {
+                    final episode = visible[index];
+                    return EpisodeButton(
+                      key: ValueKey('${widget.keyPrefix}-${episode.number}'),
+                      number: episode.number,
+                      vip: episode.vip,
+                      played: widget.playedNumbers.contains(episode.number),
+                      showPlaybackState: widget.showPlaybackState,
+                      compact: widget.compact,
+                      current:
+                          widget.selectedNumbers?.contains(episode.number) ??
+                          episode.number == widget.currentNumber,
+                      onPressed: () => widget.onSelected(start + index),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 

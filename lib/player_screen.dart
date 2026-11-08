@@ -96,6 +96,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   late final DanmakuController _danmaku;
   int _seekSequence = 0;
   bool _danmakuEnabled = true;
+  List<String> _danmakuBlockedKeywords = const [];
   late final PlayerInteractions _interactions;
   final _playerFocus = FocusNode(debugLabel: 'player-surface');
   final _videoPaneKey = GlobalKey();
@@ -152,6 +153,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool _pictureInPictureHandlerInstalled = false;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
   Timer? _hardwareDecodeWatch;
+  String _decodeMode = const String.fromEnvironment(
+    'PLAYBACK_HWDEC',
+    defaultValue: 'mediacodec',
+  );
+  int _decodeRecovery = 0;
+  int _decoderRecorded = -1;
   String _loadingMessage = '正在准备播放';
   String? _error;
   bool _progressSaveFailed = false;
@@ -182,6 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     quality: _requestedQuality,
     autoAdvance: _autoAdvance,
     danmaku: _danmakuEnabled,
+    danmakuBlockedKeywords: _danmakuBlockedKeywords,
     preload: _preloadEnabled,
     fit: _fit,
   );
@@ -233,11 +241,13 @@ class _PlayerScreenState extends State<PlayerScreen>
     _autoAdvance = preferences.autoAdvance;
     _fit = preferences.fit;
     _danmakuEnabled = preferences.danmaku;
+    _danmakuBlockedKeywords = preferences.danmakuBlockedKeywords;
     _preloadEnabled = preferences.preload;
     _loader = PlaybackLoader(widget.repository);
     _preloader = PlaybackPreloader(widget.repository);
     _danmaku = DanmakuController(widget.repository)
-      ..setEnabled(_danmakuEnabled);
+      ..setEnabled(_danmakuEnabled)
+      ..setBlockedKeywords(_danmakuBlockedKeywords);
     widget.store.addListener(_accessChanged);
     widget.repository.accountFavorites.addListener(_accountChanged);
     widget.repository.accountStatus.addListener(_officialAccountChanged);
@@ -254,6 +264,10 @@ class _PlayerScreenState extends State<PlayerScreen>
             _player,
             configuration: const VideoControllerConfiguration(
               enableHardwareAcceleration: true,
+              hwdec: String.fromEnvironment(
+                'PLAYBACK_HWDEC',
+                defaultValue: 'mediacodec',
+              ),
             ),
           )
         : null;
@@ -346,6 +360,30 @@ class _PlayerScreenState extends State<PlayerScreen>
     _subscriptions.add(
       _player.stream.position.listen((position) {
         if (!_closed && _openedIndex == _index && position > Duration.zero) {
+          if (_decoderRecorded != _generation &&
+              (_player.state.width ?? 0) > 0 &&
+              (_player.state.height ?? 0) > 0 &&
+              _player.platform is NativePlayer) {
+            _decoderRecorded = _generation;
+            final ticket = _generation;
+            final platform = _player.platform as NativePlayer;
+            unawaited(() async {
+              try {
+                final actual = await platform.getProperty('hwdec-current');
+                final decoder = await platform.getProperty('video-codec');
+                if (!_closed && ticket == _generation) {
+                  _recordPlaybackEvent(
+                    'decoder_active',
+                    fields: {
+                      'requested': _decodeMode,
+                      'actual': actual,
+                      'codec': decoder,
+                    },
+                  );
+                }
+              } catch (_) {}
+            }());
+          }
           if (!_tracedProgress) {
             _tracedProgress = true;
             _recordPlaybackEvent('playback_started');
@@ -396,30 +434,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         }
       }),
     );
-    _saveTimer = Timer.periodic(
-      const Duration(seconds: 5),
-      (_) => _saveProgress(),
-    );
-    _healthTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      _checkpoint();
-      if (!_closed &&
-          _acceptErrors &&
-          !_loading &&
-          _error == null &&
-          _health.stalled(
-            position: _player.state.position,
-            playing: _player.state.playing && _playIntent,
-            foreground: _foreground,
-            now: DateTime.now(),
-          )) {
-        _recordPlaybackEvent(
-          'playback_stalled',
-          fields: {'thresholdSeconds': 20},
-        );
-        unawaited((_activeTrace ?? _initialTrace).networkSnapshot());
-        unawaited(_recover());
-      }
-    });
+    _syncMaintenance();
     final handoff = widget.handoff;
     if (handoff != null) {
       handoff.consumed = true;
@@ -629,30 +644,31 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  /// 硬件解码自愈：部分机型 mediacodec 初始化成功但解不出画面（黑屏/花屏，
-  /// 声音正常）。播放 8 秒后若时间在走但仍无视频尺寸，切回软件解码并回到原位。
   void _watchHardwareDecode() {
     _hardwareDecodeWatch?.cancel();
+    final ticket = _generation;
     _hardwareDecodeWatch = Timer(const Duration(seconds: 8), () async {
-      if (_closed || !_foreground) return;
+      if (_closed || !_foreground || ticket != _generation) return;
       final state = _player.state;
       if (!state.playing || state.position <= Duration.zero) return;
       if ((state.width ?? 0) > 0 && (state.height ?? 0) > 0) return;
       final platform = _player.platform;
       if (platform is! NativePlayer) return;
+      final nextMode = _decodeMode == 'mediacodec' ? 'mediacodec-copy' : 'no';
+      if (_decodeRecovery >= 2) return;
+      _decodeRecovery++;
       _recordPlaybackEvent(
         'decoder_fallback_start',
-        fields: {
-          'from': 'mediacodec-copy',
-          'to': 'software',
-          'noVideoSeconds': 8,
-        },
+        fields: {'from': _decodeMode, 'to': nextMode, 'noVideoSeconds': 8},
       );
       try {
-        await platform.setProperty('hwdec', 'no');
+        await platform.setProperty('hwdec', nextMode);
+        if (_closed || ticket != _generation) return;
+        _decodeMode = nextMode;
         await _player.seek(state.position);
         if (_playIntent && _foreground) await _player.play();
         _recordPlaybackEvent('decoder_fallback_applied');
+        if (nextMode != 'no') _watchHardwareDecode();
       } catch (error, stack) {
         _recordPlaybackEvent(
           'decoder_fallback_failed',
@@ -881,25 +897,68 @@ class _PlayerScreenState extends State<PlayerScreen>
     final remaining = (duration - position).clamp(0, duration);
     final lead = (30000 * rate).clamp(12000.0, 60000.0);
     final window = (duration * .4).clamp(0.0, lead);
-    if (remaining > window) return;
-    final urgent = remaining / rate <= 8000;
     final buffered = state.buffer.inMilliseconds;
+    final headroom = (buffered - position) / rate;
     final tailBuffered = buffered >= duration - 250;
-    if (state.buffering) {
-      if (!urgent) _preloader.pause();
+    if (state.buffering || (!tailBuffered && headroom < 1500)) {
+      _preloader.pause();
       return;
     }
-    if (!urgent && !tailBuffered && (buffered - position) / rate < 5000) return;
+    final short = duration <= 120000;
+    final nearEnd = remaining <= window;
+    if (!short && !nearEnd) return;
+    if (!tailBuffered && headroom < 3000) return;
     _preloader.prepare(
       widget.detail.drama,
       widget.detail.episodes[_index + 1],
       quality: _requestedQuality,
-      urgent: urgent,
+      online: _forceOnline,
+      urgent: remaining / rate <= 8000,
+      warm: nearEnd,
     );
+  }
+
+  void _syncMaintenance() {
+    final active =
+        !_closed && _foreground && (_loading || _player.state.playing);
+    if (!active) {
+      _saveTimer?.cancel();
+      _healthTimer?.cancel();
+      _saveTimer = _healthTimer = null;
+      return;
+    }
+    _saveTimer ??= Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _saveProgress(),
+    );
+    _healthTimer ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      _syncMaintenance();
+      if (_foreground && (_player.state.playing || _loading)) {
+        if (DateTime.now().second % 5 == 0) _checkpoint();
+      }
+      if (!_closed &&
+          _acceptErrors &&
+          !_loading &&
+          _error == null &&
+          _health.stalled(
+            position: _player.state.position,
+            playing: _player.state.playing && _playIntent,
+            foreground: _foreground,
+            now: DateTime.now(),
+          )) {
+        _recordPlaybackEvent(
+          'playback_stalled',
+          fields: {'thresholdSeconds': 20},
+        );
+        unawaited((_activeTrace ?? _initialTrace).networkSnapshot());
+        unawaited(_recover());
+      }
+    });
   }
 
   void _syncDanmaku({bool discontinuity = false}) {
     if (_closed) return;
+    _syncMaintenance();
     final state = _player.state;
     _danmaku.update(
       position: state.position,
@@ -1304,6 +1363,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
     final ticket = ++_generation;
+    unawaited(_loader.interrupt().catchError((Object _) {}));
     if (recoveryAction == null) _playIntent = playWhenReady;
     final automaticNext =
         !showControlsOnReady &&
@@ -1408,11 +1468,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           if (_closed || ticket != _generation) {
             return;
           }
-          if (automaticNext && warmed != null) {
-            unawaited(_saveProgress(flush: true));
-          } else {
-            await _saveProgress(flush: true);
-          }
+          unawaited(_saveProgress(flush: true));
           if (_closed || ticket != _generation) return;
           if (position == null && widget.mediaId == null) {
             final saved = widget.store.episodeWatched(
@@ -1471,7 +1527,12 @@ class _PlayerScreenState extends State<PlayerScreen>
         final configureClock = Stopwatch()..start();
         final platform = _player.platform;
         if (platform is NativePlayer) {
-          await platform.setProperty('hwdec', 'mediacodec-copy');
+          _decodeRecovery = 0;
+          _decodeMode = const String.fromEnvironment(
+            'PLAYBACK_HWDEC',
+            defaultValue: 'mediacodec',
+          );
+          await platform.setProperty('hwdec', _decodeMode);
           await platform.setProperty('hwdec-codecs', 'all');
           await platform.setProperty('vd-lavc-skiploopfilter', 'nonkey');
           await platform.setProperty('vd-lavc-threads', '4');
@@ -1692,9 +1753,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       _autoAdvance = nextPreferences.autoAdvance;
       _fit = nextPreferences.fit;
       _danmakuEnabled = nextPreferences.danmaku;
+      _danmakuBlockedKeywords = nextPreferences.danmakuBlockedKeywords;
       _preloadEnabled = nextPreferences.preload;
     });
     _danmaku.setEnabled(_danmakuEnabled);
+    _danmaku.setBlockedKeywords(_danmakuBlockedKeywords);
     _syncDanmaku();
     if (qualityChanged) _preloader.clear();
     _syncPreload();
@@ -2158,7 +2221,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (_closed || generation != _generation) return;
         _playIntent = false;
         await _player.pause();
-        await _saveProgress(flush: true);
+        unawaited(_saveProgress(flush: true));
       });
       if (!mounted ||
           _closed ||

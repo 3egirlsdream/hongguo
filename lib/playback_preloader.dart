@@ -9,9 +9,54 @@ class PlaybackPreloader extends ChangeNotifier {
   PlaybackPreloader(this.repository, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
 
+  static final _owners = Expando<PlaybackPreloader>('preload-request-owner');
   final AppRepository repository;
   final DateTime Function() _now;
   PlaybackPlan? _ready;
+  bool _allowWarm = false, _warming = false, _warmTried = false;
+  int _warmRevision = 0;
+  int _cachedBytes = 0;
+
+  Future<void> _stopWarm() async {
+    _warmRevision++;
+    final cancel = _warming && identical(_owners[repository], this);
+    _warming = false;
+    if (cancel) _warmTried = false;
+    if (cancel) await repository.cancelPreloadWarm().catchError((Object _) {});
+  }
+
+  void _warm() {
+    final plan = _ready;
+    if (!repository.supportsStagedPreload ||
+        !_allowWarm ||
+        _warming ||
+        _warmTried ||
+        plan == null ||
+        plan.local ||
+        _closed) {
+      return;
+    }
+    _warmTried = true;
+    _warming = true;
+    _owners[repository] = this;
+    final ticket = ++_warmRevision;
+    unawaited(() async {
+      try {
+        final bytes = await repository.warmPreload(plan);
+        if (!_closed && ticket == _warmRevision && identical(_ready, plan)) {
+          _cachedBytes = bytes;
+          _ready = plan.withPrefetchedBytes(bytes);
+        }
+      } catch (_) {
+      } finally {
+        if (!_closed && ticket == _warmRevision) {
+          _warming = false;
+          notifyListeners();
+        }
+      }
+    }());
+  }
+
   String? _identity;
   Timer? _delay;
   Completer<void>? _pending;
@@ -24,7 +69,7 @@ class PlaybackPreloader extends ChangeNotifier {
 
   String get status {
     if (_ready != null && _now().isBefore(_expires)) {
-      final bytes = _ready!.prefetchedBytes;
+      final bytes = _cachedBytes > 0 ? _cachedBytes : _ready!.prefetchedBytes;
       return _ready!.local
           ? '下一集已下载'
           : bytes > 0
@@ -44,6 +89,7 @@ class PlaybackPreloader extends ChangeNotifier {
     int quality = 0,
     bool online = false,
     bool urgent = false,
+    bool warm = true,
   }) {
     if (_closed) return;
     final identity = _key(drama, episode, quality, online);
@@ -51,12 +97,15 @@ class PlaybackPreloader extends ChangeNotifier {
       clear();
       _identity = identity;
     }
+    _allowWarm = warm;
+    if (!warm) _stopWarm();
     if (_ready != null && !_now().isBefore(_expires)) {
       final expired = _ready!;
       _ready = null;
       _release(expired);
     }
     if (_ready != null || loading || _now().isBefore(_retryAt)) {
+      _warm();
       return;
     }
     if (_delay != null) {
@@ -72,6 +121,7 @@ class PlaybackPreloader extends ChangeNotifier {
       () async {
         _delay = null;
         loading = true;
+        _owners[repository] = this;
         notifyListeners();
         try {
           final plan = await repository.preload(
@@ -80,7 +130,9 @@ class PlaybackPreloader extends ChangeNotifier {
             quality: quality,
             online: online,
           );
-          if (_closed || ticket != _generation) {
+          if (_closed ||
+              ticket != _generation ||
+              !identical(_owners[repository], this)) {
             if (plan != null) await repository.release(plan.session);
             return;
           }
@@ -101,6 +153,7 @@ class PlaybackPreloader extends ChangeNotifier {
           _ready = plan;
           _expires = expires;
           error = '';
+          _warm();
         } catch (failure) {
           if (_closed || ticket != _generation) return;
           error = failure.toString();
@@ -149,18 +202,26 @@ class PlaybackPreloader extends ChangeNotifier {
       await pending.future.timeout(wait, onTimeout: () {});
     }
     if (_identity != identity || _closed) return null;
+    if (_warming) {
+      await _stopWarm();
+    }
+    if (_identity != identity || _closed) return null;
     return take(drama, episode, quality: quality, online: online);
   }
 
   void pause() {
+    _allowWarm = false;
+    _stopWarm();
     final changed = loading || _delay != null;
+    if (!changed) return;
     _generation++;
     _delay?.cancel();
     _delay = null;
     final pending = _pending;
     _pending = null;
     if (pending != null && !pending.isCompleted) pending.complete();
-    if (loading) {
+    if (loading && identical(_owners[repository], this)) {
+      _owners[repository] = null;
       unawaited(repository.cancelPreload().catchError((Object _) {}));
     }
     loading = false;
@@ -168,14 +229,22 @@ class PlaybackPreloader extends ChangeNotifier {
   }
 
   void clear() {
+    final changed =
+        loading ||
+        _delay != null ||
+        _ready != null ||
+        _identity != null ||
+        error.isNotEmpty;
     pause();
     final old = _ready;
     _ready = null;
+    _warmTried = false;
+    _cachedBytes = 0;
     _identity = null;
     _retryAt = DateTime(2000);
     error = '';
     if (old != null) _release(old);
-    if (!_closed) notifyListeners();
+    if (changed && !_closed) notifyListeners();
   }
 
   @override

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:duanju_app/background_executor.dart';
 import 'package:duanju_app/core_bridge.dart';
 import 'package:duanju_app/local_store.dart';
 import 'package:duanju_app/models.dart';
@@ -294,6 +295,18 @@ void main() {
     await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     final repository = SeasonSwitchFixture();
     await repository.initialize();
+    final workersBefore = BackgroundExecutor.shared.workersStarted;
+    for (var i = 0; i < 20; i++) {
+      await repository.native.resourceSettings();
+    }
+    final workersAdded =
+        BackgroundExecutor.shared.workersStarted - workersBefore;
+    expect(workersAdded, lessThanOrEqualTo(2));
+    binding.reportData ??= {};
+    binding.reportData!.addAll({
+      'nativeRepeatedRequests': 20,
+      'additionalWorkers': workersAdded,
+    });
     final store = LocalStore(await SharedPreferences.getInstance());
     Future<void> until(bool Function() ready, String step) async {
       final deadline = DateTime.now().add(const Duration(seconds: 35));
@@ -378,7 +391,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     for (final landscape in [false, true]) {
       await player.pause();
-      if (landscape) {
+      if (landscape &&
+          MediaQuery.orientationOf(tester.element(find.byType(Video))) !=
+              Orientation.landscape) {
         await tester.pump(const Duration(milliseconds: 400));
         final surface = tester.getRect(
           find.byKey(const ValueKey('player-gesture-surface')),

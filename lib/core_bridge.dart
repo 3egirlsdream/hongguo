@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'background_executor.dart';
 import 'models.dart';
 import 'danmaku_models.dart';
 import 'background_downloads.dart';
@@ -26,12 +27,23 @@ typedef _DartRequest = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _NativeFree = Void Function(Pointer<Utf8>);
 typedef _DartFree = void Function(Pointer<Utf8>);
 
+class _CoreBindings {
+  _CoreBindings() {
+    final library = DynamicLibrary.open('libduanju_core.so');
+    request = library.lookupFunction<_NativeRequest, _DartRequest>(
+      'DuanjuRequest',
+    );
+    free = library.lookupFunction<_NativeFree, _DartFree>('DuanjuFree');
+  }
+  late final _DartRequest request;
+  late final _DartFree free;
+}
+
+final _bindings = _CoreBindings();
+
 String _nativeRequest(String body) {
-  final library = DynamicLibrary.open('libduanju_core.so');
-  final request = library.lookupFunction<_NativeRequest, _DartRequest>(
-    'DuanjuRequest',
-  );
-  final free = library.lookupFunction<_NativeFree, _DartFree>('DuanjuFree');
+  final request = _bindings.request;
+  final free = _bindings.free;
   final input = body.toNativeUtf8();
   Pointer<Utf8> output = nullptr;
   try {
@@ -46,6 +58,55 @@ String _nativeRequest(String body) {
       free(output);
     }
   }
+}
+
+Map<String, dynamic> _executeNative(Map<String, dynamic> input) {
+  final response =
+      jsonDecode(_nativeRequest(jsonEncode(input))) as Map<String, dynamic>;
+  if (input['action'] == 'danmaku' && response['ok'] == true) {
+    final data = Map<String, dynamic>.from(response['data'] as Map);
+    data['_page'] = DanmakuPage.fromJson(
+      data,
+      episodeId: data['episodeId'] as String,
+      startMs: input['startMs'] as int,
+      durationMs: input['durationMs'] as int,
+    );
+    response['data'] = data;
+  }
+  return response;
+}
+
+WorkLane _nativeLane(Map<String, dynamic> input) {
+  final action = input['action'];
+  if ({
+        'cancelRead',
+        'cancelPlayback',
+        'release',
+        'updateSystemProxy',
+      }.contains(action) ||
+      action == 'workLease' && input['command'] == 'end') {
+    return WorkLane.control;
+  }
+  if ({
+        'initialize',
+        'resolve',
+        'fallback',
+        'detail',
+        'localPlayback',
+        'danmaku',
+      }.contains(action) ||
+      action == 'hongguoAccount' &&
+          !{
+            'sync',
+            'history',
+            'favorites',
+            'queueProgress',
+            'seasons',
+            'library',
+          }.contains(input['command'])) {
+    return WorkLane.interactive;
+  }
+  return WorkLane.background;
 }
 
 class AppFailure implements Exception {
@@ -86,6 +147,9 @@ abstract class AppRepository {
     ResourceSettings settings,
   ) async => throw AppFailure('当前环境不支持资源设置');
   final catalogUpdates = CatalogUpdates();
+  bool get supportsStagedPreload => false;
+  Future<void> cancelPreloadWarm() async {}
+  Future<int> warmPreload(PlaybackPlan plan) async => plan.prefetchedBytes;
   Future<void> cancelPreload() async {}
   Future<PlaybackPlan?> preload(
     Drama drama,
@@ -473,6 +537,10 @@ class NativeRepository extends AppRepository {
     String scope,
     Map<String, dynamic> input,
   ) async {
+    final previous = _activeReads[scope];
+    if (previous != null) {
+      unawaited(_cancelRead(scope, previous));
+    }
     final sequence = ++_readSequence;
     _activeReads[scope] = sequence;
     try {
@@ -486,20 +554,24 @@ class NativeRepository extends AppRepository {
     }
   }
 
+  Future<void> _cancelRead(String scope, int sequence) async {
+    final session = '$_readOwner:$scope';
+    BackgroundExecutor.shared.cancelQueued(session, through: sequence);
+    try {
+      await _call({
+        'action': 'cancelRead',
+        'session': session,
+        'sequence': sequence,
+      });
+    } catch (_) {}
+  }
+
   Future<void> _cancelReads(String prefix) async {
     final reads = _activeReads.entries
         .where((entry) => entry.key.startsWith(prefix))
         .toList();
     await Future.wait(
-      reads.map((entry) async {
-        try {
-          await _call({
-            'action': 'cancelRead',
-            'session': '$_readOwner:${entry.key}',
-            'sequence': entry.value,
-          });
-        } catch (_) {}
-      }),
+      reads.map((entry) => _cancelRead(entry.key, entry.value)),
     );
   }
 
@@ -507,7 +579,10 @@ class NativeRepository extends AppRepository {
   Future<void> cancelDanmaku() => _cancelReads('danmaku');
 
   @override
-  Future<void> cancelPreload() => _cancelReads('preload');
+  Future<void> cancelPreload() {
+    _warmEpoch++;
+    return _cancelReads('preload');
+  }
 
   @override
   Future<PlaybackPlan?> preload(
@@ -518,6 +593,7 @@ class NativeRepository extends AppRepository {
   }) async => PlaybackPlan.fromJson(
     await _read('preload', {
       'action': 'preload',
+      'prepareOnly': true,
       'drama': drama.toJson(),
       'chapter': episode.raw,
       'index': episode.number,
@@ -525,6 +601,40 @@ class NativeRepository extends AppRepository {
       'force': online || access?.canDownload == false,
     }),
   );
+
+  @override
+  bool get supportsStagedPreload => true;
+  int _warmEpoch = 0;
+  @override
+  Future<void> cancelPreloadWarm() {
+    _warmEpoch++;
+    return _cancelReads('preload-warm');
+  }
+
+  @override
+  Future<int> warmPreload(PlaybackPlan plan) async {
+    _authorize('hongguo');
+    final epoch = _warmEpoch;
+    var limit = 512 * 1024;
+    try {
+      final budget = await const MethodChannel('duanju/device')
+          .invokeMapMethod<String, dynamic>('playbackBudget');
+      if (budget?['restricted'] == true) return 0;
+      if (budget?['metered'] == false) limit = 2 * 1024 * 1024;
+    } catch (_) {}
+    if (epoch != _warmEpoch) return 0;
+    final data = await _read('preload-warm', {
+      'action': 'warmPlayback',
+      'playbackSession': plan.session,
+      'mediaUrl': plan.url,
+      'maxBytes': limit,
+      'quality': plan.quality,
+    });
+    DiaryService.add(
+      '[Preload] cached=${data['prefetchedBytes']} transferred=${data['transferredBytes']}',
+    );
+    return intValue(data['prefetchedBytes']);
+  }
 
   @override
   Future<DanmakuPage> danmaku(
@@ -536,17 +646,15 @@ class NativeRepository extends AppRepository {
     if (plan.local || plan.session.isEmpty || plan.danmakuId.isEmpty) {
       throw AppFailure('本集暂不支持弹幕');
     }
-    return DanmakuPage.fromJson(
-      await _read('danmaku', {
-        'action': 'danmaku',
-        'playbackSession': plan.session,
-        'startMs': startMs,
-        'durationMs': durationMs,
-      }),
-      episodeId: plan.danmakuId,
-      startMs: startMs,
-      durationMs: durationMs,
-    );
+    final data = await _read('danmaku', {
+      'action': 'danmaku',
+      'playbackSession': plan.session,
+      'startMs': startMs,
+      'durationMs': durationMs,
+    });
+    final page = data['_page'] as DanmakuPage;
+    if (page.episodeId != plan.danmakuId) throw AppFailure('弹幕分集不符');
+    return page;
   }
 
   @override
@@ -768,7 +876,8 @@ class NativeRepository extends AppRepository {
       if (action == 'recommendations' ||
           action == 'cachedRecommendations' ||
           action == 'suggestions' ||
-          action == 'danmaku') {
+          action == 'danmaku' ||
+          action == 'warmPlayback') {
         _authorize('hongguo');
       }
       if ({
@@ -812,28 +921,49 @@ class NativeRepository extends AppRepository {
       if (action == 'resolve' && access != null && !access!.canDownload) {
         input['force'] = true;
       }
-      final body = jsonEncode(input);
-      final encoded = await Isolate.run(() => _nativeRequest(body)).timeout(
-        Duration(
-          seconds:
-              action == 'hongguoAccount' &&
-                  {
-                    'sync',
-                    'history',
-                    'favorites',
-                    'favorite',
-                  }.contains(input['command'])
-              ? 195
-              : action == 'moveDownloads'
-              ? 620
-              : action == 'danmaku'
-              ? 15
-              : action == 'preload'
-              ? 23
-              : 70,
-        ),
-      );
-      final response = jsonDecode(encoded) as Map<String, dynamic>;
+      final scope = action == 'resolve' || action == 'fallback'
+          ? '$_readOwner:playback'
+          : input['session'] as String?;
+      if (action == 'cancelRead' && scope != null) {
+        BackgroundExecutor.shared.cancelQueued(
+          scope,
+          through: input['sequence'] as int,
+        );
+      }
+      if (action == 'cancelPlayback') {
+        BackgroundExecutor.shared.cancelQueued(
+          '$_readOwner:playback',
+          through: input['sequence'] as int,
+        );
+      }
+      final response = await BackgroundExecutor.shared
+          .run(
+            _executeNative,
+            input,
+            lane: _nativeLane(input),
+            scope: scope,
+            sequence: input['sequence'] as int? ?? 0,
+          )
+          .timeout(
+            Duration(
+              seconds:
+                  action == 'hongguoAccount' &&
+                      {
+                        'sync',
+                        'history',
+                        'favorites',
+                        'favorite',
+                      }.contains(input['command'])
+                  ? 195
+                  : action == 'moveDownloads'
+                  ? 620
+                  : action == 'danmaku'
+                  ? 15
+                  : action == 'preload'
+                  ? 23
+                  : 70,
+            ),
+          );
       if (input['traceId'] case final String traceId) {
         PlaybackTrace.recordNative(traceId, action, response['timings']);
       }
@@ -856,6 +986,10 @@ class NativeRepository extends AppRepository {
       return data is Map ? Map<String, dynamic>.from(data) : {};
     } on AppFailure {
       rethrow;
+    } on BackgroundWorkFailure catch (error) {
+      throw AppFailure(error.message);
+    } on WorkCancelled {
+      throw AppFailure('操作已取消', code: 'cancelled');
     } on TimeoutException {
       if (input['session'] is String &&
           input['sequence'] is int &&
@@ -867,6 +1001,7 @@ class NativeRepository extends AppRepository {
             'metadata',
             'danmaku',
             'preload',
+            'warmPlayback',
             'prepareHandoff',
           }.contains(input['action'])) {
         unawaited(

@@ -1,6 +1,16 @@
 import 'dart:convert';
 
+import 'background_executor.dart';
+
 import 'package:shared_preferences/shared_preferences.dart';
+
+String _encodeSnapshot(Map<String, Object> values) {
+  final content = jsonEncode({'version': 1, 'values': values});
+  if (utf8.encode(content).length > 16 * 1024 * 1024) {
+    throw StateError('本地记录超过保存上限，请先导出备份并清理记录');
+  }
+  return content;
+}
 
 class LocalSnapshot {
   LocalSnapshot(this.preferences) {
@@ -104,10 +114,15 @@ class LocalSnapshot {
 
   Future<void> commit(Map<String, Object> values) async {
     if (values.keys.any((key) => !owns(key))) throw StateError('无效的本地配置字段');
-    final content = jsonEncode({'version': 1, 'values': values});
-    if (utf8.encode(content).length > 16 * 1024 * 1024) {
-      throw StateError('本地记录超过保存上限，请先导出备份并清理记录');
-    }
+    final large =
+        values.values.whereType<String>().fold<int>(
+          0,
+          (n, value) => n + value.length,
+        ) >
+        32768;
+    final content = large
+        ? await BackgroundExecutor.shared.run(_encodeSnapshot, values)
+        : _encodeSnapshot(values);
     final previous = preferences.get(storageKey);
     try {
       if (!await preferences.setString(storageKey, content)) {

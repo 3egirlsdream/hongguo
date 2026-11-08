@@ -9,6 +9,7 @@ import 'follow_state.dart';
 import 'local_store.dart';
 import 'models.dart';
 import 'widgets.dart';
+import 'swipe_tabs.dart';
 
 class SavedLibrary extends StatefulWidget {
   const SavedLibrary({
@@ -603,71 +604,78 @@ class _SavedLibraryState extends State<SavedLibrary> {
             ? Icons.history_rounded
             : Icons.bookmark_border_rounded,
       );
-      return LayoutBuilder(
-        builder: (context, constraints) {
-          final padding = constraints.maxWidth < 600 ? 16.0 : 24.0;
-          final columns = dramaGridColumns(
-            context,
-            constraints.maxWidth - 2 * padding,
-          );
-          final tileWidth =
-              (constraints.maxWidth -
-                  2 * padding -
-                  (columns - 1) * (widget.compact ? 8 : 12)) /
-              columns;
-          return CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            key: PageStorageKey(
-              'saved-${widget.history}-$_filter-$_completion-${_search.text}',
-            ),
-            slivers: [
-              SliverToBoxAdapter(child: Column(children: header)),
-              if (items.isEmpty)
-                SliverFillRemaining(hasScrollBody: false, child: empty)
-              else
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(padding, 0, padding, 20),
-                  sliver: SliverGrid(
-                    gridDelegate: widget.compact
-                        ? SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: columns,
-                            crossAxisSpacing: 8,
-                            mainAxisSpacing: 18,
-                            mainAxisExtent:
-                                tileWidth / .72 +
-                                16 +
-                                MediaQuery.textScalerOf(context).scale(36),
-                          )
-                        : dramaGridDelegate(
-                            context,
-                            constraints.maxWidth - 2 * padding,
-                          ),
-                    delegate: SliverChildBuilderDelegate(
-                      (_, index) => widget.compact
-                          ? _poster(items[index])
-                          : _tile(items[index]),
-                      childCount: items.length,
-                    ),
-                  ),
-                ),
-              if (widget.onLoadMore != null &&
-                  (widget.hasMore || widget.loadingMore))
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Center(
-                      child: widget.loadingMore
-                          ? const CircularProgressIndicator()
-                          : TextButton(
-                              onPressed: widget.onLoadMore,
-                              child: const Text('加载更多'),
+      return SwipeTabs(
+        key: const ValueKey('saved-filter-swipe-tabs'),
+        index: _filters.indexWhere((filter) => filter.$1 == _selectedFilter),
+        count: _filters.length,
+        enabled: !widget.compact && !_editing,
+        onChanged: (index) => _selectFilter(_filters[index].$1),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final padding = constraints.maxWidth < 600 ? 16.0 : 24.0;
+            final columns = dramaGridColumns(
+              context,
+              constraints.maxWidth - 2 * padding,
+            );
+            final tileWidth =
+                (constraints.maxWidth -
+                    2 * padding -
+                    (columns - 1) * (widget.compact ? 8 : 12)) /
+                columns;
+            return CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              key: PageStorageKey(
+                'saved-${widget.history}-$_filter-$_completion-${_search.text}',
+              ),
+              slivers: [
+                SliverToBoxAdapter(child: Column(children: header)),
+                if (items.isEmpty)
+                  SliverFillRemaining(hasScrollBody: false, child: empty)
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(padding, 0, padding, 20),
+                    sliver: SliverGrid(
+                      gridDelegate: widget.compact
+                          ? SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: columns,
+                              crossAxisSpacing: 8,
+                              mainAxisSpacing: 18,
+                              mainAxisExtent:
+                                  tileWidth / .72 +
+                                  16 +
+                                  MediaQuery.textScalerOf(context).scale(36),
+                            )
+                          : dramaGridDelegate(
+                              context,
+                              constraints.maxWidth - 2 * padding,
                             ),
+                      delegate: SliverChildBuilderDelegate(
+                        (_, index) => widget.compact
+                            ? _poster(items[index])
+                            : _tile(items[index]),
+                        childCount: items.length,
+                      ),
                     ),
                   ),
-                ),
-            ],
-          );
-        },
+                if (widget.onLoadMore != null &&
+                    (widget.hasMore || widget.loadingMore))
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Center(
+                        child: widget.loadingMore
+                            ? const CircularProgressIndicator()
+                            : TextButton(
+                                onPressed: widget.onLoadMore,
+                                child: const Text('加载更多'),
+                              ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       );
     },
   );

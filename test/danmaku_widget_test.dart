@@ -98,11 +98,8 @@ void main() {
       );
       await tester.pump();
       double x() => tester
-          .widget<Transform>(
-            find.byKey(const ValueKey('danmaku-motion-1001-0')),
-          )
-          .transform
-          .storage[12];
+          .getTopLeft(find.byKey(const ValueKey('danmaku-item-1001-0')))
+          .dx;
       final start = x();
       now = now.add(const Duration(seconds: 2));
       await tester.pump(const Duration(seconds: 2));

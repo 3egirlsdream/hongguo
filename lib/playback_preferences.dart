@@ -1,3 +1,5 @@
+import 'danmaku_filter.dart';
+
 const playbackSpeeds = [.25, .5, .75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
 
 enum PlaybackFit { contain, cover, fill }
@@ -8,6 +10,7 @@ class PlaybackPreferences {
     this.quality = 0,
     this.autoAdvance = true,
     this.danmaku = true,
+    this.danmakuBlockedKeywords = const [],
     this.preload = true,
     this.fit = PlaybackFit.contain,
   });
@@ -16,6 +19,7 @@ class PlaybackPreferences {
   final int quality;
   final bool autoAdvance;
   final bool danmaku;
+  final List<String> danmakuBlockedKeywords;
   final bool preload;
   final PlaybackFit fit;
 
@@ -24,6 +28,7 @@ class PlaybackPreferences {
     int? quality,
     bool? autoAdvance,
     bool? danmaku,
+    List<String>? danmakuBlockedKeywords,
     bool? preload,
     PlaybackFit? fit,
   }) => PlaybackPreferences(
@@ -31,6 +36,8 @@ class PlaybackPreferences {
     quality: quality ?? this.quality,
     autoAdvance: autoAdvance ?? this.autoAdvance,
     danmaku: danmaku ?? this.danmaku,
+    danmakuBlockedKeywords:
+        danmakuBlockedKeywords ?? this.danmakuBlockedKeywords,
     preload: preload ?? this.preload,
     fit: fit ?? this.fit,
   );
@@ -40,6 +47,10 @@ class PlaybackPreferences {
     'quality': quality,
     'autoAdvance': autoAdvance,
     'danmaku': danmaku,
+    if (danmakuBlockedKeywords.isNotEmpty)
+      'danmakuBlockedKeywords': normalizeDanmakuKeywords(
+        danmakuBlockedKeywords,
+      ),
     'preload': preload,
     if (fit != PlaybackFit.contain) 'fit': fit.name,
   };
@@ -50,6 +61,13 @@ class PlaybackPreferences {
     final autoAdvance = value['autoAdvance'] as bool? ?? true;
     final danmaku = value['danmaku'] as bool? ?? true;
     final preload = value['preload'] as bool? ?? true;
+    final rawKeywords = value['danmakuBlockedKeywords'] ?? const <String>[];
+    if (rawKeywords is! List ||
+        rawKeywords.length > 100 ||
+        rawKeywords.any((word) => word is! String)) {
+      throw const FormatException('屏蔽关键词格式无效');
+    }
+    final keywords = normalizeDanmakuKeywords(rawKeywords.cast<String>());
     if (!playbackSpeeds.contains(speed) || quality < 0 || quality > 4320) {
       throw const FormatException('播放偏好无效');
     }
@@ -58,6 +76,7 @@ class PlaybackPreferences {
       quality: quality,
       autoAdvance: autoAdvance,
       danmaku: danmaku,
+      danmakuBlockedKeywords: keywords,
       preload: preload,
       fit: PlaybackFit.values.firstWhere(
         (fit) => fit.name == value['fit'],

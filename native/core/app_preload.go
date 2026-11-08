@@ -21,7 +21,7 @@ func (engine *nativeEngine) nativePreload(ctx context.Context, input nativeInput
 	ctx = context.WithValue(ctx, backgroundCatalogKey{}, true)
 	ctx = context.WithValue(ctx, nativePreloadKey{}, true)
 	plan, err := engine.nativeResolve(ctx, input)
-	if err != nil || plan.Local {
+	if err != nil || plan.Local || input.PrepareOnly {
 		return plan, err
 	}
 	engine.mu.Lock()
@@ -46,18 +46,42 @@ func (engine *nativeEngine) nativePreload(ctx context.Context, input nativeInput
 	return plan, nil
 }
 
+func (engine *nativeEngine) nativeWarmPlayback(ctx context.Context, input nativeInput) (map[string]int64, error) {
+	engine.mu.Lock()
+	choice, exists := engine.playbacks[input.PlaybackSession]
+	stream := engine.stream
+	engine.mu.Unlock()
+	if !exists || stream == nil {
+		return nil, fmt.Errorf("预加载会话已失效")
+	}
+	limit := min(max(input.MaxBytes, 0), int64(4<<20))
+	if limit == 0 {
+		return map[string]int64{"prefetchedBytes": 0}, nil
+	}
+	work, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	cached, transferred := stream.nativePrefetchMeasured(work, choice.streamSession, input.MediaURL, input.Quality, limit, 6)
+	return map[string]int64{"prefetchedBytes": cached, "transferredBytes": transferred}, ctx.Err()
+}
+
 func (stream *nativeStreamServer) nativePrefetch(ctx context.Context, token, entry string, quality int) int64 {
+	cached, _ := stream.nativePrefetchMeasured(ctx, token, entry, quality, nativePreloadLimit, 12)
+	return cached
+}
+
+func (stream *nativeStreamServer) nativePrefetchMeasured(ctx context.Context, token, entry string, quality int, limit int64, secondsLimit float64) (int64, int64) {
 	stream.mu.Lock()
 	session := stream.sessions[token]
 	stream.mu.Unlock()
 	if session == nil {
-		return 0
+		return 0, 0
 	}
 	ctx, cancel := context.WithCancel(providerMediaContext(ctx, session.credentials))
 	defer cancel()
 	stop := context.AfterFunc(session.ctx, cancel)
 	defer stop()
-	remaining, requests := int64(nativePreloadLimit), 0
+	remaining, requests := limit, 0
+	var transferred int64
 	visited := map[string]bool{}
 	var warm func(string, int) bool
 	warm = func(local string, depth int) bool {
@@ -91,8 +115,13 @@ func (stream *nativeStreamServer) nativePrefetch(ctx context.Context, token, ent
 			if err != nil {
 				return false
 			}
+			if response.ContentLength > remaining {
+				response.Body.Close()
+				return false
+			}
 			body, readErr := io.ReadAll(io.LimitReader(response.Body, remaining+1))
 			response.Body.Close()
+			transferred += int64(len(body))
 			if readErr != nil || len(body) == 0 || int64(len(body)) > remaining ||
 				(response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent) {
 				return false
@@ -157,14 +186,14 @@ func (stream *nativeStreamServer) nativePrefetch(ctx context.Context, token, ent
 				break
 			}
 			segments++
-			if master || segments >= 3 || seconds >= 12 {
+			if master || segments >= 3 || seconds >= secondsLimit {
 				break
 			}
 		}
 		return true
 	}
 	warm(entry, 0)
-	return nativePreloadLimit - remaining
+	return limit - remaining, transferred
 }
 
 var nativeContentRangePattern = regexp.MustCompile(`^bytes ([0-9]+)-([0-9]+)/([0-9]+)$`)

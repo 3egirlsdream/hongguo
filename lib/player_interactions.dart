@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -81,6 +80,7 @@ class PlayerInteractions extends ChangeNotifier {
   double _initialBrightness = 0.5;
   double _initialVolume = 100;
   double _viewHeight = 0.0;
+  double _episodeHeight = 0.0;
   Timer? _hudTimer;
 
   double get episodeDragOffset => _episodeDragOffset;
@@ -199,6 +199,7 @@ class PlayerInteractions extends ChangeNotifier {
     required bool swipeEnabled,
     double width = 0.0,
     required double height,
+    Size? screenSize,
   }) {
     _pointers.add(event.pointer);
     if (_pointers.length != 1 || _cancelUntilRelease) {
@@ -210,7 +211,9 @@ class PlayerInteractions extends ChangeNotifier {
     _origin = _lastPosition = event.localPosition;
     _resetEpisodeDrag();
     _swipeEnabled = swipeEnabled && event.kind == PointerDeviceKind.touch;
-    _swipeThreshold = math.max(30, math.min(80, height * .08));
+    final screen = screenSize ?? Size(width, height);
+    _episodeHeight = screen.height;
+    _swipeThreshold = screen.height * .08;
     _viewHeight = height;
     _viewWidth = width;
     _moved = _held = false;
@@ -221,12 +224,15 @@ class PlayerInteractions extends ChangeNotifier {
     _initialBrightness = _brightness;
     _initialVolume = player.state.volume.clamp(0.0, 100.0);
     if (_swipeEnabled && width > 0 && height > 0) {
-      final position = event.localPosition;
+      final position = Offset(
+        event.localPosition.dx,
+        screenSize == null ? event.localPosition.dy : event.position.dy,
+      );
       final episodeArea = Rect.fromLTWH(
         width * .3,
-        height * .2,
+        screen.height * .2,
         width * .4,
-        height * .6,
+        screen.height * .6,
       );
       if (position.dx < episodeArea.left) {
         _swipeAction = SwipeAction.volume;
@@ -288,8 +294,8 @@ class PlayerInteractions extends ChangeNotifier {
       final direction = diff.dy < 0 ? 1 : -1;
       final canMove = canEpisode?.call(direction) ?? true;
       final offset = (diff.dy * (canMove ? 1 : .22)).clamp(
-        -_viewHeight * .85,
-        _viewHeight * .85,
+        -_episodeHeight * .85,
+        _episodeHeight * .85,
       );
       if (!_episodeDragging || _episodeDragOffset != offset) {
         _episodeDragging = true;
@@ -328,8 +334,8 @@ class PlayerInteractions extends ChangeNotifier {
         _episodeVelocity?.getVelocity().pixelsPerSecond ?? Offset.zero;
     final isVertical = delta.dy.abs() > delta.dx.abs() * 1.5;
     final isFling =
-        delta.dy.abs() >= 24 &&
-        velocity.dy.abs() >= 650 &&
+        delta.dy.abs() >= _episodeHeight * .03 &&
+        velocity.dy.abs() >= _episodeHeight * .8 &&
         velocity.dy.abs() > velocity.dx.abs() * 1.5 &&
         velocity.dy.sign == delta.dy.sign;
     final switchEpisode =

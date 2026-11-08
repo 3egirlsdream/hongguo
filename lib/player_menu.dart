@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'models.dart';
+import 'danmaku_filter_dialog.dart';
 import 'episode_browser.dart';
 import 'playback_preferences.dart';
 import 'diary_service.dart';
@@ -122,6 +123,21 @@ class _PlayerMenuState extends State<PlayerMenu> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _editDanmakuKeywords() async {
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (_) => DanmakuFilterDialog(
+        keywords: widget.preferences.danmakuBlockedKeywords,
+      ),
+    );
+    if (result == null || !mounted) return;
+    await _run(
+      () => widget.onPreferences(
+        widget.preferences.copyWith(danmakuBlockedKeywords: result),
+      ),
+    );
   }
 
   @override
@@ -362,6 +378,19 @@ class _PlayerMenuState extends State<PlayerMenu> {
                       preferences.copyWith(danmaku: value),
                     ),
                   ),
+          ),
+          ListTile(
+            key: const ValueKey('player-danmaku-keywords'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.filter_alt_outlined, size: 22),
+            title: const Text('屏蔽关键词'),
+            subtitle: Text(
+              preferences.danmakuBlockedKeywords.isEmpty
+                  ? '未设置 · 包含关键词即隐藏'
+                  : '${preferences.danmakuBlockedKeywords.length} 个关键词 · 包含匹配',
+            ),
+            trailing: const Icon(Icons.chevron_right, size: 20),
+            onTap: _busy ? null : _editDanmakuKeywords,
           ),
           if (widget.onRetryDanmaku != null)
             TextButton.icon(

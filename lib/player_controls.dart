@@ -82,6 +82,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   final List<StreamSubscription<dynamic>> _subscriptions = [];
   Timer? _hideTimer;
   Timer? _clockTimer;
+  Timer? _refreshTimer;
   DateTime? _lastSurfaceTap;
   Offset? _lastSurfacePosition;
   bool _visible = true;
@@ -106,7 +107,22 @@ class _PlayerControlsState extends State<PlayerControls> {
     ]) {
       _subscriptions.add(
         stream.listen((_) {
-          if (mounted) setState(() {});
+          if (mounted &&
+              (_visible ||
+                  widget.panelOpen ||
+                  widget.player.state.buffering ||
+                  stream == widget.player.stream.buffering ||
+                  stream == widget.player.stream.playing)) {
+            if (stream == widget.player.stream.position ||
+                stream == widget.player.stream.buffer) {
+              _refreshTimer ??= Timer(const Duration(milliseconds: 250), () {
+                _refreshTimer = null;
+                if (mounted && _visible && !_locked) setState(() {});
+              });
+            } else {
+              setState(() {});
+            }
+          }
         }),
       );
     }
@@ -127,9 +143,6 @@ class _PlayerControlsState extends State<PlayerControls> {
         }
       }),
     );
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && widget.fullscreen && _visible) setState(() {});
-    });
     _scheduleHide();
   }
 
@@ -164,7 +177,21 @@ class _PlayerControlsState extends State<PlayerControls> {
     }
   }
 
+  void _scheduleClock() {
+    _clockTimer?.cancel();
+    if (!mounted || !widget.fullscreen || !_visible || _locked) return;
+    final now = DateTime.now();
+    _clockTimer = Timer(
+      Duration(milliseconds: 60000 - now.second * 1000 - now.millisecond),
+      () {
+        if (mounted && _visible) setState(() {});
+        _scheduleClock();
+      },
+    );
+  }
+
   void _scheduleHide() {
+    _scheduleClock();
     _hideTimer?.cancel();
     if (!widget.enabled ||
         _locked ||
@@ -181,6 +208,7 @@ class _PlayerControlsState extends State<PlayerControls> {
           !widget.player.state.buffering &&
           _seekValue == null) {
         setState(() => _visible = false);
+        _clockTimer?.cancel();
       }
     });
   }
@@ -225,6 +253,7 @@ class _PlayerControlsState extends State<PlayerControls> {
   void dispose() {
     _hideTimer?.cancel();
     _clockTimer?.cancel();
+    _refreshTimer?.cancel();
     for (final subscription in _subscriptions) {
       subscription.cancel();
     }
@@ -259,6 +288,7 @@ class _PlayerControlsState extends State<PlayerControls> {
                     swipeEnabled: true,
                     width: constraints.maxWidth,
                     height: constraints.maxHeight,
+                    screenSize: MediaQuery.sizeOf(context),
                   );
                 },
                 onPointerMove: (event) {

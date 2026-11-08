@@ -294,6 +294,20 @@ class PlaybackPlan {
   final int routeIndex;
   final int routeCount;
   final bool local;
+  PlaybackPlan withPrefetchedBytes(int bytes) => PlaybackPlan(
+    url: url,
+    headers: headers,
+    decryptionKey: decryptionKey,
+    quality: quality,
+    qualities: qualities,
+    session: session,
+    danmakuId: danmakuId,
+    prefetchedBytes: bytes,
+    expiresAt: expiresAt,
+    routeIndex: routeIndex,
+    routeCount: routeCount,
+    local: local,
+  );
   bool get hasAlternative => session.isNotEmpty && routeIndex + 1 < routeCount;
   factory PlaybackPlan.fromJson(Map<String, dynamic> json) => PlaybackPlan(
     url: json['url'] as String? ?? '',
