@@ -165,25 +165,25 @@ func (a *hgOfficialAccount) reservations(ctx context.Context, command string, in
 	if e := a.requireOwner(input.UID); e != nil {
 		return nil, e
 	}
-	ctx, c, g, finish, e := a.begin(ctx)
+	a.mu.Lock()
+	if a.disk.Profile == nil || a.disk.Profile.UID != input.UID {
+		a.mu.Unlock()
+		return nil, errors.New("红果账号已变更")
+	}
+	c := hgNewAccountHTTP(a.downloader, hgCloneSession(a.disk.Session))
+	g := a.generation
+	a.mu.Unlock()
+	result, e := c.reservationPage(ctx, input.Mode, input.Offset, input.Cursor, command == "calendar", input.SubscribeOffset)
 	if e != nil {
 		return nil, e
 	}
-	defer finish()
+	if e = a.persistClient(ctx, c, g); e != nil {
+		return nil, e
+	}
 	if e = a.requireOwner(input.UID); e != nil {
 		return nil, e
 	}
-	if command != "reserve" {
-		result, e := c.reservationPage(ctx, input.Mode, input.Offset, input.Cursor, command == "calendar", input.SubscribeOffset)
-		if e != nil {
-			return nil, e
-		}
-		if e = a.persistClient(ctx, c, g); e != nil {
-			return nil, e
-		}
-		return result, nil
-	}
-	return nil, errors.New("无效的预约操作")
+	return result, nil
 }
 
 func (a *hgOfficialAccount) reserve(ctx context.Context, input hgAccountInput) (any, error) {

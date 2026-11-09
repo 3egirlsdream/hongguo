@@ -267,7 +267,11 @@ func (a *hgOfficialAccount) persistClient(ctx context.Context, c *hgAccountHTTP,
 		return errors.New("红果账号操作已取消")
 	}
 	disk := a.disk
-	disk.Session = hgCloneSession(c.session)
+	var changed bool
+	disk.Session, changed = hgMergeAccountSession(disk.Session, c.baseSession, c.session)
+	if !changed {
+		return nil
+	}
 	if e := a.saveSession(disk); e != nil {
 		return e
 	}

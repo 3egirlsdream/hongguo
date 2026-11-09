@@ -87,7 +87,7 @@ func (a *hgOfficialAccount) refreshProfile(ctx context.Context, uid string) (err
 	}
 	disk := a.disk
 	disk.Profile = &updated
-	disk.Session = hgCloneSession(c.session)
+	disk.Session, _ = hgMergeAccountSession(disk.Session, c.baseSession, c.session)
 	if err = a.saveSession(disk); err != nil {
 		return errors.New("红果用户资料尚未保存")
 	}

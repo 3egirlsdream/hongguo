@@ -364,7 +364,7 @@ func nativeDispatch(input nativeInput) (any, error) {
 		input.trace.downloader = engine.downloader
 		ctx = context.WithValue(ctx, playbackTimingKey{}, input.trace)
 	}
-	if input.Action == "warmPlayback" || input.Action == "danmaku" || input.Action == "preload" || input.Action == "prepareHandoff" || input.Session != "" && (input.Action == "catalog" || input.Action == "categories" || input.Action == "suggestions" || input.Action == "recommendations" || input.Action == "metadata") {
+	if input.Action == "warmPlayback" || input.Action == "danmaku" || input.Action == "preload" || input.Action == "prepareHandoff" || input.Session != "" && (input.Action == "catalog" || input.Action == "categories" || input.Action == "suggestions" || input.Action == "recommendations" || input.Action == "metadata" || input.Action == "hongguoAccount" && (input.Command == "favorites" || input.Command == "reservations" || input.Command == "calendar" || input.Command == "history" && !input.Account.Refresh)) {
 		work, finish, err := engine.beginRead(ctx, input)
 		if err != nil {
 			return nil, err

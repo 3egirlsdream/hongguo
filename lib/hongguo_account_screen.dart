@@ -69,6 +69,23 @@ class HongguoAccountScreen extends StatefulWidget {
   State<HongguoAccountScreen> createState() => _HongguoAccountScreenState();
 }
 
+class _CollectionSnapshot {
+  _CollectionSnapshot({
+    required this.rows,
+    required this.hasMore,
+    required this.offset,
+    required this.cursor,
+    required this.subscribeOffset,
+    required this.loadedAt,
+  });
+  final List<Map<String, dynamic>> rows;
+  final bool hasMore;
+  final int offset;
+  final String cursor;
+  final int? subscribeOffset;
+  final DateTime? loadedAt;
+}
+
 class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _phone = TextEditingController();
@@ -83,6 +100,12 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   DateTime? _verificationDeadline;
   Map<String, dynamic> _status = {};
   final List<Map<String, dynamic>> _items = [];
+  final _collectionOwner = DateTime.now().microsecondsSinceEpoch.toString();
+  final _collectionCache = <String, _CollectionSnapshot>{};
+  DateTime? _pageLoadedAt;
+  bool _pageInitialized = false;
+  String get _collectionKey =>
+      '$_uid:${_tabs.index}:${_tabs.index == 2 ? _reservationMode : ''}';
   List<WatchEntry> _accountHistory = const [];
   bool _busy = false, _loading = false, _hasMore = false;
   int _offset = 0, _revision = 0;
@@ -116,6 +139,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     _selectedTab = _tabs.index;
     widget.store.addListener(_accessChanged);
     widget.repository.accountFavorites.addListener(_favoritesChanged);
+    widget.repository.accountReservations.addListener(_reservationsChanged);
     widget.repository.accountStatus.addListener(_accountStatusChanged);
     WidgetsBinding.instance.addObserver(this);
     _refreshStatus(loadCollections: true);
@@ -175,10 +199,8 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     setState(() {
       _status = result;
       if (previousUID != _uid) {
-        _revision++;
-        _items.clear();
+        _resetCollections();
         _accountHistory = const [];
-        _hasMore = false;
         _error = null;
       }
       final loginError = result['loginError'] as String? ?? '';
@@ -191,11 +213,7 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     });
     if (widget.collections && _logged) {
       if (previousUID != _uid || !wasLogged) {
-        if (_statusLoading) {
-          _statusRefreshPending = true;
-        } else {
-          unawaited(_load());
-        }
+        unawaited(_load(refresh: false));
       } else if (previousSync != _status['lastSync']) {
         unawaited(_readHistory());
       }
@@ -203,13 +221,14 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
   }
 
   void _favoritesChanged() {
-    if (_active &&
-        widget.collections &&
-        _tabs.index == 0 &&
-        _logged &&
-        !_loading &&
+    if (!_active || !widget.collections) return;
+    _collectionCache.removeWhere((key, _) => key.split(':')[1] == '0');
+    if (_tabs.index != 0) return;
+    _pageLoadedAt = null;
+    if (!_loading &&
         !_busy &&
-        !_statusLoading) {
+        !_statusLoading &&
+        (ModalRoute.of(context)?.isCurrent ?? true)) {
       unawaited(_load());
     }
   }
@@ -218,25 +237,84 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     if (!_active) {
       _stopSMSChecks();
       _clock?.cancel();
-      _revision++;
+      _resetCollections();
       if (mounted) setState(() {});
+    }
+  }
+
+  void _cancelCollectionRead() {
+    _revision++;
+    _loading = false;
+    unawaited(widget.repository.cancelAccountCollection(_collectionOwner));
+  }
+
+  void _resetCollections() {
+    _cancelCollectionRead();
+    _collectionCache.clear();
+    _items.clear();
+    _hasMore = false;
+    _offset = 0;
+    _cursor = '';
+    _subscribeOffset = null;
+    _pageLoadedAt = null;
+    _pageInitialized = false;
+  }
+
+  void _rememberCollection(String key) {
+    if (!_pageInitialized) return;
+    _collectionCache[key] = _CollectionSnapshot(
+      rows: [for (final row in _items) Map<String, dynamic>.from(row)],
+      hasMore: _hasMore,
+      offset: _offset,
+      cursor: _cursor,
+      subscribeOffset: _subscribeOffset,
+      loadedAt: _pageLoadedAt,
+    );
+  }
+
+  void _restoreCollection() {
+    final saved = _collectionCache[_collectionKey];
+    _items
+      ..clear()
+      ..addAll([
+        for (final row in saved?.rows ?? <Map<String, dynamic>>[])
+          Map<String, dynamic>.from(row),
+      ]);
+    _hasMore = saved?.hasMore ?? false;
+    _offset = saved?.offset ?? 0;
+    _cursor = saved?.cursor ?? '';
+    _subscribeOffset = saved?.subscribeOffset;
+    _pageLoadedAt = saved?.loadedAt;
+    _pageInitialized = saved != null;
+    _error = _message = null;
+  }
+
+  void _reservationsChanged() {
+    if (!_active) return;
+    _collectionCache.removeWhere(
+      (key, _) => key.split(':')[1] == '2' || key.split(':')[1] == '3',
+    );
+    if (_tabs.index < 2) return;
+    setState(() {
+      _cancelCollectionRead();
+      _pageLoadedAt = null;
+    });
+    if (!_busy && (ModalRoute.of(context)?.isCurrent ?? true)) {
+      unawaited(_load());
     }
   }
 
   void _tabChanged() {
     if (_selectedTab == _tabs.index) return;
+    final previous =
+        '$_uid:$_selectedTab:${_selectedTab == 2 ? _reservationMode : ''}';
+    _rememberCollection(previous);
     _selectedTab = _tabs.index;
     setState(() {
-      _revision++;
-      _items.clear();
-      _hasMore = false;
-      _offset = 0;
-      _cursor = '';
-      _subscribeOffset = null;
-      _message = null;
-      _error = null;
+      _cancelCollectionRead();
+      _restoreCollection();
     });
-    unawaited(_load());
+    unawaited(_load(refresh: false));
   }
 
   @override
@@ -244,11 +322,13 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
     WidgetsBinding.instance.removeObserver(this);
     _clock?.cancel();
     _stopSMSChecks();
+    _cancelCollectionRead();
     _tabs.dispose();
     _phone.dispose();
     _code.dispose();
     widget.store.removeListener(_accessChanged);
     widget.repository.accountFavorites.removeListener(_favoritesChanged);
+    widget.repository.accountReservations.removeListener(_reservationsChanged);
     widget.repository.accountStatus.removeListener(_accountStatusChanged);
     super.dispose();
   }
@@ -275,11 +355,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         setState(() {
           _status = result;
           if (previousUID != _uid) {
-            _revision++;
-            _items.clear();
+            _resetCollections();
             _accountHistory = const [];
             _error = null;
-            _hasMore = false;
           }
           final loginError = result['loginError'] as String? ?? '';
           if (loginError.isNotEmpty) {
@@ -296,10 +374,10 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         if (_logged &&
             widget.collections &&
             (previousUID != _uid || previousSync != _status['lastSync'])) {
-          await _readHistory();
+          unawaited(_readHistory());
         }
         if ((loadCollections || !wasLogged) && _logged && widget.collections) {
-          await _load();
+          unawaited(_load(refresh: false));
         }
         if (loadCollections &&
             !widget.collections &&
@@ -349,7 +427,12 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       if (current()) setState(() => _error = error.toString());
       return false;
     } finally {
-      if (_active) setState(() => _busy = false);
+      if (_active) {
+        setState(() => _busy = false);
+        if (widget.collections && !_pageInitialized) {
+          unawaited(_load(refresh: false));
+        }
+      }
     }
   }
 
@@ -509,29 +592,33 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
       ),
     );
     if (accepted == true && await _run('logout')) {
-      _revision++;
-      _items.clear();
+      _resetCollections();
       _stopSMSChecks();
       _code.clear();
       _tabs.index = 0;
     }
   }
 
-  Future<void> _load({bool more = false}) async {
+  Future<void> _load({bool more = false, bool refresh = true}) async {
     if (!_active || !_logged || !widget.collections || _loading || _busy) {
       return;
     }
+    if (!more &&
+        !refresh &&
+        _pageLoadedAt != null &&
+        DateTime.now().difference(_pageLoadedAt!) <
+            const Duration(seconds: 60)) {
+      return;
+    }
+    final key = _collectionKey;
     final tab = _tabs.index, revision = ++_revision;
     final owner = _uid;
+    final offset = more ? _offset : 0;
+    final cursor = more ? _cursor : '';
+    final subscribeOffset = more ? _subscribeOffset : null;
     setState(() {
       _loading = true;
       _error = null;
-      if (!more) {
-        _offset = 0;
-        _cursor = '';
-        _subscribeOffset = null;
-        _hasMore = false;
-      }
     });
     try {
       if (tab == 1 && !more) widget.repository.requestOfficialSync();
@@ -542,18 +629,18 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
           : tab == 2
           ? 'reservations'
           : 'calendar';
-      final result = await widget.repository.hongguoAccount(command, {
+      final result = await widget.repository.readAccountCollection(command, {
         'uid': owner,
         'refresh': false,
-        'offset': _offset,
-        'cursor': _cursor,
+        'offset': offset,
+        'cursor': cursor,
         'mode': tab == 0
             ? 'online'
             : tab == 2
             ? _reservationMode
             : '',
-        if (_subscribeOffset != null) 'subscribeOffset': _subscribeOffset,
-      });
+        'subscribeOffset': ?subscribeOffset,
+      }, owner: _collectionOwner);
       if (!_active ||
           revision != _revision ||
           tab != _tabs.index ||
@@ -593,15 +680,21 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         _offset = intValue(result['offset']);
         _cursor = result['cursor'] as String? ?? '';
         _subscribeOffset = result['subscribeOffset'] as int?;
+        _pageInitialized = true;
+        if (!more) _pageLoadedAt = DateTime.now();
+        _rememberCollection(key);
       });
     } catch (error) {
       if (_active && revision == _revision) {
-        setState(() => _error = error.toString());
+        setState(() {
+          _error = error.toString();
+          _pageLoadedAt = null;
+          _rememberCollection(key);
+        });
       }
     } finally {
-      if (_active) {
+      if (_active && revision == _revision) {
         setState(() => _loading = false);
-        if (tab != _tabs.index) unawaited(_load());
       }
     }
   }
@@ -700,6 +793,8 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
           child: RefreshIndicator(
             onRefresh: _load,
             child: SavedLibrary(
+              loading: _loading && !_pageInitialized,
+              loadError: _error,
               compact: widget.embedded,
               searchVisible: widget.embedded ? _librarySearching : null,
               key: ValueKey('collection-$history'),
@@ -1043,7 +1138,9 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
         return false;
       },
       child: SavedLibrary(
-        key: ValueKey('reservation-library-${_tabs.index}'),
+        key: PageStorageKey('reservation-library-$_collectionKey'),
+        loading: _loading && !_pageInitialized,
+        loadError: _error,
         repository: widget.repository,
         store: widget.store,
         history: false,
@@ -1054,15 +1151,17 @@ class _HongguoAccountScreenState extends State<HongguoAccountScreen>
             : const [('upcoming', '待上线'), ('online', '已上线')],
         filterValue: calendar ? _calendarFilter : _reservationMode,
         onFilterChanged: (value) {
-          if (_busy || _loading) return;
+          if (_busy) return;
           if (calendar) {
             setState(() => _calendarFilter = value);
           } else if (value != _reservationMode) {
+            _rememberCollection(_collectionKey);
             setState(() {
+              _cancelCollectionRead();
               _reservationMode = value;
-              _items.clear();
+              _restoreCollection();
             });
-            unawaited(_load());
+            unawaited(_load(refresh: false));
           }
         },
         remoteFavorites: [

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -39,8 +40,9 @@ type hgAccountSession struct {
 	Token      string            `json:"token"`
 }
 type hgAccountHTTP struct {
-	session hgAccountSession
-	http    *http.Client
+	session     hgAccountSession
+	baseSession hgAccountSession
+	http        *http.Client
 }
 
 func hgNewAccountHTTP(d *Downloader, session hgAccountSession) *hgAccountHTTP {
@@ -49,7 +51,7 @@ func hgNewAccountHTTP(d *Downloader, session hgAccountSession) *hgAccountHTTP {
 	c.Jar = nil
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	session = hgCloneSession(session)
-	return &hgAccountHTTP{session: session, http: &c}
+	return &hgAccountHTTP{session: session, baseSession: hgCloneSession(session), http: &c}
 }
 func hgCloneSession(s hgAccountSession) hgAccountSession {
 	m := map[string]string{}
@@ -59,6 +61,44 @@ func hgCloneSession(s hgAccountSession) hgAccountSession {
 	s.Cookies = m
 	return s
 }
+func hgMergeAccountSession(current, base, next hgAccountSession) (hgAccountSession, bool) {
+	result := hgCloneSession(current)
+	if result.Cookies == nil {
+		result.Cookies = map[string]string{}
+	}
+	for key, value := range next.Cookies {
+		before, existed := base.Cookies[key]
+		active, present := current.Cookies[key]
+		if (value != before || !existed) && active == before && present == existed {
+			result.Cookies[key] = value
+		}
+	}
+	for key, before := range base.Cookies {
+		if _, exists := next.Cookies[key]; !exists {
+			if active, present := current.Cookies[key]; present && active == before {
+				delete(result.Cookies, key)
+			}
+		}
+	}
+	if next.Token != base.Token && current.Token == base.Token {
+		result.Token = next.Token
+	}
+	if next.Device != base.Device && current.Device == base.Device {
+		result.Device = next.Device
+	}
+	if next.DeviceID != base.DeviceID && current.DeviceID == base.DeviceID {
+		result.DeviceID = next.DeviceID
+	}
+	if next.InstallID != base.InstallID && current.InstallID == base.InstallID {
+		result.InstallID = next.InstallID
+	}
+	if next.Registered != base.Registered && current.Registered == base.Registered {
+		result.Registered = next.Registered
+	}
+	changed := result.Token != current.Token || result.Device != current.Device || result.DeviceID != current.DeviceID || result.InstallID != current.InstallID || result.Registered != current.Registered || !maps.Equal(result.Cookies, current.Cookies)
+	return result, changed
+}
+
 func hgValidID(s string) bool {
 	n, e := strconv.ParseUint(s, 10, 64)
 	return e == nil && n > 0 && strconv.FormatUint(n, 10) == s

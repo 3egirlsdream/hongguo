@@ -21,6 +21,7 @@ import 'diary_service.dart';
 import 'resource_settings.dart';
 import 'playback_trace.dart';
 import 'official_history_sync.dart';
+import 'account_request_scheduler.dart';
 
 typedef _NativeRequest = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef _DartRequest = Pointer<Utf8> Function(Pointer<Utf8>);
@@ -78,6 +79,16 @@ Map<String, dynamic> _executeNative(Map<String, dynamic> input) {
 
 WorkLane _nativeLane(Map<String, dynamic> input) {
   final action = input['action'];
+  if (action == 'hongguoAccount' &&
+      input['session'] != null &&
+      {
+        'favorites',
+        'history',
+        'reservations',
+        'calendar',
+      }.contains(input['command'])) {
+    return WorkLane.interactive;
+  }
   if ({
         'cancelRead',
         'cancelPlayback',
@@ -131,6 +142,14 @@ abstract class AppRepository {
     String command, [
     Map<String, dynamic> input = const {},
   ]) async => throw AppFailure('当前环境不支持账号与同步');
+
+  Future<Map<String, dynamic>> readAccountCollection(
+    String command,
+    Map<String, dynamic> input, {
+    required String owner,
+  }) => hongguoAccount(command, input);
+
+  Future<void> cancelAccountCollection(String owner) async {}
 
   Future<Map<String, dynamic>> lan(
     String command,
@@ -281,7 +300,7 @@ class NativeRepository extends AppRepository {
       accountFavorites.value.contains(id);
   @override
   bool get supportsOfficialAccount => true;
-  Future<void> _accountRequests = Future<void>.value();
+  final _accountRequests = AccountRequestScheduler();
   int _accountStatusRevision = 0;
 
   @override
@@ -289,41 +308,95 @@ class NativeRepository extends AppRepository {
     String command, [
     Map<String, dynamic> input = const {},
   ]) {
+    return _scheduleAccount(command, input);
+  }
+
+  Future<Map<String, dynamic>> _scheduleAccount(
+    String command,
+    Map<String, dynamic> input, {
+    String? scope,
+    int? sequence,
+  }) {
     final epoch = access?.profileEpoch;
+    final queued = Stopwatch()..start();
     Future<Map<String, dynamic>> request() {
       if (epoch != access?.profileEpoch) throw AppFailure('本地用户已变更，请重新打开页面');
-      return _requestAccount(command, input);
+      if (scope != null && _activeReads[scope] != sequence) {
+        throw const WorkCancelled();
+      }
+      if (scope != null) {
+        DiaryService.add(
+          '[AccountList] command=$command queue_ms=${queued.elapsedMilliseconds}',
+        );
+      }
+      return _requestAccount(command, input, scope: scope, sequence: sequence);
     }
 
-    if ({
-      'status',
-      'cancel',
-      'logout',
-      'queueProgress',
-      'seasons',
-      'reserve',
+    return _accountRequests.run(command, input, request);
+  }
+
+  @override
+  Future<Map<String, dynamic>> readAccountCollection(
+    String command,
+    Map<String, dynamic> input, {
+    required String owner,
+  }) async {
+    if (!{
+      'favorites',
+      'history',
+      'reservations',
+      'calendar',
     }.contains(command)) {
-      return request();
+      throw AppFailure('无效的片单读取');
     }
-    final pending = _accountRequests.then((_) => request());
-    _accountRequests = pending.then<void>(
-      (_) {},
-      onError: (Object error, StackTrace trace) {},
-    );
-    return pending;
+    final scope = 'account-$owner';
+    final previous = _activeReads[scope];
+    if (previous != null) unawaited(_cancelRead(scope, previous));
+    final sequence = ++_readSequence;
+    _activeReads[scope] = sequence;
+    final watch = Stopwatch()..start();
+    try {
+      final result = await _scheduleAccount(
+        command,
+        input,
+        scope: scope,
+        sequence: sequence,
+      );
+      if (_activeReads[scope] != sequence) throw const WorkCancelled();
+      DiaryService.add(
+        '[AccountList] command=$command total_ms=${watch.elapsedMilliseconds} rows=${(result['items'] as List?)?.length ?? 0}',
+      );
+      return result;
+    } finally {
+      if (_activeReads[scope] == sequence) _activeReads.remove(scope);
+    }
+  }
+
+  @override
+  Future<void> cancelAccountCollection(String owner) async {
+    final scope = 'account-$owner';
+    final sequence = _activeReads.remove(scope);
+    if (sequence != null) await _cancelRead(scope, sequence);
   }
 
   Future<Map<String, dynamic>> _requestAccount(
     String command,
-    Map<String, dynamic> input,
-  ) async {
+    Map<String, dynamic> input, {
+    String? scope,
+    int? sequence,
+  }) async {
     _authorize('hongguo');
     final statusRevision = _accountStatusRevision;
     final result = await _call({
       'action': 'hongguoAccount',
       'command': command,
       'account': input,
+      if (scope != null) 'session': '$_readOwner:$scope',
+      'sequence': ?sequence,
     });
+    if (scope != null && _activeReads[scope] != sequence) {
+      throw const WorkCancelled();
+    }
     if (command == 'status' && statusRevision != _accountStatusRevision) {
       return _requestAccount(command, input);
     }

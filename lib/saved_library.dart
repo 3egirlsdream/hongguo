@@ -34,6 +34,8 @@ class SavedLibrary extends StatefulWidget {
     this.onLoadMore,
     this.hasMore = false,
     this.loadingMore = false,
+    this.loading = false,
+    this.loadError,
   });
 
   final AppRepository repository;
@@ -47,7 +49,8 @@ class SavedLibrary extends StatefulWidget {
   final ValueChanged<Drama>? onManage;
   final String Function(Drama)? subtitle;
   final VoidCallback? onLoadMore;
-  final bool hasMore, loadingMore;
+  final bool hasMore, loadingMore, loading;
+  final String? loadError;
   final List<WatchEntry> remoteHistory;
   final List<Drama> remoteFavorites;
   final ValueChanged<WatchEntry>? onHistoryContinue;
@@ -592,14 +595,28 @@ class _SavedLibraryState extends State<SavedLibrary> {
         header.insert(0, _compactToolbar());
       }
       final empty = StatusPanel(
-        title: all.isEmpty
+        title: widget.loading
+            ? widget.filterOptions != null
+                  ? '正在加载预约'
+                  : widget.history
+                  ? '正在加载观看记录'
+                  : '正在加载追剧'
+            : widget.loadError != null && all.isEmpty
+            ? '暂时无法加载'
+            : all.isEmpty
             ? widget.filterOptions != null
                   ? '暂无预约记录'
                   : widget.history
                   ? '还没有观看记录'
                   : '还没有追剧'
             : '没有匹配的记录',
-        message: all.isEmpty ? '去首页，挑一部喜欢的短剧。' : '可以更换搜索词或筛选条件。',
+        message: widget.loading
+            ? '请稍候。'
+            : widget.loadError != null && all.isEmpty
+            ? '下拉刷新重试。'
+            : all.isEmpty
+            ? '去首页，挑一部喜欢的短剧。'
+            : '可以更换搜索词或筛选条件。',
         icon: widget.history
             ? Icons.history_rounded
             : Icons.bookmark_border_rounded,
