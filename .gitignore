@@ -28,3 +28,5 @@ venv/
 *.pfx
 
 .local/
+/ios/
+/windows/

@@ -3,8 +3,6 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,28 +37,29 @@ type hongguoCatalogState struct {
 }
 
 type hongguoAppClient struct {
-	mu              sync.Mutex
-	playbackGuestMu sync.Mutex
-	playbackGuest   hgAccountSession
-	catalogMu       sync.Mutex
-	baseURL         string
-	state           hongguoCatalogState
-	details         map[string]hongguoDetailEntry
-	pending         map[string]*hongguoDetailCall
-	searches        map[string]hongguoSearchEntry
-	searchPending   map[string]*hongguoSearchCall
-	suggestions     map[string]hongguoSuggestionEntry
-	suggestPending  map[string]*hongguoSuggestionCall
-	danmaku         map[string]hongguoDanmakuCacheEntry
-	danmakuPending  map[string]*hongguoDanmakuCall
+	mu                sync.Mutex
+	playbackGuestGate chan struct{}
+	playbackGuest     hgAccountSession
+	catalogMu         sync.Mutex
+	baseURL           string
+	state             hongguoCatalogState
+	details           map[string]hongguoDetailEntry
+	pending           map[string]*hongguoDetailCall
+	searches          map[string]hongguoSearchEntry
+	searchPending     map[string]*hongguoSearchCall
+	suggestions       map[string]hongguoSuggestionEntry
+	suggestPending    map[string]*hongguoSuggestionCall
+	danmaku           map[string]hongguoDanmakuCacheEntry
+	danmakuPending    map[string]*hongguoDanmakuCall
 }
 
 func (downloader *Downloader) hongguoClient() *hongguoAppClient {
 	downloader.hongguoOnce.Do(func() {
 		downloader.hongguo = &hongguoAppClient{
-			baseURL: hongguoAppBaseURL,
-			state:   hongguoCatalogState{Version: 1, DeviceID: newHongguoDeviceID(), InstallID: newHongguoDeviceID(), Feeds: map[string]hongguoCatalogCursor{}},
-			details: map[string]hongguoDetailEntry{}, pending: map[string]*hongguoDetailCall{},
+			baseURL:           hongguoAppBaseURL,
+			playbackGuestGate: make(chan struct{}, 1),
+			state:             hongguoCatalogState{Version: 1, DeviceID: newHongguoDeviceID(), InstallID: newHongguoDeviceID(), Feeds: map[string]hongguoCatalogCursor{}},
+			details:           map[string]hongguoDetailEntry{}, pending: map[string]*hongguoDetailCall{},
 			searches: map[string]hongguoSearchEntry{}, searchPending: map[string]*hongguoSearchCall{},
 			suggestions: map[string]hongguoSuggestionEntry{}, suggestPending: map[string]*hongguoSuggestionCall{},
 		}
@@ -265,11 +264,9 @@ func (downloader *Downloader) hongguoAppRequest(ctx context.Context, method, pat
 				for key, values := range headers {
 					prepared.Header[key] = values
 				}
-				stamp := uint32(now.Unix())
-				prepared.Header.Set("X-Ladon", base64.StdEncoding.EncodeToString(binary.BigEndian.AppendUint32(nil, stamp)))
-				prepared.Header.Set("X-Argus", base64.StdEncoding.EncodeToString(binary.LittleEndian.AppendUint32(nil, stamp)))
+				completeHongguoPlayerSignature(prepared, body, now, deviceID, playerNonce)
 			} else {
-				signHongguoPlayerRequest(prepared, body, now, installID, playerNonce)
+				signHongguoPlayerRequest(prepared, body, now, deviceID, playerNonce)
 			}
 			return nil
 		}, transport)

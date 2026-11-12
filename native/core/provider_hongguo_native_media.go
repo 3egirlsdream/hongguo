@@ -15,7 +15,22 @@ import (
 type hongguoMediaRequestKey struct{}
 
 func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoID string) (providerMedia, error) {
-	var failures []error
+	if !hongguoNumericID.MatchString(videoID) {
+		return providerMedia{}, errors.New("红果视频 ID 无效")
+	}
+	media, guestErr := downloader.resolveHongguoRegisteredGuestMedia(ctx, videoID)
+	if guestErr == nil {
+		return media, nil
+	}
+	if ctx.Err() != nil {
+		return providerMedia{}, ctx.Err()
+	}
+	var blocked *requestBackoff
+	var rejected *hgAccountHTTPError
+	if errors.As(guestErr, &blocked) || errors.As(guestErr, &rejected) && (rejected.Status == 403 || rejected.Status == 429) {
+		return providerMedia{}, guestErr
+	}
+	failures := []error{guestErr}
 	for _, endpoint := range []struct {
 		batch  bool
 		budget time.Duration
@@ -31,18 +46,20 @@ func (downloader *Downloader) resolveHongguoAppMedia(ctx context.Context, videoI
 		}
 		failures = append(failures, err)
 	}
-	media, err := downloader.resolveHongguoRegisteredGuestMedia(ctx, videoID)
-	if err == nil {
-		return media, nil
-	}
-	failures = append(failures, err)
 	return providerMedia{}, errors.Join(failures...)
 }
 
 func (downloader *Downloader) resolveHongguoRegisteredGuestMedia(ctx context.Context, videoID string) (providerMedia, error) {
 	client := downloader.hongguoClient()
-	client.playbackGuestMu.Lock()
-	defer client.playbackGuestMu.Unlock()
+	select {
+	case client.playbackGuestGate <- struct{}{}:
+	case <-ctx.Done():
+		return providerMedia{}, ctx.Err()
+	}
+	defer func() { <-client.playbackGuestGate }()
+	if err := ctx.Err(); err != nil {
+		return providerMedia{}, err
+	}
 	for attempt := 0; attempt < 2; attempt++ {
 		session := client.playbackGuest
 		if !session.Registered {
@@ -53,17 +70,24 @@ func (downloader *Downloader) resolveHongguoRegisteredGuestMedia(ctx context.Con
 			session.Device = identity
 		}
 		guest := hgNewAccountHTTP(downloader, session)
-		if err := guest.register(ctx); err != nil {
-			return providerMedia{}, err
+		finishRegister := startPlaybackStage(ctx, "playback_guest_register")
+		registerErr := guest.registerPlayback(ctx, downloader)
+		finishRegister(registerErr)
+		if registerErr != nil {
+			return providerMedia{}, registerErr
 		}
 		client.playbackGuest = hgCloneSession(guest.session)
-		result, err := guest.json(ctx, "/novel/player/video_model/v1/", http.MethodPost, nil, map[string]any{
-			"video_id": videoID, "content_type": 1,
-			"biz_param": map[string]any{"need_all_video_definition": true, "video_platform": 3},
-		}, false)
+		finishRequest := startPlaybackStage(ctx, "playback_guest_model")
+		result, err := guest.playbackModel(ctx, downloader, videoID)
+		finishRequest(err)
 		if errors.Is(err, errHGEmptyResponse) {
 			client.playbackGuest = hgAccountSession{}
 			if attempt == 0 && ctx.Err() == nil {
+				select {
+				case <-time.After(250 * time.Millisecond):
+				case <-ctx.Done():
+					return providerMedia{}, ctx.Err()
+				}
 				continue
 			}
 		}

@@ -23,10 +23,14 @@ func newHongguoPlayerNonce() (hongguoPlayerNonce, error) {
 	return nonce, err
 }
 
-func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time, installID string, nonce hongguoPlayerNonce) {
+func signHongguoPlayerRequest(request *http.Request, body []byte, now time.Time, deviceID string, nonce hongguoPlayerNonce) {
 	signHongguoPlayerBasicRequest(request, body, now)
+	completeHongguoPlayerSignature(request, body, now, deviceID, nonce)
+}
+
+func completeHongguoPlayerSignature(request *http.Request, body []byte, now time.Time, deviceID string, nonce hongguoPlayerNonce) {
 	stamp := uint32(now.Unix())
-	request.Header.Set("X-Argus", hongguoPlayerArgus(request.URL.RawQuery, body, stamp, installID, nonce))
+	request.Header.Set("X-Argus", hongguoPlayerArgus(request.URL.RawQuery, body, stamp, deviceID, nonce))
 	request.Header.Set("X-Ladon", hongguoPlayerLadon(request.URL.Query().Get("aid"), stamp, nonce[2:6]))
 }
 
@@ -57,7 +61,7 @@ func signHongguoPlayerBasicRequest(request *http.Request, body []byte, now time.
 
 }
 
-func hongguoPlayerArgus(query string, body []byte, timestamp uint32, installID string, nonce hongguoPlayerNonce) string {
+func hongguoPlayerArgus(query string, body []byte, timestamp uint32, deviceID string, nonce hongguoPlayerNonce) string {
 	key, _ := hex.DecodeString("ac1adaae95a7af94a5114ab3b3a97dd80050aa0a39314c40528caec95256c28c")
 	var message []byte
 	varint := func(field, value uint64) {
@@ -69,28 +73,43 @@ func hongguoPlayerArgus(query string, body []byte, timestamp uint32, installID s
 		message = binary.AppendUvarint(message, uint64(len(value)))
 		message = append(message, value...)
 	}
-	varint(1, 0x20200551*2)
+	varint(1, 0x20200929*2)
 	varint(2, 2)
-	varint(3, uint64(binary.LittleEndian.Uint32(nonce[6:10])))
+	varint(3, uint64(binary.LittleEndian.Uint32(nonce[6:10])&0x7fffffff))
 	bytesField(4, []byte("8662"))
-	bytesField(6, []byte(installID))
+	bytesField(5, []byte(deviceID))
+	bytesField(6, []byte("1611921764"))
 	bytesField(7, []byte("7.3.5.32"))
 	bytesField(8, []byte("v04.07.01-ml-android"))
 	varint(9, 135135744)
 	bytesField(10, make([]byte, 8))
+	varint(11, 0)
 	varint(12, uint64(timestamp)*2)
-	bodyHash := hongguoSM3(body)
+	bodyHash := hongguoSM3(make([]byte, 16))
+	if body != nil {
+		stub := md5.Sum(body)
+		bodyHash = hongguoSM3(stub[:])
+	}
 	queryHash := hongguoSM3([]byte(query))
 	bytesField(13, bodyHash[:6])
 	bytesField(14, queryHash[:6])
-	nested := []byte{8, 2 + (nonce[10]%49)*2}
-	for _, field := range []uint64{2, 3, 4} {
-		nested = binary.AppendUvarint(nested, field*8)
-		nested = binary.AppendUvarint(nested, 1388734)
-	}
+	nested := []byte{8, 1, 16, 1, 24, 1}
+	nested = binary.AppendUvarint(nested, 7*8)
+	nested = binary.AppendUvarint(nested, 3348294860)
 	bytesField(15, nested)
+	bytesField(16, nil)
 	bytesField(20, []byte("none"))
 	varint(21, 738)
+	var environment []byte
+	for index, value := range []string{"25053RT47C", "16", "update_64"} {
+		environment = binary.AppendUvarint(environment, uint64(index+1)*8+2)
+		environment = binary.AppendUvarint(environment, uint64(len(value)))
+		environment = append(environment, value...)
+	}
+	environment = binary.AppendUvarint(environment, 4*8)
+	environment = binary.AppendUvarint(environment, 2147483648)
+	bytesField(23, environment)
+	varint(25, 2)
 	data := hongguoCommentPad(message)
 	seed := append(append(append([]byte(nil), key...), 0x3c, 0xcc, 0x56, 0x7b), key...)
 	derived := hongguoSM3(seed)
@@ -140,7 +159,7 @@ func hongguoPlayerLadon(aid string, timestamp uint32, prefix []byte) string {
 		left = mixed ^ bits.RotateLeft64(left, 3)
 		right, queue = queue[0], queue[1:]
 	}
-	payload := []byte(strconv.FormatUint(uint64(timestamp), 10) + "-" + aid)
+	payload := []byte(strconv.FormatUint(uint64(timestamp), 10) + "-1611921764-" + aid)
 	data := hongguoCommentPad(payload)
 	for offset := 0; offset < len(data); offset += 16 {
 		left, right := binary.LittleEndian.Uint64(data[offset:]), binary.LittleEndian.Uint64(data[offset+8:])

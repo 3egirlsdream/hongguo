@@ -58,7 +58,7 @@ func TestHongguoPublicWebPlayback(t *testing.T) {
 
 func TestHongguoRegisteredGuestPlayback(t *testing.T) {
 	registrations, requests := 0, 0
-	d := &Downloader{cfg: defaultConfig()}
+	d := &Downloader{cfg: defaultConfig(), limiter: newRequestLimiter(1, 0)}
 	d.client = &http.Client{Transport: hongguoPlaybackTestTransport(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
 		case "/service/2/device_register/":
@@ -66,7 +66,8 @@ func TestHongguoRegisteredGuestPlayback(t *testing.T) {
 			return hongguoPlaybackTestResponse(r, `{"device_id_str":"1234567890123456","install_id_str":"1234567890123457"}`), nil
 		case "/novel/player/video_model/v1/":
 			requests++
-			if r.URL.Query().Get("device_id") != "1234567890123456" || r.Header.Get("X-Medusa") == "" || r.Header.Get("X-Tt-Token") != "" {
+			assertHongguoPlaybackSignatures(t, r)
+			if r.URL.Query().Get("device_id") != "1234567890123456" || r.Header.Get("X-Medusa") != "" || r.Header.Get("X-Tt-Token") != "" {
 				t.Fatal("registered guest identity or request signature is incorrect")
 			}
 			if requests == 2 {
@@ -99,6 +100,7 @@ func TestHongguoBatchPlaybackSession(t *testing.T) {
 				if r.URL.Path != "/novel/player/multi_video_model/v1/" || r.Method != http.MethodPost {
 					t.Fatalf("unexpected endpoint %s %s", r.Method, r.URL.Path)
 				}
+				assertHongguoPlaybackSignatures(t, r)
 				if r.Header.Get("X-Medusa") == "" || r.Header.Get("X-Helios") == "" || r.Header.Get("X-Gorgon") == "" {
 					t.Fatal("missing playback signatures")
 				}
@@ -119,7 +121,7 @@ func TestHongguoBatchPlaybackSession(t *testing.T) {
 			if authenticated {
 				ctx = context.WithValue(ctx, hongguoPlaybackSessionKey{}, hgAccountSession{DeviceID: "7000000000000000001", InstallID: "7000000000000000002", Token: "synthetic-token", Cookies: map[string]string{"sessionid": "synthetic-session"}})
 			}
-			media, err := d.resolveHongguoAppMedia(ctx, "22")
+			media, err := d.resolveHongguoAppMediaEndpoint(ctx, "22", true)
 			if err != nil || media.URL != "https://example.test/current.mp4" || media.Quality != 1080 || calls != 1 {
 				t.Fatalf("media=%v calls=%d err=%v", media, calls, err)
 			}
@@ -141,7 +143,7 @@ func TestHongguoFallbackPlayback(t *testing.T) {
 		return hongguoPlaybackTestResponse(r, `{"video_info":{"data":{"video_list":{"h264":{"backup_url_list":["https://example.test/fallback.mp4"],"codec_type":"h264","width":1080,"height":1920}}}}}`), nil
 	})}
 	ctx := context.WithValue(context.Background(), hongguoPlaybackSessionKey{}, hgAccountSession{DeviceID: "7000000000000000001", InstallID: "7000000000000000002", Token: "synthetic-token"})
-	media, err := d.resolveHongguoAppMedia(ctx, "22")
+	media, err := d.resolveHongguoAppMediaEndpoint(ctx, "22", true)
 	if err != nil || media.URL != "https://example.test/fallback.mp4" || media.Quality != 1080 || calls != 2 {
 		t.Fatalf("media=%v calls=%d err=%v", media, calls, err)
 	}
@@ -181,5 +183,18 @@ func TestHongguoPlaybackCancellation(t *testing.T) {
 	defer cancel()
 	if _, err := d.resolveHongguoAppMedia(ctx, "22"); err == nil {
 		t.Fatal("canceled playback did not fail")
+	}
+}
+
+func assertHongguoPlaybackSignatures(t *testing.T, request *http.Request) {
+	t.Helper()
+	for _, name := range []string{"X-Argus", "X-Ladon"} {
+		decoded, err := base64.StdEncoding.DecodeString(request.Header.Get(name))
+		if err != nil || len(decoded) <= 4 {
+			t.Fatalf("%s is missing or contains only a timestamp", name)
+		}
+	}
+	if request.Header.Get("X-Gorgon") == "" || request.Header.Get("X-Khronos") == "" {
+		t.Fatal("playback request lacks its matching digest or timestamp")
 	}
 }
